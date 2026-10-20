@@ -1,20 +1,9 @@
 //! Address fixtures are BIP84's own test vectors (github.com/bitcoin/bips bip-0084.mediawiki), for
 //! "abandon … about": eCash betanet encodes them as Bitcoin does (`bc`).
-use bitcoin::base58;
-use ecx_l1::{chain_entry, declare, derive_account, network, ServerApi};
+mod common;
 
-/// BIP84's account 0 key, `m/84'/0'/0'`, as it prints it (`zprv`).
-const BIP84_ACCOUNT_ZPRV: &str =
-    "zprvAdG4iTXWBoARxkkzNpNh8r6Qag3irQB8PzEMkAFeTRXxHpbF9z4QgEvBRmfvqWvGp42t42nvgGpNgYSJA9iefm1yYNZKEm7z6qUWCroSQnE";
-/// "abandon … about"'s master fingerprint.
-const FINGERPRINT: &str = "73c5da0a";
-
-/// The same key with the `xprv` version bytes: the L1 Account Key the Vault hands over.
-fn account_key() -> String {
-    let mut bytes = base58::decode_check(BIP84_ACCOUNT_ZPRV).unwrap();
-    bytes[..4].copy_from_slice(&[0x04, 0x88, 0xad, 0xe4]);
-    format!("[{FINGERPRINT}/84h/0h/0h]{}", base58::encode_check(&bytes))
-}
+use common::{account_key, FINGERPRINT};
+use ecx_l1::{chain_entry, declare, derive_account, network, OpDrivechain, ServerApi};
 
 #[test]
 fn derives_bip84s_receive_and_change_addresses() {
@@ -50,7 +39,8 @@ fn declare_reports_the_ecash_betanet_binding() {
     let d = declare();
     assert_eq!(d.binding.chain, "ecash:betanet");
     assert_eq!(d.binding.format, "psbt");
-    assert!(d.binding.payload_versions.is_empty(), "it decodes nothing yet");
+    assert_eq!(d.binding.payload_versions, ["0"]);
+    assert_eq!(d.capabilities, ["buildDeposit"]);
 }
 
 #[test]
@@ -64,4 +54,12 @@ fn ecash_is_the_root_identified_by_its_fork_block() {
     assert_eq!(betanet.sidechain_server.url, "https://esplora.beta.ecash.ninja");
     let p = &betanet.params.address_params;
     assert_eq!((p.p2pkh_prefix, p.p2sh_prefix, p.bech_hrp.as_str()), (0, 5, "bc"));
+}
+
+#[test]
+fn betanet_marks_spends_with_its_replay_locktime_and_reads_nop8_as_op_drivechain() {
+    assert_eq!(network().params.replay_lock_time, 499_999_999);
+    assert_eq!(network().params.op_drivechain, OpDrivechain::Nop8);
+    assert_eq!(ecx_l1::treasury_script(24).unwrap(), "b7011851");
+    assert!(ecx_l1::treasury_script(256).is_err());
 }

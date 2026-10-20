@@ -7,6 +7,7 @@ import type {
   ChainReport,
   ClearView,
   DangerousMode,
+  DepositStatus,
   Grant,
   SendResult,
   SlotAddress,
@@ -15,7 +16,7 @@ import type {
 } from "@ecx/wallet";
 
 // The shapes the background sends are the wallet package's own types.
-export type { ApprovalPrompt, AssetAmount, ChainReport, ClearView, DangerousMode, Grant, SendResult, SlotReport, VaultStatus };
+export type { ApprovalPrompt, AssetAmount, ChainReport, ClearView, DangerousMode, DepositStatus, Grant, SendResult, SlotReport, VaultStatus };
 
 type Response<T> = { ok: true; result: T } | { ok: false; error: { code: number; message: string } };
 
@@ -82,6 +83,19 @@ export const reportedState = (slot: number) => send<SlotReport>({ kind: "account
  */
 export const startSend = (order: { slot: number; asset: string; amount: string; destination: string }) =>
   send<SendResult>({ kind: "send.start", ...order });
+
+/**
+ * Deposits `amount` sats of confirmed eCash to the Slot: the wallet builds the M5, the user reviews
+ * it in an approval window, the wallet signs and broadcasts it. Throws on refusal or rejection.
+ */
+export const startDeposit = (order: { slot: number; amount: string }) =>
+  send<{ txid: string; server: string }>({ kind: "deposit.start", ...order });
+
+/** The Slot's pending Deposits and where each stands. */
+export const listDeposits = (slot: number) => send<DepositStatus[]>({ kind: "deposit.list", slot });
+
+/** Stops watching a Deposit. */
+export const dismissDeposit = (txid: string) => send<null>({ kind: "deposit.dismiss", txid });
 
 export const listGrants = () => send<Grant[]>({ kind: "grants.list" });
 

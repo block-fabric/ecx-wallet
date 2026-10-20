@@ -31,3 +31,56 @@ pub extern "C" fn chain_entry() -> i32 {
 pub unsafe extern "C" fn derive_account(key: *const u8, key_len: usize, receive: u32, change: u32) -> i32 {
     ret_text(text(key, key_len).and_then(|k| ecx_l1::derive_account(k, receive, change)).and_then(|a| json(&a)))
 }
+
+/// A refusal travels as the error result, as JSON (`{ code, message }`), so the host can tell
+/// which rule refused the request.
+fn refusal(r: ecx_l1::Refusal) -> String {
+    json(&r).unwrap_or(r.message)
+}
+
+/// Slot → its Treasury script on this network, hex.
+#[no_mangle]
+pub extern "C" fn treasury_script(slot: u32) -> i32 {
+    ret_text(ecx_l1::treasury_script(slot))
+}
+
+/// Deposit order (JSON) + L1 Account Key → `{ psbt }` (an unsigned M5) as JSON, or a refusal.
+#[no_mangle]
+pub unsafe extern "C" fn build_deposit(order: *const u8, order_len: usize, key: *const u8, key_len: usize) -> i32 {
+    ret_text(text(order, order_len).and_then(|o| {
+        let k = text(key, key_len)?;
+        ecx_l1::build_deposit(o, k).map_err(refusal).and_then(|b| json(&b))
+    }))
+}
+
+/// Base64 PSBT → `null` if it passes the refusals that need no key, or a refusal.
+#[no_mangle]
+pub unsafe extern "C" fn check(payload: *const u8, payload_len: usize) -> i32 {
+    ret_text(text(payload, payload_len).and_then(|p| ecx_l1::check(p).map_err(refusal).map(|()| "null".into())))
+}
+
+/// Base64 PSBT + L1 Account Key → `{ kind: "clear", view }` or
+/// `{ kind: "blind", reason, verifiableFacts }` as JSON, or a refusal.
+#[no_mangle]
+pub unsafe extern "C" fn decode(payload: *const u8, payload_len: usize, key: *const u8, key_len: usize) -> i32 {
+    ret_text(text(payload, payload_len).and_then(|p| {
+        let k = text(key, key_len)?;
+        ecx_l1::decode(p, k).map_err(refusal).and_then(|d| json(&d))
+    }))
+}
+
+/// Base64 PSBT + L1 Account Key → the same PSBT (base64) with signatures on the owned inputs, or a
+/// refusal (a spend without the replay marker among them).
+#[no_mangle]
+pub unsafe extern "C" fn sign(payload: *const u8, payload_len: usize, key: *const u8, key_len: usize) -> i32 {
+    ret_text(text(payload, payload_len).and_then(|p| {
+        let k = text(key, key_len)?;
+        ecx_l1::sign(p, k).map_err(refusal)
+    }))
+}
+
+/// Signed base64 PSBT → `{ tx, txid }` (the raw transaction, hex) as JSON, or a refusal.
+#[no_mangle]
+pub unsafe extern "C" fn finalize(payload: *const u8, payload_len: usize) -> i32 {
+    ret_text(text(payload, payload_len).and_then(|p| ecx_l1::finalize(p).map_err(refusal).and_then(|f| json(&f))))
+}

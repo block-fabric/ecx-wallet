@@ -415,14 +415,17 @@ export async function setUpWallet(session, { phrase = ABANDON, password = WALLET
 
 /**
  * Waits until the unlocked home page's requests have settled: both account cards (eCash and Slot
- * 24) shown, each with its balance or why there is none. Close the page only after: a reply to a
- * closed page makes Firefox log, and each request derives a key, which counts as Vault activity.
+ * 24) shown, each with its balance or why there is none, and Slot 24's with its Deposits. Close
+ * the page only after: a reply to a closed page makes Firefox log, and each request derives a key,
+ * which counts as Vault activity.
  */
 export async function homeSettled(page) {
   await page.waitForFunction(
     () => {
       const cards = [...document.querySelectorAll("[data-account]")];
-      const settled = (card) => card.querySelector("[data-balance], [data-no-balance], [data-balance-error]") !== null;
+      const settled = (card) =>
+        card.querySelector("[data-balance], [data-no-balance], [data-balance-error]") !== null &&
+        (card.getAttribute("data-account") === "l1" || card.hasAttribute("data-deposits-ready"));
       return cards.length === 2 && cards.every(settled);
     },
     { timeout: 20_000 },

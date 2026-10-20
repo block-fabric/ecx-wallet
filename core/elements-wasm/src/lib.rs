@@ -32,6 +32,13 @@ pub unsafe extern "C" fn derive_account(starter: *const u8, starter_len: usize, 
     ret_text(text(starter, starter_len).and_then(|s| ecx_elements::derive_account(s, receive, change)).and_then(|a| json(&a)))
 }
 
+/// Slot 24 Starter → `{ address, destination, asset, minimum }` (what a Deposit is credited to)
+/// as JSON.
+#[no_mangle]
+pub unsafe extern "C" fn deposit_destination(starter: *const u8, starter_len: usize) -> i32 {
+    ret_text(text(starter, starter_len).and_then(ecx_elements::deposit_destination).and_then(|d| json(&d)))
+}
+
 /// A refusal travels as the error result, as JSON (`{ code, message }`), so the host can tell
 /// which rule refused the request.
 fn refusal(r: ecx_elements::Refusal) -> String {

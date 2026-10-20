@@ -1,13 +1,16 @@
 <script lang="ts">
   import {
+    dismissDeposit,
     l1Account,
     l1Reported,
     listAccounts,
+    listDeposits,
     lockVault,
     reportedState,
     unlockVault,
     vaultStatus,
     type ChainReport,
+    type DepositStatus,
     type SlotAccount,
     type SlotReport,
     type VaultStatus,
@@ -24,6 +27,8 @@
   let l1Report = $state<ChainReport | { error: string } | undefined>(undefined);
   /** Per Slot: what its Sidechain Server reports, or why it couldn't be read. */
   let reports = $state<Record<number, SlotReport | { error: string }>>({});
+  /** Per Slot: its pending Deposits, or why their status couldn't be read. */
+  let deposits = $state<Record<number, DepositStatus[] | { error: string }>>({});
   let password = $state("");
   let error = $state("");
   let busy = $state(false);
@@ -58,11 +63,40 @@
             (r) => (reports[slot] = r),
             (e) => (reports[slot] = { error: (e as Error).message }),
           );
+          loadDeposits(slot);
         }
       },
       (e) => (error = (e as Error).message),
     );
   });
+
+  function loadDeposits(slot: number) {
+    listDeposits(slot).then(
+      (d) => (deposits[slot] = d),
+      (e) => (deposits[slot] = { error: (e as Error).message }),
+    );
+  }
+
+  async function dismiss(slot: number, txid: string) {
+    await dismissDeposit(txid).catch((e) => (error = (e as Error).message));
+    loadDeposits(slot);
+  }
+
+  /** Where a Deposit stands, in words. */
+  function depositState(d: DepositStatus): string {
+    switch (d.state) {
+      case "confirming":
+        return `${d.confirmations} / 100 confirmations on eCash`;
+      case "awaitingCredit":
+        return `Waiting for the ${d.chainName} chain's operator to credit it (not automatic)`;
+      case "credited":
+        return `Credited, as reported by ${d.creditServer}`;
+      case "notFound":
+        return `${d.server} doesn't know this transaction: it may have lost the race for the Treasury, or been dropped`;
+      case "unavailable":
+        return `Status unavailable: ${d.error}`;
+    }
+  }
 
   async function act(action: () => Promise<VaultStatus>) {
     busy = true;
@@ -101,6 +135,43 @@
     <p class="reported" data-reported-by>
       Reported by {report.server}. This wallet doesn't verify it.
     </p>
+  {/if}
+{/snippet}
+
+{#snippet pendingDeposits(slot: number)}
+  {@const list = deposits[slot]}
+  {#if list !== undefined && "error" in list}
+    <p class="error small" data-deposits-error>Deposits unavailable: {list.error}</p>
+  {:else if list !== undefined && list.length > 0}
+    <div class="deposits">
+      <h2>Deposits from eCash</h2>
+      <ul class="stack">
+        {#each list as d (d.txid)}
+          <li class="deposit" data-deposit={d.txid} data-deposit-state={d.state}>
+            <div class="deposit-head">
+              <strong>{d.value} sats</strong>
+              <button class="small-button" onclick={() => dismiss(slot, d.txid)} data-deposit-dismiss>Dismiss</button>
+            </div>
+            <span class="small" data-deposit-status>{depositState(d)}</span>
+            {#if d.state === "awaitingCredit"}
+              <details data-claim>
+                <summary>Show claim details</summary>
+                <p class="muted small">
+                  Anyone running the chain's node can credit it with <code>importdrivechaindeposit</code> and these arguments:
+                </p>
+                <dl class="claim">
+                  <dt>txid</dt><dd><code data-claim-txid>{d.claim.txid}</code></dd>
+                  <dt>vout</dt><dd><code data-claim-vout>{d.claim.vout}</code></dd>
+                  <dt>Block hash</dt><dd><code data-claim-block>{d.claim.blockHash}</code></dd>
+                  <dt>Address</dt><dd><code data-claim-address>{d.claim.address}</code></dd>
+                  <dt>Value (sats)</dt><dd><code data-claim-value>{d.claim.value}</code></dd>
+                </dl>
+              </details>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    </div>
   {/if}
 {/snippet}
 
@@ -165,15 +236,17 @@
     {#each accounts ?? [] as account (account.slot)}
       {#each account.addresses.slice(0, 1) as { chain, address } (address)}
         {@const report = reports[account.slot]}
-        <section class="card" data-account={account.slot}>
+        <section class="card" data-account={account.slot} data-deposits-ready={deposits[account.slot] !== undefined ? "" : undefined}>
           <div class="account-head">
             <h2>Slot {account.slot}</h2>
             <span class="chip" data-account-chain>{chain}</span>
           </div>
           {@render reported(report)}
+          {@render pendingDeposits(account.slot)}
           {#if report !== undefined && !("error" in report)}
             <a class="button primary block" href="#/send/{account.slot}" data-send-link><Icon name="send" /> Send</a>
           {/if}
+          <a class="button block" href="#/deposit/{account.slot}" data-deposit-link><Icon name="deposit" /> Deposit from eCash</a>
           {@render receiveAddress(address)}
         </section>
       {/each}
@@ -267,6 +340,33 @@
     border-radius: var(--radius-sm);
     background: var(--surface-2);
     user-select: all;
+  }
+  .deposits {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+  .deposit {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .deposit-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .claim {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2px 10px;
+    font-size: 0.8rem;
+  }
+  .claim dd {
+    overflow-wrap: anywhere;
   }
   .nav-row {
     flex-direction: row;

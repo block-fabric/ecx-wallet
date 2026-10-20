@@ -46,12 +46,20 @@ _Avoid_: CTIP (BIP300's name for it), escrow
 Moving coins from eCash into a sidechain by paying them into its Treasury.
 _Avoid_: Peg-in
 
+**Replay marker**:
+What makes an L1 spend valid on eCash only: the network's `nLockTime` and a non-final `nSequence` on every input. The wallet signs no L1 spend without it.
+_Avoid_: Replay protection (the property, not the marker), coin split
+
+**Activation**:
+The parent-chain block whose M2 made a Slot active, pinned in its Chain Entry once checked. The wallet needs it to make a Slot's first Deposit.
+_Avoid_: Activation height (it's a block: height and hash)
+
 **Withdrawal**:
 Moving coins from a sidechain back to eCash, paid out of its Treasury once miners approve it over several months.
 _Avoid_: Peg-out
 
 **Chain Entry**:
-The description of one chain, eCash itself or a sidechain, that ships with a Wallet Base release: its Slot and parent chain (neither for eCash, the root), its networks, and on each its identity block, default Sidechain Server and Official Apps.
+The description of one chain, eCash itself or a sidechain, that ships with a Wallet Base release: its Slot and parent chain (neither for eCash, the root), its networks, and on each its identity block, Activation (for a Slot, once pinned), default Sidechain Server and Official Apps.
 _Avoid_: Chain manifest, chain descriptor, network profile
 
 **Sidechain Server**:

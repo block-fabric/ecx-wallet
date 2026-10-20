@@ -50,7 +50,8 @@
     }
   }
 
-  const amount = (a: AssetAmount) => `${a.amount} (asset ${shortAsset(a.asset)})`;
+  /** An amount with its unit: sats on eCash (no assets), else the asset. */
+  const amount = (a: AssetAmount) => (a.asset === "" ? `${a.amount} sats` : `${a.amount} (asset ${shortAsset(a.asset)})`);
 
   const SIGHASH_NAMES: Record<number, string> = {
     0x02: "NONE",
@@ -62,6 +63,22 @@
 
   /** A dangerous mode, in words. The Chain Module reports it as data; the words are the app's. */
   function describe(mode: DangerousMode, view: ClearView): string {
+    if (mode.kind === "deposit" || mode.kind === "firstDeposit") {
+      const output = view.outputs.find((o) => o.index === mode.output);
+      const d = output?.destination.kind === "deposit" ? output.destination : undefined;
+      const slot = d ? `Slot ${d.slot}${d.credit ? ` (${d.credit.chainName})` : ""}` : "a Slot";
+      if (mode.kind === "firstDeposit") {
+        return (
+          `${slot} has no Treasury on eCash's server, so this is its first Deposit. The wallet can't confirm the Slot is active ` +
+          "and that it has no Treasury yet: if either is wrong, the funds can be lost. If someone else's first Deposit is pending, " +
+          "this one can be left stuck unconfirmed."
+        );
+      }
+      return (
+        `This is a Deposit to ${slot}: the funds leave eCash, and only come back through a Withdrawal, a BIP300 miner vote ` +
+        "of about 3 to 6 months. Crediting it on the sidechain isn't automatic: it waits for the chain's operator to import it."
+      );
+    }
     if (mode.kind === "nonDefaultSighash") {
       const name = SIGHASH_NAMES[mode.sighash] ?? "non-standard";
       return (
@@ -189,8 +206,17 @@
         {#each view.outputs as output (output.index)}
           <li class="card output" data-output>
             <div class="output-head">
-              <span class="amount">{output.amount}</span>
-              <span class="muted small">asset <code title={output.asset}>{shortAsset(output.asset)}</code></span>
+              {#if output.destination.kind === "deposit"}
+                <span class="amount" data-deposit-amount>{output.destination.deposit}</span>
+                <span class="muted small">sats</span>
+              {:else}
+                <span class="amount">{output.amount}</span>
+                {#if output.asset === ""}
+                  <span class="muted small">sats</span>
+                {:else}
+                  <span class="muted small">asset <code title={output.asset}>{shortAsset(output.asset)}</code></span>
+                {/if}
+              {/if}
               <span class="index muted small">Output {output.index}</span>
             </div>
             {#if output.destination.kind === "address"}
@@ -199,6 +225,25 @@
                 <span class="badge ok" data-yours><Icon name="check" size={14} /> Yours (verified by this wallet)</span>
               {:else}
                 <span class="badge" data-not-yours>Not yours</span>
+              {/if}
+            {:else if output.destination.kind === "deposit"}
+              {@const d = output.destination}
+              <div class="small" data-deposit>
+                Deposit {d.deposit} sats to Slot {d.slot}{d.credit ? ` (${d.credit.chainName})` : ""}.
+                {#if d.credit}
+                  {d.deposit} sats credited to <code data-destination>{d.credit.address}</code> after {d.credit.confirmations} blocks, once
+                  the operator imports it.
+                {:else}
+                  Credited to <code data-destination>{d.text ?? d.data}</code>.
+                {/if}
+              </div>
+              <div class="muted small" data-treasury>
+                Slot {d.slot}'s Treasury: {d.treasuryBefore} → {output.amount} sats (output {output.index}, its address in output {d.dataOutput})
+              </div>
+              {#if d.credit?.yours}
+                <span class="badge ok" data-yours><Icon name="check" size={14} /> Credited to you (verified by this wallet)</span>
+              {:else}
+                <span class="badge bad" data-not-yours>Not credited to you</span>
               {/if}
             {:else}
               <div class="small">
@@ -225,7 +270,14 @@
       <dt>Inputs</dt>
       <dd>
         {#each view.inputs as input (input.index)}
-          <div data-input>Input {input.index}: {amount(input)} {input.yours ? "(yours: you sign it)" : "(not yours)"}</div>
+          <div data-input>
+            Input {input.index}: {amount(input)}
+            {input.treasury !== undefined
+              ? `(Slot ${input.treasury}'s Treasury: spent and recreated)`
+              : input.yours
+                ? "(yours: you sign it)"
+                : "(not yours)"}
+          </div>
         {/each}
       </dd>
     </dl>

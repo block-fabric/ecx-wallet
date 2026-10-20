@@ -1,0 +1,214 @@
+//! `build_deposit(order, account_key)`: an M5, the L1 transaction that deposits to a Slot (BIP300;
+//! the enforcer's `create_deposit_psbt`), as an unsigned PSBT for the normal review.
+//!
+//! - Inputs: the Slot's Treasury, if it has one (empty scriptSig), then the account's own coins.
+//! - Outputs: the new Treasury `OP_DRIVECHAIN <slot> OP_TRUE` holding the old value plus the
+//!   amount, then directly after it a single-push `OP_RETURN` with the destination bytes (the Slot's
+//!   Chain Module's `depositDestination`), then change if any.
+//! - The replay marker: `nLockTime` is the network's `replayLockTime`, every `nSequence` non-final.
+//!
+//! The module picks the coins (largest first) and computes the fee. It reads every value and script
+//! from the transactions it is handed, never from what the server said about them.
+use std::str::FromStr;
+
+use bitcoin::absolute::LockTime;
+use bitcoin::consensus::encode::deserialize_hex;
+use bitcoin::psbt::{Input, Output, Psbt};
+use bitcoin::script::PushBytesBuf;
+use bitcoin::transaction::Version;
+use bitcoin::{Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness};
+use serde::{Deserialize, Serialize};
+
+use crate::psbt::{refuse, treasury_script_of, Refusal, RefusalCode};
+use crate::{hex, network, AccountKeys};
+
+/// Every input's `nSequence`: non-final (the replay marker) and opting in to replacement, as
+/// Bitcoin Core's wallet does.
+const SEQUENCE: Sequence = Sequence::ENABLE_RBF_NO_LOCKTIME;
+
+/// Change below this is left to the fee rather than paid to a change address.
+const MIN_CHANGE: u64 = 546;
+
+/// What to deposit, and what to build it from.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DepositOrder {
+    pub slot: u8,
+    /// Sats, as a decimal string: what the Treasury grows by.
+    pub amount: String,
+    /// Hex: the bytes the Slot credits the Deposit to (its Chain Module's `depositDestination`).
+    pub destination: String,
+    /// Sats per 1000 vbytes.
+    pub fee_rate: u64,
+    /// The account's coins to choose from (confirmed ones: the wallet's rule).
+    pub coins: Vec<Coin>,
+    /// The Slot's current Treasury, or none for its first Deposit.
+    pub treasury: Option<PrevOut>,
+    /// The change address's index (the account's first unused one).
+    pub change_index: u32,
+}
+
+/// One of the account's outputs: the transaction holding it, and which address it pays.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Coin {
+    /// The whole transaction, hex.
+    pub tx: String,
+    pub vout: u32,
+    /// 0 receive, 1 change.
+    pub chain: u32,
+    pub index: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PrevOut {
+    /// The whole transaction, hex.
+    pub tx: String,
+    pub vout: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Built {
+    /// Base64.
+    pub psbt: String,
+}
+
+/// The Treasury script of `slot` on this network, hex: what the wallet looks the Treasury up by.
+pub fn treasury_script(slot: u32) -> Result<String, String> {
+    let slot = u8::try_from(slot).map_err(|_| format!("{slot} isn't a Slot (0-255)"))?;
+    Ok(hex(treasury_script_of(slot).as_bytes()))
+}
+
+struct Spendable {
+    outpoint: OutPoint,
+    tx: Transaction,
+    txout: TxOut,
+    chain: u32,
+    index: u32,
+}
+
+fn malformed(message: impl Into<String>) -> Refusal {
+    refuse(RefusalCode::Malformed, message)
+}
+
+fn parse_tx(tx: &str, what: &str) -> Result<Transaction, Refusal> {
+    deserialize_hex::<Transaction>(tx).map_err(|e| malformed(format!("{what} isn't a transaction: {e}")))
+}
+
+pub fn build_deposit(order_json: &str, account_key: &str) -> Result<Built, Refusal> {
+    let order: DepositOrder = serde_json::from_str(order_json).map_err(|e| malformed(format!("Invalid deposit order: {e}")))?;
+    let keys = AccountKeys::new(account_key).map_err(|e| refuse(RefusalCode::InvalidAccountKey, e))?;
+    let amount = u64::from_str(&order.amount).ok().filter(|a| *a > 0).ok_or_else(|| malformed("The amount must be a whole number of sats above 0."))?;
+    let destination = (bitcoin::hex::FromHex::from_hex(&order.destination).ok() as Option<Vec<u8>>)
+        .filter(|d| !d.is_empty())
+        .and_then(|d| PushBytesBuf::try_from(d).ok())
+        .ok_or_else(|| malformed("The destination must be 1 to 520 bytes of hex."))?;
+
+    let mut coins = order
+        .coins
+        .iter()
+        .enumerate()
+        .map(|(i, coin)| {
+            let tx = parse_tx(&coin.tx, &format!("Coin {i}'s transaction"))?;
+            let txout = tx.output.get(coin.vout as usize).cloned().ok_or_else(|| malformed(format!("Coin {i}'s transaction has no output {}.", coin.vout)))?;
+            let ours = (coin.chain <= 1).then(|| keys.script(coin.chain, coin.index).ok()).flatten();
+            if ours.as_ref() != Some(&txout.script_pubkey) {
+                return Err(malformed(format!("Coin {i} doesn't pay this account's address {}/{}.", coin.chain, coin.index)));
+            }
+            Ok(Spendable { outpoint: OutPoint { txid: tx.compute_txid(), vout: coin.vout }, tx, txout, chain: coin.chain, index: coin.index })
+        })
+        .collect::<Result<Vec<_>, Refusal>>()?;
+    coins.sort_by(|a, b| b.txout.value.cmp(&a.txout.value).then(a.outpoint.cmp(&b.outpoint)));
+
+    let treasury_script = treasury_script_of(order.slot);
+    let treasury = order
+        .treasury
+        .as_ref()
+        .map(|prev| {
+            let tx = parse_tx(&prev.tx, "The Treasury's transaction")?;
+            let txout = tx.output.get(prev.vout as usize).cloned().ok_or_else(|| malformed(format!("The Treasury's transaction has no output {}.", prev.vout)))?;
+            if txout.script_pubkey != treasury_script {
+                return Err(malformed(format!("The Treasury output doesn't pay Slot {}'s Treasury script.", order.slot)));
+            }
+            Ok((OutPoint { txid: tx.compute_txid(), vout: prev.vout }, tx, txout))
+        })
+        .transpose()?;
+    let before = treasury.as_ref().map_or(0, |(_, _, txout)| txout.value.to_sat());
+    let new_treasury = before.checked_add(amount).ok_or_else(|| malformed("The amount is too large."))?;
+
+    let change_script = keys.script(1, order.change_index).map_err(|e| refuse(RefusalCode::InvalidAccountKey, e))?;
+    let unsigned = |chosen: &[Spendable], change: Option<u64>| {
+        let mut input: Vec<TxIn> = vec![];
+        if let Some((outpoint, _, _)) = &treasury {
+            input.push(TxIn { previous_output: *outpoint, script_sig: ScriptBuf::new(), sequence: SEQUENCE, witness: Witness::new() });
+        }
+        input.extend(chosen.iter().map(|coin| TxIn { previous_output: coin.outpoint, script_sig: ScriptBuf::new(), sequence: SEQUENCE, witness: Witness::new() }));
+        let mut output = vec![
+            TxOut { value: Amount::from_sat(new_treasury), script_pubkey: treasury_script.clone() },
+            TxOut { value: Amount::ZERO, script_pubkey: ScriptBuf::new_op_return(&destination) },
+        ];
+        if let Some(change) = change {
+            output.push(TxOut { value: Amount::from_sat(change), script_pubkey: change_script.clone() });
+        }
+        Transaction { version: Version::TWO, lock_time: LockTime::from_consensus(network().params.replay_lock_time), input, output }
+    };
+    // The fee for `tx` once signed: every P2WPKH input gets a witness of the largest size it can have.
+    let fee = |tx: &Transaction| {
+        let mut signed = tx.clone();
+        let treasury_inputs = usize::from(treasury.is_some());
+        for input in signed.input.iter_mut().skip(treasury_inputs) {
+            input.witness = Witness::from_slice(&[vec![0u8; 72], vec![0u8; 33]]);
+        }
+        let vsize = signed.weight().to_wu().div_ceil(4);
+        (vsize * order.fee_rate).div_ceil(1000)
+    };
+
+    let mut total = 0u64;
+    for count in 1..=coins.len() {
+        total += coins[count - 1].txout.value.to_sat();
+        let chosen = &coins[..count];
+        let with_change = fee(&unsigned(chosen, Some(0)));
+        if let Some(change) = total.checked_sub(amount + with_change).filter(|change| *change >= MIN_CHANGE) {
+            return psbt(unsigned(chosen, Some(change)), chosen, &treasury, Some(order.change_index), &keys);
+        }
+        if total >= amount + fee(&unsigned(chosen, None)) {
+            return psbt(unsigned(chosen, None), chosen, &treasury, None, &keys);
+        }
+    }
+    let needed = amount + fee(&unsigned(&coins, None));
+    Err(refuse(
+        RefusalCode::InsufficientFunds,
+        format!("Not enough confirmed eCash: the deposit needs {needed} sats with its fee, and the wallet has {total}."),
+    ))
+}
+
+fn psbt(
+    tx: Transaction,
+    chosen: &[Spendable],
+    treasury: &Option<(OutPoint, Transaction, TxOut)>,
+    change_index: Option<u32>,
+    keys: &AccountKeys,
+) -> Result<Built, Refusal> {
+    let mut psbt = Psbt::from_unsigned_tx(tx).map_err(|e| malformed(format!("Can't build the PSBT: {e}")))?;
+    let mut inputs = vec![];
+    if let Some((_, tx, _)) = treasury {
+        inputs.push(Input { non_witness_utxo: Some(tx.clone()), final_script_sig: Some(ScriptBuf::new()), ..Input::default() });
+    }
+    for coin in chosen {
+        let pubkey = keys.public_key(coin.chain, coin.index).map_err(|e| refuse(RefusalCode::InvalidAccountKey, e))?;
+        inputs.push(Input {
+            non_witness_utxo: Some(coin.tx.clone()),
+            witness_utxo: Some(coin.txout.clone()),
+            bip32_derivation: [(pubkey, (keys.fingerprint, keys.path(coin.chain, coin.index)))].into(),
+            ..Input::default()
+        });
+    }
+    psbt.inputs = inputs;
+    if let Some(index) = change_index {
+        let pubkey = keys.public_key(1, index).map_err(|e| refuse(RefusalCode::InvalidAccountKey, e))?;
+        psbt.outputs[2] = Output { bip32_derivation: [(pubkey, (keys.fingerprint, keys.path(1, index)))].into(), ..Output::default() };
+    }
+    Ok(Built { psbt: psbt.to_string() })
+}

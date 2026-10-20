@@ -6,6 +6,8 @@
 import {
   createAccounts,
   createChainModules,
+  createDeposits,
+  esploraClient,
   createL1Module,
   createProviderHandler,
   createPullPath,
@@ -20,9 +22,11 @@ import {
   type ApprovalPrompt,
   type ConnectAnswer,
   type ConnectPrompt,
+  type DepositStore,
   type Grant,
   type GrantStore,
   type KeyValueStore,
+  type PendingDeposit,
   type SigningApproval,
   type VaultModule,
 } from "@ecx/wallet";
@@ -97,6 +101,24 @@ const grants: GrantStore = {
     return Object.entries(all)
       .filter(([key]) => key.startsWith(GRANT_PREFIX))
       .map(([, grant]) => grant as Grant);
+  },
+};
+
+// Deposits the wallet broadcast and still watches, until credited or dismissed.
+const DEPOSIT_PREFIX = "deposit:";
+
+const depositStore: DepositStore = {
+  async list() {
+    const all = await chrome.storage.local.get(null);
+    return Object.entries(all)
+      .filter(([key]) => key.startsWith(DEPOSIT_PREFIX))
+      .map(([, deposit]) => deposit as PendingDeposit);
+  },
+  async put(deposit) {
+    await chrome.storage.local.set({ [`${DEPOSIT_PREFIX}${deposit.txid}`]: deposit });
+  },
+  async remove(txid) {
+    await chrome.storage.local.remove(`${DEPOSIT_PREFIX}${txid}`);
   },
 };
 
@@ -220,6 +242,19 @@ const handleProviderRequest = createProviderHandler({
 // The pull path: each Slot's Sidechain Server, in the Server API its Chain Entry names.
 const pullPath = createPullPath({ ...signing, ...keys, l1Module, sidechainServer: (entry, network) => sidechainServer(entry, network) });
 
+// Deposits: the L1 module builds the M5 from the wallet's own coins, over eCash's Esplora.
+const deposits = createDeposits({
+  ...keys,
+  chainModule,
+  l1Module,
+  openSigningApproval,
+  isUnlocked: signing.isUnlocked,
+  esplora: (entry, network) =>
+    esploraClient({ url: network.sidechainServer.url, identityBlock: network.identityBlock, chainName: entry.name }, (...args) => fetch(...args)),
+  store: depositStore,
+  now: () => Date.now(),
+});
+
 /** The requester's web origin as the browser reports it for a content-script message. */
 function requesterOrigin(sender: chrome.runtime.MessageSender): string | undefined {
   if (sender.id !== chrome.runtime.id || sender.tab === undefined || sender.frameId !== 0) return undefined;
@@ -294,6 +329,17 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
         amount: String(message.amount ?? ""),
         destination: String(message.destination ?? ""),
       });
+    case "deposit.start":
+      // Resolves once the M5 is broadcast (after the user's approval).
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      return deposits.start(supportedSlot(message.slot), String(message.amount ?? ""));
+    case "deposit.list":
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      return deposits.list(supportedSlot(message.slot));
+    case "deposit.dismiss":
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      await deposits.dismiss(String(message.txid ?? ""));
+      return null;
     case "vault.status":
     case "vault.generate":
     case "vault.create":

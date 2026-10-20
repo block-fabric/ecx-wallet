@@ -55,6 +55,23 @@ fn a_different_starter_derives_different_addresses() {
 }
 
 #[test]
+fn a_deposit_is_credited_to_the_first_receive_address_written_out_in_utf8() {
+    let d = ecx_elements::deposit_destination(STARTER).unwrap();
+    assert_eq!(d.address, "elements1qew44aehkjstjm56ng2rjrz57vwxh5g9su6dlpm");
+    assert_eq!(d.destination, d.address.bytes().map(|b| format!("{b:02x}")).collect::<String>());
+    assert_eq!(d.asset, "5836dcc06130dcf6a65b6ac493813fd65559955283e44cc3f07966294eccb2c8", "the pegged asset");
+    assert_eq!(d.minimum, "3000");
+    assert!(ecx_elements::deposit_destination("not a mnemonic").is_err());
+}
+
+#[test]
+fn slot_24s_betanet_activation_is_pinned() {
+    let activation = ecx_elements::network().activation.as_ref().unwrap();
+    assert_eq!(activation.height, 970_715);
+    assert_eq!(activation.hash, "000000000000000094c4b58e192ea0105c5e82c3eaf168ab53090254bc9a3c3c");
+}
+
+#[test]
 fn something_that_is_not_a_starter_is_refused() {
     assert!(derive_account("not a mnemonic", 1, 0).is_err());
 }
@@ -65,7 +82,7 @@ fn declare_reports_the_betanet_slot_24_binding_for_psets() {
     assert_eq!(d.binding.chain, "ecash:betanet-s24");
     assert_eq!(d.binding.format, "pset");
     assert_eq!(d.binding.payload_versions, vec!["1".to_string()]);
-    assert!(d.capabilities.is_empty());
+    assert_eq!(d.capabilities, ["depositDestination"]);
 }
 
 #[test]

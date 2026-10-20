@@ -56,7 +56,7 @@ the extension build turns those URLs into `host_permissions` and CSP `connect-sr
   block 967,680; docs/adr/0003). A mismatch is a hard error, as is a server that hasn't reached H.
   It then sums the confirmed explicit outputs (`/address/:a/utxo`) of the first 20 receive and 20
   change addresses per asset (eCash's outputs have no asset: they're its coin, `NATIVE_COIN`,
-  shown in sats). Send isn't available over Esplora yet (#28; on eCash, #31).
+  shown in sats). Send isn't available over Esplora yet (#28); eCash's one spend is a Deposit (below).
 - `ecx-v0`, the Standard Sidechain API (`standard-sidechain-api.ts`, `stub-server/README.md`):
   registers the descriptor and first 20 receive addresses before every call. Its Send has the
   server build the transfer; the Signing Request goes through the same validation, Chain Module
@@ -67,6 +67,21 @@ the extension build turns those URLs into `host_permissions` and CSP `connect-sr
 
 The home page (`l1.reported`, `accounts.reported`) shows the balance per asset, labelled "Reported
 by <server URL>"; the Send screen is `#/send/<slot>` (`send.start`), for Slots only.
+
+Deposit (`wallet/src/deposit.ts`, #31; docs/adr/0004): "Deposit from eCash" on a Slot card opens
+`#/deposit/<slot>` (`deposit.start`). The Slot's Chain Module says what the Deposit is credited to
+(`depositDestination`: Elements' first receive address as UTF-8, minimum 3,000 sats, credit exactly
+the value). `treasury.ts` finds the Slot's Treasury on eCash's Esplora by #15's strict exactly-one
+rule (`/scripthash/:h/utxo`, following pending M5s); with none, only a pinned `activation` in the
+Slot's Chain Entry allows a first Deposit. `l1.wasm`'s `build_deposit` builds the M5 from the
+account's confirmed coins (largest first, fee at the 6-block estimate, change to the first unused
+change address), and every input carries its previous transaction so the module checks every value
+itself. The L1 Decoder's Clear View goes to the normal approval window; then `sign`, `finalize` and
+`POST /tx`. `l1.wasm` refuses to check, decode, sign or finalize any spend without the replay marker
+(betanet's `nLockTime` 499999999, non-final `nSequence`). Pending Deposits sit in `storage.local`
+(`deposit:<txid>`) and show under the Slot card's balance (`deposit.list`): "n / 100"
+confirmations, then waiting for the operator's `importdrivechaindeposit` (with the claim
+arguments), then "credited" once the Slot's server reports an output of exactly the value.
 
 Signing (`signTransaction`): the Provider handler checks, in the spec's order, the envelope (unknown
 MAJOR → 4200, unknown fields ignored, expired → -32602), the Grant (Slot + method → 4100), then
@@ -131,7 +146,9 @@ default), so none reaches the public explorer; `extension-loads.test` loads the 
 `e2e/harness.mjs` exports `launchWallet(name, { build })` (`"e2e"` by default, or `"shipped"`) / `launchBrave()` / `launchFirefox()`, `setUpWallet(session)`
 (imports `ABANDON`, no passphrase, and leaves the wallet unlocked), `serveTestApp()`
 and `openTestApp(session, app, host)`, `serveEsplora(config)` (the stub Esplora server where the e2e build's Chain Entry
-names Slot 24's server, `http://127.0.0.1:24024`, so one test file using it at a time), `serveL1Esplora(config)` (the same for eCash's, `http://127.0.0.1:24000`), `serveSidechainServer(config)` (the
+names Slot 24's server, `http://127.0.0.1:24024`, so one test file using it at a time), `serveL1Esplora(config)` (the same for eCash's, `http://127.0.0.1:24000`;
+it indexes the raw transactions in `config.txs` as Esplora would and accepts broadcasts, and
+`@ecx/stub-server/bitcoin-tx` makes and parses them), `serveSidechainServer(config)` (the
 Standard Sidechain API stub on a free port), `importWallet()` (`wallet/` bundled for node), and `openWalletPage(session, "#/grants")` for a wallet screen (it waits
 for `[data-screen-ready]`; Firefox's extension UUID is pinned so its pages have a known URL). Each `<name>.localhost` host is its own origin (Grants are per
 origin). The test Sidechain App (`e2e/test-app/`) exposes `window.testApp.request(method, params)`

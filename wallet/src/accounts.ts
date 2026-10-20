@@ -1,7 +1,17 @@
 // Accounts: which Chain Module serves a chain, and the addresses it derives. Routing rule (spec
 // #18, story 44; docs/adr/0003): a module only ever receives the key its chain's place in the tree
 // calls for. eCash (the root) gets the L1 Account Key; a Slot under it gets that Slot's Starter.
-import { loadChainModule, type ChainEntry, type ChainKey, type ChainModule, type L1AccountKey, type NetworkEntry, type Starter } from "./chain-module";
+import {
+  loadChainModule,
+  loadL1Module,
+  type ChainEntry,
+  type ChainKey,
+  type ChainModule,
+  type L1AccountKey,
+  type L1Module,
+  type NetworkEntry,
+  type Starter,
+} from "./chain-module";
 
 /** Slots with a bundled Chain Module, and the .wasm each ships as. */
 export const CHAIN_MODULE_FILES: Readonly<Record<number, string>> = { 24: "elements.wasm" };
@@ -35,8 +45,8 @@ export function createChainModules(fetchWasm: (file: string) => Promise<BufferSo
 }
 
 /** eCash's Chain Module, lazily instantiated once in its own WASM instance. */
-export function createL1Module(fetchWasm: (file: string) => Promise<BufferSource>): () => Promise<ChainModule<L1AccountKey>> {
-  return lazily(() => fetchWasm(L1_MODULE_FILE).then((b) => loadChainModule<L1AccountKey>(b)));
+export function createL1Module(fetchWasm: (file: string) => Promise<BufferSource>): () => Promise<L1Module> {
+  return lazily(() => fetchWasm(L1_MODULE_FILE).then(loadL1Module));
 }
 
 /** An address as the Provider and the account screen give it out. */
@@ -97,12 +107,12 @@ export interface Keys {
 
 export interface ChainModules {
   chainModule(slot: number): Promise<ChainModule<Starter>> | undefined;
-  l1Module(): Promise<ChainModule<L1AccountKey>>;
+  l1Module(): Promise<L1Module>;
 }
 
 /** A chain's module, the network it serves, and its key, fetched only when needed. */
-export interface KeyedChain<K extends ChainKey> {
-  module: ChainModule<K>;
+export interface KeyedChain<K extends ChainKey, M extends ChainModule<K> = ChainModule<K>> {
+  module: M;
   entry: ChainEntry;
   network: NetworkEntry;
   chain: string;
@@ -113,7 +123,7 @@ export interface KeyedChain<K extends ChainKey> {
 export function createKeyRouting(deps: Keys & ChainModules) {
   return {
     /** eCash: the root, which gets the L1 Account Key. */
-    async l1(): Promise<KeyedChain<L1AccountKey>> {
+    async l1(): Promise<KeyedChain<L1AccountKey, L1Module>> {
       const module = await deps.l1Module();
       const { entry, network, chain } = servedNetwork(module);
       assertRoot(entry, network);

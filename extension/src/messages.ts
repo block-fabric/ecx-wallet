@@ -44,6 +44,10 @@ export type BackgroundMessage =
   | { kind: "accounts.reported"; slot: number }
   // The wallet's own Send (pull path): wallet pages only.
   | { kind: "send.start"; slot: number; asset: string; amount: string; destination: string }
+  // Deposit from eCash to a Slot, and the Slot's pending Deposits: wallet pages only.
+  | { kind: "deposit.start"; slot: number; amount: string }
+  | { kind: "deposit.list"; slot: number }
+  | { kind: "deposit.dismiss"; txid: string }
   // Vault: accepted only from the wallet's own pages.
   | { kind: "vault.status" }
   | { kind: "vault.generate" }
