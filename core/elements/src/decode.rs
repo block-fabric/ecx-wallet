@@ -1,9 +1,8 @@
 //! `decode(payload, starter)`: the request's refusals (spec "Signing Request", rules 5-7), then
 //! either a Clear View or `Blind { reason, verifiableFacts }`.
 //!
-//! The Decoder (Clear View) arrives in the next ticket; until then every request that isn't
-//! refused is Blind. Whatever the Decoder can't fully explain stays Blind, never a partial Clear
-//! View. The verifiable facts are what the module can prove on its own: they never come from the
+//! The Decoder itself is `clear.rs`. Whatever it can't fully explain (unknown fields included) is
+//! Blind, never a partial Clear View. The verifiable facts are what the module can prove on its own: they never come from the
 //! requester's hints.
 use std::collections::BTreeMap;
 use std::str::FromStr;
@@ -16,6 +15,7 @@ use elements_miniscript::elements::script::Instruction;
 use elements_miniscript::elements::{BlockHash, Script};
 use serde::Serialize;
 
+use crate::clear::{clear_view, ClearView};
 use crate::network;
 use crate::ownership::Wallet;
 
@@ -26,6 +26,8 @@ pub enum Decoded {
     /// The module can't show what this request means; only the facts it can prove.
     #[serde(rename_all = "camelCase")]
     Blind { reason: String, verifiable_facts: VerifiableFacts },
+    /// The Decoder fully understands the request: here is what it does.
+    Clear { view: ClearView },
 }
 
 /// What the module proves about a request without understanding it.
@@ -166,12 +168,14 @@ pub fn decode(payload: &str, starter: &str) -> Result<Decoded, Refusal> {
     let pset = validated(payload)?;
     let wallet = Wallet::new(starter).map_err(|e| refuse(RefusalCode::InvalidStarter, e))?;
     let facts = verifiable_facts(&pset, &wallet);
-    let reason = if facts.unknown_fields.is_empty() {
-        "The Elements Decoder can't show a Clear View of this request."
-    } else {
-        "The request contains fields the Elements Decoder doesn't understand."
-    };
-    Ok(Decoded::Blind { reason: reason.into(), verifiable_facts: facts })
+    if !facts.unknown_fields.is_empty() {
+        let reason = "The request contains fields the Elements Decoder doesn't understand.";
+        return Ok(Decoded::Blind { reason: reason.into(), verifiable_facts: facts });
+    }
+    match clear_view(&pset, &wallet) {
+        Ok(view) => Ok(Decoded::Clear { view }),
+        Err(why) => Ok(Decoded::Blind { reason: format!("The Elements Decoder can't fully explain this request: {why}"), verifiable_facts: facts }),
+    }
 }
 
 fn verifiable_facts(pset: &PartiallySignedTransaction, wallet: &Wallet) -> VerifiableFacts {
@@ -234,7 +238,7 @@ fn proprietary(key: &ProprietaryKey) -> String {
 }
 
 /// An OP_RETURN whose first push is the parent (L1) chain's genesis: a native-withdrawal burn.
-fn is_peg_out_burn(script: &Script) -> bool {
+pub(crate) fn is_peg_out_burn(script: &Script) -> bool {
     let parent = BlockHash::from_str(&network().parent_genesis_hash).expect("Chain Entry parent genesis is valid");
     let mut instructions = script.instructions();
     script.is_op_return()

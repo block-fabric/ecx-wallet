@@ -31,7 +31,21 @@ export interface VerifiableFacts {
   dangerousFlags: string[];
 }
 
-export type Decoded = { kind: "blind"; reason: string; verifiableFacts: VerifiableFacts };
+export type Destination =
+  | { kind: "address"; address: string; yours: boolean }
+  | { kind: "pegOut"; l1ScriptPubkey: string; payout: string; parentFee: string };
+
+export type DangerousMode = { kind: "nonDefaultSighash"; input: number; sighash: number } | { kind: "pegOutBurn"; output: number };
+
+/** What a request the Chain Module fully understands does. */
+export interface ClearView {
+  dangerousModes: DangerousMode[];
+  inputs: (AssetAmount & { index: number; yours: boolean })[];
+  outputs: (AssetAmount & { index: number; destination: Destination })[];
+  fee: AssetAmount;
+}
+
+export type Decoded = { kind: "clear"; view: ClearView } | { kind: "blind"; reason: string; verifiableFacts: VerifiableFacts };
 
 export interface SignPrompt {
   kind: "sign";

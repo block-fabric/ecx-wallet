@@ -175,3 +175,32 @@ pub fn peg_out_burn_script() -> Script {
         .push_slice(&1_000u64.to_be_bytes())
         .into_script()
 }
+
+/// `starter`'s address at `<chain>/<index>`, in the Chain Entry's encoding (`elements1…`).
+pub fn address(starter: &str, chain: u32, index: u32) -> String {
+    use elements_miniscript::elements::{Address, AddressParams};
+    let p = &network().address_params;
+    let params: &'static AddressParams = Box::leak(Box::new(AddressParams {
+        p2pkh_prefix: p.p2pkh_prefix,
+        p2sh_prefix: p.p2sh_prefix,
+        blinded_prefix: p.blinded_prefix,
+        bech_hrp: bech32::Hrp::parse(&p.bech_hrp).unwrap(),
+        blech_hrp: bech32::Hrp::parse(&p.blech_hrp).unwrap(),
+    }));
+    Address::from_script(&key(starter, chain, index).script_pubkey, None, params).unwrap().to_string()
+}
+
+/// `transfer()` plus a 5 000 peg-out burn (output 3) to an L1 p2wpkh, paying a 1 000 parent fee.
+pub fn with_peg_out() -> Pset {
+    let mut pset = transfer();
+    pset.outputs_mut()[1].amount = Some(24_000); // change shrinks by the burn
+    pset.add_output(pay(peg_out_burn_script(), 5_000));
+    pset
+}
+
+/// `with_peg_out()` whose owned input signs with SINGLE|ANYONECANPAY: two dangerous modes.
+pub fn dangerous() -> Pset {
+    let mut pset = with_peg_out();
+    pset.inputs_mut()[0].sighash_type = Some(elements_miniscript::elements::pset::PsbtSighashType::from_u32(0x83));
+    pset
+}

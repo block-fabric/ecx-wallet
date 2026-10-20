@@ -4,8 +4,8 @@
 //! - [`declare`] reports the binding the module serves;
 //! - [`derive_account`] turns the Slot 24 Starter into addresses and watch data.
 //!
-//! - [`decode`] refuses what the wallet must never sign, and otherwise returns a Clear View (next
-//!   ticket) or Blind with the facts it can prove;
+//! - [`decode`] refuses what the wallet must never sign, and otherwise returns a Clear View (if the
+//!   Decoder fully understands the request) or Blind with the facts it can prove;
 //! - [`sign`] signs only the inputs that re-derive to the Starter, changing nothing else.
 //!
 //! The module holds nothing between calls and receives only its own Slot's Starter. Every
@@ -13,6 +13,7 @@
 use serde::Serialize;
 
 mod account;
+mod clear;
 mod decode;
 pub mod chain_entry;
 mod ownership;
@@ -20,6 +21,7 @@ mod sign;
 
 pub use account::{derive_account, Account, AddressEntry};
 pub use chain_entry::{chain_entry, ChainEntry, NetworkEntry};
+pub use clear::{ClearInput, ClearOutput, ClearView, DangerousMode, Destination};
 pub use decode::{decode, AssetAmount, Decoded, OwnedInput, Refusal, RefusalCode, VerifiableFacts};
 pub use sign::sign;
 

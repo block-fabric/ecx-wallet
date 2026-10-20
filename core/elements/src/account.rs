@@ -66,7 +66,7 @@ pub fn derive_account(starter: &str, receive_count: u32) -> Result<Account, Stri
 }
 
 /// The Chain Entry's address parameters, as rust-elements wants them (`&'static`).
-fn address_params() -> &'static AddressParams {
+pub(crate) fn address_params() -> &'static AddressParams {
     static PARAMS: OnceLock<AddressParams> = OnceLock::new();
     PARAMS.get_or_init(|| {
         let p = &network().address_params;

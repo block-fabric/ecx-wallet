@@ -37,8 +37,8 @@ fn refusal(r: ecx_elements::Refusal) -> String {
     json(&r).unwrap_or(r.message)
 }
 
-/// Base64 PSET + Slot 24 Starter → `{ kind: "blind", reason, verifiableFacts }` as JSON, or a
-/// refusal.
+/// Base64 PSET + Slot 24 Starter → `{ kind: "clear", view }` or
+/// `{ kind: "blind", reason, verifiableFacts }` as JSON, or a refusal.
 #[no_mangle]
 pub unsafe extern "C" fn decode(payload: *const u8, payload_len: usize, starter: *const u8, starter_len: usize) -> i32 {
     ret_text(text(payload, payload_len).and_then(|p| {

@@ -23,7 +23,7 @@ export interface SignPrompt {
   origin: string;
   chain: string;
   requestId: string;
-  /** The Chain Module's view: Blind (or, later, a Clear View). */
+  /** The Chain Module's view: a Clear View or Blind. */
   decoded: Decoded;
   /** Requester-supplied; shown only tagged "Reported by <origin>". */
   hints?: SigningRequest["hints"];

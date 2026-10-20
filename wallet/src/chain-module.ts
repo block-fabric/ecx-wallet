@@ -70,8 +70,30 @@ export interface VerifiableFacts {
   dangerousFlags: string[];
 }
 
-/** `decode`'s answer for a request it doesn't refuse. The Clear View joins this union in #23. */
-export type Decoded = { kind: "blind"; reason: string; verifiableFacts: VerifiableFacts };
+/** Where an output's funds go. `yours` is decided by re-deriving, never by the requester. */
+export type Destination =
+  | { kind: "address"; address: string; yours: boolean }
+  /** A peg-out burn: `payout` (the burn minus `parentFee`) may be paid on L1 to `l1ScriptPubkey` (hex). */
+  | { kind: "pegOut"; l1ScriptPubkey: string; payout: string; parentFee: string };
+
+/** A risky mode of a request, shown above everything else. */
+export type DangerousMode =
+  | { kind: "nonDefaultSighash"; input: number; sighash: number }
+  | { kind: "pegOutBurn"; output: number };
+
+/** What a request the Decoder fully understands does. Data only: `app` renders it. */
+export interface ClearView {
+  dangerousModes: DangerousMode[];
+  inputs: (AssetAmount & { index: number; yours: boolean })[];
+  /** Every output except the fee. */
+  outputs: (AssetAmount & { index: number; destination: Destination })[];
+  fee: AssetAmount;
+}
+
+/** `decode`'s answer for a request it doesn't refuse: a Clear View only if fully understood. */
+export type Decoded =
+  | { kind: "clear"; view: ClearView }
+  | { kind: "blind"; reason: string; verifiableFacts: VerifiableFacts };
 
 /** Which rule a module refused a request by. */
 export type RefusalCode = "malformed" | "wrongGenesis" | "confidential" | "missingInputFields" | "invalidStarter";
@@ -92,7 +114,7 @@ export interface ChainModule {
   chainEntry(): ChainEntry;
   /** The Slot's Starter → its account, with the first `receive` receive addresses. */
   deriveAccount(starter: string, options: { receive: number }): Account;
-  /** A request's payload → Blind (or, later, a Clear View). Throws ChainModuleRefusal. */
+  /** A request's payload → a Clear View or Blind. Throws ChainModuleRefusal. */
   decode(payload: string, starter: string): Decoded;
   /** The payload with signatures on the inputs the Starter owns; nothing else changes. Throws ChainModuleRefusal. */
   sign(payload: string, starter: string): string;

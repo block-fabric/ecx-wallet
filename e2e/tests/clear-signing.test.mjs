@@ -1,0 +1,132 @@
+// Seam 1: a Sidechain App sends an explicit Elements transfer the Decoder fully understands; it is
+// shown as a Clear View and signed without the Blind Signing opt-in.
+//
+// Fixtures come from core/elements/tests/fixtures.rs. `clear` spends one input of the "abandon …
+// about" wallet's Slot 24 account and one foreign input, pays a foreign address 120 000, sends
+// 29 000 change back to us, with a 1 000 fee. `dangerous` is the same plus a peg-out burn
+// (output 3), with our input signing SINGLE|ANYONECANPAY. `signed` is each PSET signed by LWK's own
+// SwSigner.
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { after, before, describe, test } from "node:test";
+import { BROWSERS, ROOT, launchWallet, openTestApp, serveTestApp, setUpWallet } from "../harness.mjs";
+
+const PSETS = JSON.parse(await readFile(path.join(ROOT, "e2e", "fixtures", "elements-psets.json"), "utf8"));
+const CHAIN = "ecash:betanet-s24";
+// Re-derived from the fixture keys (core/elements/tests/clear_view.rs).
+const FOREIGN_ADDRESS = "elements1qepkhlwlq2qjggg89d5quqx8z59vz9mr2h6j4pc";
+const CHANGE_ADDRESS = "elements1q2n6usykz5ycrnfpup3hx0qa0manae07jgvvmuc";
+
+function signingRequest(payload, overrides = {}) {
+  return {
+    version: "1.0",
+    id: `req-${Math.random().toString(36).slice(2)}`,
+    chain: CHAIN,
+    method: "signTransaction",
+    format: "pset",
+    payload,
+    expiresAt: Math.floor(Date.now() / 1000) + 600,
+    ...overrides,
+  };
+}
+
+const signTransaction = (page, request) => page.evaluate((r) => window.testApp.request("signTransaction", r), request);
+
+/** The Clear View as a user reads it: rows in page order. */
+function readClearView(approval) {
+  return approval.evaluate(() => {
+    const text = (e) => e?.textContent.replace(/\s+/g, " ").trim();
+    const all = [...document.querySelectorAll("[data-dangerous-mode], [data-output], [data-fee]")];
+    return {
+      clearView: document.querySelector("[data-clear-view]") !== null,
+      blind: document.querySelector("[data-blind]") !== null,
+      origin: text(document.querySelector("[data-origin]")),
+      chain: text(document.querySelector("[data-chain]")),
+      order: all.map((e) => (e.hasAttribute("data-dangerous-mode") ? "dangerous" : e.hasAttribute("data-output") ? "output" : "fee")),
+      dangerous: [...document.querySelectorAll("[data-dangerous-mode]")].map(text),
+      outputs: [...document.querySelectorAll("[data-output]")].map((e) => ({
+        text: text(e),
+        address: text(e.querySelector("[data-destination]")),
+        yours: e.querySelector("[data-yours]") !== null,
+        label: text(e.querySelector("[data-hint-label]")),
+      })),
+      fee: text(document.querySelector("[data-fee]")),
+      summary: text(document.querySelector("[data-hint-summary]")),
+    };
+  });
+}
+
+for (const browserName of BROWSERS) describe(browserName, () => {
+  let session;
+  let app;
+  let page;
+  before(async () => {
+    [session, app] = await Promise.all([launchWallet(browserName), serveTestApp()]);
+    await setUpWallet(session);
+    // A Grant without the Blind Signing opt-in.
+    page = await openTestApp(session, app, "shop.localhost");
+    const connecting = page.evaluate(() => window.testApp.request("connect", { slots: [24], methods: ["signTransaction"] }));
+    await (await session.waitForApprovalWindow()).click("[data-approve]");
+    assert.ok((await connecting).result, "connected");
+  });
+  after(async () => {
+    await session?.close();
+    await app?.close();
+  });
+
+  test("a plain explicit transfer is shown as a Clear View and signed without the Blind opt-in", async () => {
+    const hints = { summary: "Pay Bob for the bike", outputLabels: { 0: "change", 1: "Bob" } };
+    const signing = signTransaction(page, signingRequest(PSETS.clear.payload, { hints }));
+    const approval = await session.waitForApprovalWindow();
+    const shown = await readClearView(approval);
+
+    assert.equal(shown.clearView, true);
+    assert.equal(shown.blind, false);
+    assert.equal(shown.origin, app.origin("shop.localhost"));
+    assert.equal(shown.chain, CHAIN);
+    assert.deepEqual(shown.dangerous, []);
+    assert.equal(shown.outputs.length, 2);
+    const [pay, change] = shown.outputs;
+    assert.equal(pay.address, FOREIGN_ADDRESS);
+    assert.match(pay.text, /120000/);
+    assert.equal(pay.yours, false, "the requester calling it change doesn't make it ours");
+    assert.equal(pay.label, `Reported by ${app.origin("shop.localhost")}: change`);
+    assert.equal(change.address, CHANGE_ADDRESS);
+    assert.match(change.text, /29000/);
+    assert.equal(change.yours, true, "re-derived to this wallet");
+    assert.match(shown.fee, /1000/);
+    assert.equal(shown.summary, `Reported by ${app.origin("shop.localhost")}: Pay Bob for the bike`);
+
+    await approval.click("[data-approve]");
+    assert.deepEqual(await signing, { result: PSETS.clear.signed });
+  });
+
+  test("dangerous modes come above everything else; a peg-out is described as irreversible and slow", async () => {
+    const signing = signTransaction(page, signingRequest(PSETS.dangerous.payload));
+    const approval = await session.waitForApprovalWindow();
+    const shown = await readClearView(approval);
+    assert.equal(shown.clearView, true);
+    assert.equal(shown.dangerous.length, 2);
+    assert.deepEqual(shown.order.slice(0, 2), ["dangerous", "dangerous"]);
+    assert.match(shown.dangerous.join("\n"), /sighash/i);
+    const pegOut = shown.dangerous.find((d) => /peg-out/i.test(d));
+    assert.match(pegOut, /irreversible/i);
+    assert.match(pegOut, /months/i);
+
+    await approval.click("[data-approve]");
+    assert.deepEqual(await signing, { result: PSETS.dangerous.signed });
+  });
+
+  test("hints never make a Blind request Clear", async () => {
+    const hints = { summary: "A perfectly normal transfer", outputLabels: { 0: "change" } };
+    const answer = await signTransaction(page, signingRequest(PSETS.blind.payload, { hints }));
+    assert.equal(answer.error?.code, 4100);
+    assert.match(answer.error?.message, /Blind/);
+    assert.equal((await session.approvalWindows()).length, 0);
+  });
+
+  test("none of the above raised extension runtime errors", { skip: browserName !== "brave" }, async () => {
+    assert.deepEqual((await session.extensionErrors()).runtimeErrors, []);
+  });
+});

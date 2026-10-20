@@ -61,7 +61,9 @@ fn sign_refuses_exactly_what_decode_refuses() {
 
 #[test]
 fn an_unknown_field_makes_the_request_blind_with_the_facts_the_wallet_can_prove() {
-    let Decoded::Blind { reason, verifiable_facts: facts } = decode(&b64(&transfer_with_unknown_fields()), STARTER).unwrap();
+    let Decoded::Blind { reason, verifiable_facts: facts } = decode(&b64(&transfer_with_unknown_fields()), STARTER).unwrap() else {
+        panic!("expected Blind")
+    };
     assert!(reason.contains("doesn't understand"), "{reason}");
 
     let asset = network_policy_asset();
@@ -78,12 +80,12 @@ fn an_unknown_field_makes_the_request_blind_with_the_facts_the_wallet_can_prove(
 }
 
 #[test]
-fn a_non_default_sighash_and_a_peg_out_burn_are_dangerous_flags() {
+fn in_a_blind_request_a_non_default_sighash_and_a_peg_out_burn_are_dangerous_flags() {
     use elements_miniscript::elements::pset::PsbtSighashType;
-    let mut pset = transfer();
+    let mut pset = transfer_with_unknown_fields();
     pset.inputs_mut()[0].sighash_type = Some(PsbtSighashType::from_u32(0x83));
     pset.add_output(pay(peg_out_burn_script(), 5_000));
-    let Decoded::Blind { verifiable_facts: facts, .. } = decode(&b64(&pset), STARTER).unwrap();
+    let Decoded::Blind { verifiable_facts: facts, .. } = decode(&b64(&pset), STARTER).unwrap() else { panic!("expected Blind") };
     let flags = facts.dangerous_flags.join("\n");
     assert!(flags.contains("sighash"), "{flags}");
     assert!(flags.contains("peg-out"), "{flags}");
@@ -94,7 +96,7 @@ fn an_input_claiming_our_key_without_proof_is_a_dangerous_flag_and_not_counted_a
     let mut pset = transfer();
     let ours = key(STARTER, 0, 0);
     pset.inputs_mut()[1].bip32_derivation.insert(ours.pk, (ours.fingerprint, ours.path.clone()));
-    let Decoded::Blind { verifiable_facts: facts, .. } = decode(&b64(&pset), STARTER).unwrap();
+    let Decoded::Blind { verifiable_facts: facts, .. } = decode(&b64(&pset), STARTER).unwrap() else { panic!("expected Blind") };
     assert_eq!(facts.owned_inputs.iter().map(|i| i.index).collect::<Vec<_>>(), vec![0]);
     assert!(facts.dangerous_flags.join("\n").contains("input 1"), "{:?}", facts.dangerous_flags);
 }

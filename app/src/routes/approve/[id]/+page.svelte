@@ -1,6 +1,14 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { getApproval, resolveApproval, unlockApproval, type ApprovalPrompt, type AssetAmount } from "$lib/background";
+  import {
+    getApproval,
+    resolveApproval,
+    unlockApproval,
+    type ApprovalPrompt,
+    type AssetAmount,
+    type ClearView,
+    type DangerousMode,
+  } from "$lib/background";
 
   const id = page.params.id ?? "";
   let prompt = $state<ApprovalPrompt | null | undefined>(undefined);
@@ -42,6 +50,41 @@
 
   const short = (asset: string) => `${asset.slice(0, 8)}…`;
   const amount = (a: AssetAmount) => `${a.amount} (asset ${short(a.asset)})`;
+
+  const SIGHASH_NAMES: Record<number, string> = {
+    0x02: "NONE",
+    0x03: "SINGLE",
+    0x81: "ALL|ANYONECANPAY",
+    0x82: "NONE|ANYONECANPAY",
+    0x83: "SINGLE|ANYONECANPAY",
+  };
+
+  /** A dangerous mode, in words. The Chain Module reports it as data; the words are the app's. */
+  function describe(mode: DangerousMode, view: ClearView): string {
+    if (mode.kind === "nonDefaultSighash") {
+      const name = SIGHASH_NAMES[mode.sighash] ?? "non-standard";
+      return (
+        `Input ${mode.input} is signed with sighash ${name} (0x${mode.sighash.toString(16)}), not the default ALL: ` +
+        "your signature won't cover the whole transaction, so others could change parts of it after you sign."
+      );
+    }
+    const output = view.outputs.find((o) => o.index === mode.output);
+    const burn = output ? amount(output) : "funds";
+    const payout =
+      output?.destination.kind === "pegOut"
+        ? ` If the withdrawal is accepted, ${output.destination.payout} is paid on L1 (after a ${output.destination.parentFee} parent fee).`
+        : "";
+    return (
+      `Output ${mode.output} is a peg-out burn of ${burn}: it is irreversible. The burned funds leave this sidechain at once, ` +
+      `but the L1 withdrawal takes months (the BIP300 miner vote runs about 3 to 6 months), and acceptance doesn't guarantee payment.${payout}`
+    );
+  }
+
+  /** Requester labels for outputs the Clear View doesn't have (shown, tagged, but attached to nothing). */
+  function strayLabels(view: ClearView, labels: Record<string, string> | undefined): [string, string][] {
+    const indexes = new Set(view.outputs.map((o) => String(o.index)));
+    return Object.entries(labels ?? {}).filter(([k]) => !indexes.has(k));
+  }
 </script>
 
 {#if prompt === undefined}
@@ -99,7 +142,72 @@
     </form>
     {#if error}<p class="error" role="alert" data-error>{error}</p>{/if}
   </main>
-{:else if prompt.kind === "sign"}
+{:else if prompt.kind === "sign" && prompt.decoded.kind === "clear"}
+  {@const view = prompt.decoded.view}
+  {@const labels = prompt.hints?.outputLabels ?? {}}
+  <main data-approval-ready data-clear-view>
+    {#if view.dangerousModes.length > 0}
+      <section class="danger" role="alert">
+        <h2>Dangerous</h2>
+        <ul>
+          {#each view.dangerousModes as mode, i (i)}<li data-dangerous-mode>{describe(mode, view)}</li>{/each}
+        </ul>
+      </section>
+    {/if}
+
+    <h1>Signing request</h1>
+    <p>From <strong data-origin>{prompt.origin}</strong> on <code data-chain>{prompt.chain}</code></p>
+
+    <h2>Outputs</h2>
+    <ol class="rows">
+      {#each view.outputs as output (output.index)}
+        <li data-output>
+          <div class="amount">{amount(output)}</div>
+          {#if output.destination.kind === "address"}
+            <div>to <code data-destination>{output.destination.address}</code></div>
+            {#if output.destination.yours}
+              <div class="yours" data-yours>Yours (verified by this wallet)</div>
+            {:else}
+              <div class="not-yours" data-not-yours>Not yours</div>
+            {/if}
+          {:else}
+            <div>
+              peg-out burn to L1 script <code data-destination>{output.destination.l1ScriptPubkey}</code>, paying
+              {output.destination.payout} after a {output.destination.parentFee} parent fee
+            </div>
+            <div class="not-yours" data-not-yours>Not yours: burned</div>
+          {/if}
+          {#if labels[String(output.index)] !== undefined}
+            <div class="reported" data-hint-label>Reported by {prompt.origin}: {labels[String(output.index)]}</div>
+          {/if}
+        </li>
+      {/each}
+    </ol>
+
+    <dl>
+      <dt>Fee</dt>
+      <dd data-fee>{amount(view.fee)}</dd>
+      <dt>Inputs</dt>
+      <dd>
+        {#each view.inputs as input (input.index)}
+          <div data-input>Input {input.index}: {amount(input)} {input.yours ? "(yours: you sign it)" : "(not yours)"}</div>
+        {/each}
+      </dd>
+    </dl>
+
+    {#if prompt.hints?.summary}
+      <p class="reported" data-hint-summary>Reported by {prompt.origin}: {prompt.hints.summary}</p>
+    {/if}
+    {#each strayLabels(view, prompt.hints?.outputLabels) as [key, label] (key)}
+      <p class="reported" data-hint-stray-label>Reported by {prompt.origin}: output {key}: {label}</p>
+    {/each}
+
+    <div class="actions">
+      <button data-reject disabled={busy} onclick={() => decide(false)}>Reject</button>
+      <button data-approve disabled={busy} onclick={() => decide(true)}>Sign</button>
+    </div>
+  </main>
+{:else if prompt.kind === "sign" && prompt.decoded.kind === "blind"}
   {@const facts = prompt.decoded.verifiableFacts}
   <main data-approval-ready data-blind>
     <div class="blind-banner" role="alert">
@@ -144,6 +252,9 @@
     {#if prompt.hints?.summary}
       <p class="reported" data-hint-summary>Reported by {prompt.origin}: {prompt.hints.summary}</p>
     {/if}
+    {#each Object.entries(prompt.hints?.outputLabels ?? {}) as [key, label] (key)}
+      <p class="reported" data-hint-stray-label>Reported by {prompt.origin}: output {key}: {label}</p>
+    {/each}
 
     <div class="actions">
       <button data-reject disabled={busy} onclick={() => decide(false)}>Reject</button>
@@ -176,6 +287,19 @@
   .danger {
     border: 2px solid #b00020;
     padding: 0 1rem;
+  }
+  .rows li {
+    margin-bottom: 0.5rem;
+    word-break: break-all;
+  }
+  .amount {
+    font-weight: bold;
+  }
+  .yours {
+    color: #1b5e20;
+  }
+  .not-yours {
+    color: #555;
   }
   .reported {
     font-style: italic;
