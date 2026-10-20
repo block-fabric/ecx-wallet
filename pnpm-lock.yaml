@@ -57,6 +57,9 @@ importers:
 
   extension:
     dependencies:
+      '@ecx/client':
+        specifier: workspace:*
+        version: link:../client
       '@ecx/wallet':
         specifier: workspace:*
         version: link:../wallet

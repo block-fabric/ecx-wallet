@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
+    "@ecx/client": "workspace:*",
     "@ecx/wallet": "workspace:*"
   },
   "devDependencies": {

@@ -41,6 +41,9 @@ export async function launchBrave({ extensionPath = DIST.chromium } = {}) {
       "--no-default-browser-check",
       "--disable-sync",
       "--disable-features=BraveRewards,BraveWallet,BraveNews",
+      // Every *.localhost name is the test server, so each test can use its own web origin
+      // (Grants are per origin) while staying a secure context.
+      "--host-resolver-rules=MAP *.localhost 127.0.0.1",
     ],
   });
   let extensionId;
@@ -113,7 +116,7 @@ async function withExtensionsPage(browser, fn) {
 
 /**
  * Serves the test Sidechain App (e2e/test-app) on 127.0.0.1, with the `client` library bundled in.
- * `url(host)` lets a test load the same app from a second origin (e.g. "localhost").
+ * `url(host)` / `origin(host)` give the app under any `<name>.localhost` host, each its own origin.
  */
 export async function serveTestApp() {
   const bundle = await esbuild.build({
@@ -136,8 +139,8 @@ export async function serveTestApp() {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address();
   return {
-    url: (host = "127.0.0.1") => `http://${host}:${port}/`,
-    origin: (host = "127.0.0.1") => `http://${host}:${port}`,
+    url: (host = "app.localhost") => `http://${host}:${port}/`,
+    origin: (host = "app.localhost") => `http://${host}:${port}`,
     close: () => new Promise((resolve) => server.close(resolve)),
   };
 }
