@@ -31,4 +31,6 @@ export interface RelayResponse {
 export type BackgroundMessage =
   | { kind: "provider.request"; method: unknown; params: unknown }
   | { kind: "approval.get"; id: string }
-  | { kind: "approval.resolve"; id: string; approved: boolean };
+  | { kind: "approval.resolve"; id: string; approved: boolean }
+  | { kind: "grants.list" }
+  | { kind: "grants.revoke"; origin: string };
