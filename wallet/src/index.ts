@@ -96,6 +96,7 @@ export {
   type DepositDeps,
   type Deposits,
   type DepositStatus,
+  type RefusedDeposit,
   type DepositStore,
   type PendingDeposit,
 } from "./deposit";

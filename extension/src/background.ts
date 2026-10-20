@@ -382,6 +382,14 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
       await deposits.dismiss(String(message.txid ?? ""));
       return null;
+    case "deposit.refused":
+      // The Slot's last Deposit that failed after approval, for the home page: its page may be gone.
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      return (await deposits.refused(supportedSlot(message.slot))) ?? null;
+    case "deposit.dismissRefused":
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      await deposits.dismissRefused(supportedSlot(message.slot));
+      return null;
     case "vault.status":
     case "vault.generate":
     case "vault.create":

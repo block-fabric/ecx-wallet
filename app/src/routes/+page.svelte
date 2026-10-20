@@ -2,18 +2,21 @@
   import {
     cachedState,
     dismissDeposit,
+    dismissRefusedDeposit,
     l1Account,
     l1Cached,
     l1Reported,
     listAccounts,
     listDeposits,
     lockVault,
+    refusedDeposit,
     reportedState,
     showReport,
     unlockVault,
     vaultStatus,
     type ChainReport,
     type DepositStatus,
+    type RefusedDeposit,
     type ShownReport,
     type SlotAccount,
     type VaultStatus,
@@ -32,6 +35,8 @@
   let reports = $state<Record<number, ShownReport>>({});
   /** Per Slot: its pending Deposits, or why their status couldn't be read. */
   let deposits = $state<Record<number, DepositStatus[] | { error: string }>>({});
+  /** Per Slot: its last Deposit that failed after approval (the popup that asked may have closed). */
+  let refused = $state<Record<number, RefusedDeposit | null>>({});
   let password = $state("");
   let error = $state("");
   let busy = $state(false);
@@ -68,10 +73,19 @@
   });
 
   function loadDeposits(slot: number) {
+    refusedDeposit(slot).then(
+      (r) => (refused[slot] = r),
+      () => (refused[slot] = null),
+    );
     listDeposits(slot).then(
       (d) => (deposits[slot] = d),
       (e) => (deposits[slot] = { error: (e as Error).message }),
     );
+  }
+
+  async function dismissRefused(slot: number) {
+    await dismissRefusedDeposit(slot).catch((e) => (error = (e as Error).message));
+    refused[slot] = null;
   }
 
   async function dismiss(slot: number, txid: string) {
@@ -167,6 +181,13 @@
 
 {#snippet pendingDeposits(slot: number)}
   {@const list = deposits[slot]}
+  {@const failed = refused[slot]}
+  {#if failed}
+    <div class="error small refused" role="alert">
+      <span data-deposit-refused>Your Deposit of {failed.value} sats failed: {failed.reason}</span>
+      <button class="small-button" onclick={() => dismissRefused(slot)} data-deposit-refused-dismiss>Dismiss</button>
+    </div>
+  {/if}
   {#if list !== undefined && "error" in list}
     <p class="error small" data-deposits-error>Deposits unavailable: {list.error}</p>
   {:else if list !== undefined && list.length > 0}
@@ -180,6 +201,7 @@
               <button class="small-button" onclick={() => dismiss(slot, d.txid)} data-deposit-dismiss>Dismiss</button>
             </div>
             <span class="small" data-deposit-status>{depositState(d)}</span>
+            <code class="small txid" title="Transaction id on eCash" data-deposit-txid>{d.txid}</code>
             {#if d.state === "awaitingCredit"}
               <details data-claim>
                 <summary>Show claim details</summary>
@@ -267,7 +289,7 @@
           class="card"
           data-account={account.slot}
           data-refreshing={report?.refreshing !== false ? "" : undefined}
-          data-deposits-ready={deposits[account.slot] !== undefined ? "" : undefined}
+          data-deposits-ready={deposits[account.slot] !== undefined && refused[account.slot] !== undefined ? "" : undefined}
         >
           <div class="account-head">
             <h2>Slot {account.slot}</h2>
@@ -388,11 +410,21 @@
     flex-direction: column;
     gap: 4px;
   }
-  .deposit-head {
+  .deposit-head,
+  .refused {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
+  }
+  .refused {
+    align-items: flex-start;
+  }
+  .refused button {
+    flex: none;
+  }
+  .txid {
+    overflow-wrap: anywhere;
   }
   .claim {
     display: grid;

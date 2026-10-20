@@ -72,12 +72,13 @@ Unconfirmed coins are only shown: a Deposit spends confirmed ones only. The Stan
 API reports them in an optional `unconfirmed` list. The Send screen is `#/send/<slot>`
 (`send.start`), for Slots only.
 
-Session cache (`wallet/src/cache.ts`): to answer faster, the background keeps three things in
+Session cache (`wallet/src/cache.ts`): mostly to answer faster, the background keeps four things in
 `storage.session` (memory only), read and written only while unlocked, and forgotten on every lock:
 a server's passed identity check (once per URL, as ADR 0002 has it; a failure is never kept), the
 last balance each chain's server reported (`l1.cached`, `accounts.cached`: shown at once, marked
 "Last read at …; refreshing…" and `data-refreshing` on the card, until the fresh one arrives), and
-raw transactions, kept only once the L1 module hashes them to their txid. Nothing else a Deposit is
+raw transactions, kept only once the L1 module hashes them to their txid, and each Slot's last
+Deposit that failed after approval (below). Nothing else a Deposit is
 built from is cached: its coins, Treasury, fee rate and confirmations are always read fresh. Esplora
 lookups run 20 at once (`QUERIES_AT_ONCE`). Tests that change a server's chain lock and unlock first
 (`relock(session)` in the harness).
@@ -93,9 +94,13 @@ change address), and every input carries its previous transaction so the module 
 itself. The L1 Decoder's Clear View goes to the normal approval window; then `sign`, `finalize` and
 `POST /tx`. `l1.wasm` refuses to check, decode, sign or finalize any spend without the replay marker
 (betanet's `nLockTime` 499999999, non-final `nSequence`). Pending Deposits sit in `storage.local`
-(`deposit:<txid>`) and show under the Slot card's balance (`deposit.list`): "n / 100"
+(`deposit:<txid>`) and show under the Slot card's balance (`deposit.list`), each with its txid: "n / 100"
 confirmations, then waiting for the operator's `importdrivechaindeposit` (with the claim
 arguments), then "credited" once the Slot's server reports an output of exactly the value.
+The toolbar popup closes when the approval window opens, so the Deposit screen that asked may be
+gone by the time a Deposit is sent or refused. A Deposit that fails after approval (a refused
+broadcast, say) is therefore also kept for the session (`deposit.refused`) and shown on the Slot
+card, "Your Deposit of N sats failed: <reason>", until dismissed or the next Deposit is sent.
 
 Signing (`signTransaction`): the Provider handler checks, in the spec's order, the envelope (unknown
 MAJOR → 4200, unknown fields ignored, expired → -32602), the Grant (Slot + method → 4100), then

@@ -9,6 +9,7 @@ import type {
   DangerousMode,
   DepositStatus,
   Grant,
+  RefusedDeposit,
   SendResult,
   SlotAddress,
   SlotReport,
@@ -16,7 +17,7 @@ import type {
 } from "@ecx/wallet";
 
 // The shapes the background sends are the wallet package's own types.
-export type { ApprovalPrompt, AssetAmount, ChainReport, ClearView, DangerousMode, DepositStatus, Grant, SendResult, SlotReport, VaultStatus };
+export type { ApprovalPrompt, AssetAmount, ChainReport, ClearView, DangerousMode, DepositStatus, Grant, RefusedDeposit, SendResult, SlotReport, VaultStatus };
 
 type Response<T> = { ok: true; result: T } | { ok: false; error: { code: number; message: string } };
 
@@ -129,6 +130,12 @@ export const listDeposits = (slot: number) => send<DepositStatus[]>({ kind: "dep
 
 /** Stops watching a Deposit. */
 export const dismissDeposit = (txid: string) => send<null>({ kind: "deposit.dismiss", txid });
+
+/** The Slot's last Deposit that failed after approval this session, or null. */
+export const refusedDeposit = (slot: number) => send<RefusedDeposit | null>({ kind: "deposit.refused", slot });
+
+/** Forgets the Slot's refused Deposit. */
+export const dismissRefusedDeposit = (slot: number) => send<null>({ kind: "deposit.dismissRefused", slot });
 
 export const listGrants = () => send<Grant[]>({ kind: "grants.list" });
 

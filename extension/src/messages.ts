@@ -51,6 +51,8 @@ export type BackgroundMessage =
   | { kind: "deposit.start"; slot: number; amount: string }
   | { kind: "deposit.list"; slot: number }
   | { kind: "deposit.dismiss"; txid: string }
+  | { kind: "deposit.refused"; slot: number }
+  | { kind: "deposit.dismissRefused"; slot: number }
   // Vault: accepted only from the wallet's own pages.
   | { kind: "vault.status" }
   | { kind: "vault.generate" }

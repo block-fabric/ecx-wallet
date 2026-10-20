@@ -101,6 +101,7 @@ async function readDeposits(session) {
   const shown = await page.evaluate(() =>
     [...document.querySelectorAll("[data-deposit]")].map((e) => ({
       txid: e.getAttribute("data-deposit"),
+      shownTxid: e.querySelector("[data-deposit-txid]")?.textContent.trim(),
       state: e.getAttribute("data-deposit-state"),
       status: e.querySelector("[data-deposit-status]").textContent.trim(),
       claim: e.querySelector("[data-claim]")
@@ -203,10 +204,10 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       assert.ok(requests.includes("/fee-estimates"));
     });
 
-    test("the Slot 24 card follows it: confirmations, then the operator's import with the claim, then credited", async () => {
+    test("the Slot 24 card follows it, showing its txid: confirmations, then the operator's import with the claim, then credited", async () => {
       assert.deepEqual(
-        (await readDeposits(session)).map(({ txid, state, status }) => ({ txid, state, status })),
-        [{ txid: depositTxid, state: "confirming", status: "0 / 100 confirmations on eCash" }],
+        (await readDeposits(session)).map(({ txid, shownTxid, state, status }) => ({ txid, shownTxid, state, status })),
+        [{ txid: depositTxid, shownTxid: depositTxid, state: "confirming", status: "0 / 100 confirmations on eCash" }],
       );
 
       const broadcast = L1.txs.find((t) => parseTx(t.hex).txid === depositTxid);
@@ -328,5 +329,28 @@ for (const browserName of BROWSERS) describe(browserName, () => {
 
   test("none of the above raised extension runtime errors", async () => {
     assert.deepEqual((await session.extensionErrors()).runtimeErrors, []);
+  });
+
+  // After the runtime-errors check: closing the page while its `deposit.start` is pending makes
+  // Firefox log "Promise rejected after context unloaded", as a real popup closing does.
+  test("a Deposit refused after approval, with its page already closed (as the popup closes), shows why on the home page until dismissed", async () => {
+    Object.assign(L1, l1Config([FUNDING, TREASURY_TX]));
+    L1.refuseBroadcast = 'sendrawtransaction RPC error: {"code":-26,"message":"min relay fee not met"}';
+    const page = await startDeposit(session, "5000");
+    const approval = await session.waitForApprovalWindow({ timeout: 20_000 });
+    await page.close();
+    await approval.click("[data-approve]");
+
+    const home = await session.openPage("index.html#/");
+    await home.waitForSelector('[data-account="24"] [data-deposit-refused]', { timeout: 20_000 });
+    const refused = await home.$eval("[data-deposit-refused]", (e) => e.textContent.replace(/\s+/g, " ").trim());
+    assert.match(refused, /^Your Deposit of 5000 sats failed: .*min relay fee not met.* Nothing was sent\./);
+    await home.click("[data-deposit-refused-dismiss]");
+    await home.waitForFunction(() => document.querySelector("[data-deposit-refused]") === null, { timeout: 5_000 });
+    await home.close();
+    const again = await session.openPage("index.html#/");
+    await again.waitForSelector('[data-account="24"][data-deposits-ready]', { timeout: 20_000 });
+    assert.equal(await again.$("[data-deposit-refused]"), null, "dismissed for good");
+    await again.close();
   });
 });
