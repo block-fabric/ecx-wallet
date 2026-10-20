@@ -9,6 +9,8 @@
     type ClearView,
     type DangerousMode,
   } from "$lib/background";
+  import { shortAsset } from "$lib/asset";
+  import Icon from "$lib/Icon.svelte";
 
   const id = page.params.id ?? "";
   let prompt = $state<ApprovalPrompt | null | undefined>(undefined);
@@ -48,8 +50,7 @@
     }
   }
 
-  const short = (asset: string) => `${asset.slice(0, 8)}…`;
-  const amount = (a: AssetAmount) => `${a.amount} (asset ${short(a.asset)})`;
+  const amount = (a: AssetAmount) => `${a.amount} (asset ${shortAsset(a.asset)})`;
 
   const SIGHASH_NAMES: Record<number, string> = {
     0x02: "NONE",
@@ -87,107 +88,138 @@
   }
 </script>
 
+{#snippet requester(origin: string, chain?: string)}
+  <div class="card requester">
+    <span class="muted small">Requested by</span>
+    <strong class="origin" data-origin>{origin}</strong>
+    {#if chain}<span class="chain">on <code class="chip" data-chain>{chain}</code></span>{/if}
+  </div>
+{/snippet}
+
 {#if prompt === undefined}
-  <p>Loading…</p>
+  <main class="screen">
+    <p class="loading"><span class="spinner"></span>Loading…</p>
+  </main>
 {:else if prompt === null}
-  <main data-approval-ready data-approval-missing>
-    <h1>Request no longer pending</h1>
-    <p>This request was already answered or has expired. You can close this window.</p>
+  <main class="screen" data-approval-ready data-approval-missing>
+    <div class="card centered">
+      <h1>Request no longer pending</h1>
+      <p class="muted">This request was already answered or has expired. You can close this window.</p>
+    </div>
   </main>
 {:else if prompt.kind === "connect"}
-  <main data-approval-ready>
-    <h1>Grant request</h1>
-    <p>This site asks for a Grant to use your wallet:</p>
-    <p class="origin"><strong data-origin>{prompt.origin}</strong></p>
+  <main class="screen" data-approval-ready>
+    <div class="title">
+      <h1>Grant request</h1>
+      <p class="muted small">This site asks for a Grant to use your wallet:</p>
+    </div>
+    {@render requester(prompt.origin)}
 
-    <h2>Sidechains (Slots)</h2>
-    <ul>
-      {#each prompt.slots as slot (slot)}
-        <li data-slot>{slot}</li>
-      {/each}
-    </ul>
+    <section class="card">
+      <h2>Sidechains (Slots)</h2>
+      <ul class="chips">
+        {#each prompt.slots as slot (slot)}
+          <li class="chip" data-slot>{slot}</li>
+        {/each}
+      </ul>
+      <h2>It will be allowed to ask for</h2>
+      <ul class="chips">
+        {#each prompt.methods as method (method)}
+          <li class="chip" data-method>{method}</li>
+        {/each}
+      </ul>
+    </section>
 
-    <h2>It will be allowed to ask for</h2>
-    <ul>
-      {#each prompt.methods as method (method)}
-        <li data-method>{method}</li>
-      {/each}
-    </ul>
+    <p class="notice"><Icon name="shield" /><span>It will not be able to sign anything without asking you each time.</span></p>
 
-    <p>It will not be able to sign anything without asking you each time.</p>
-
-    <label class="opt-in">
+    <label class="opt-in" class:on={blindOptIn}>
       <input type="checkbox" bind:checked={blindOptIn} data-blind-opt-in />
-      Also allow <strong>Blind Signing</strong>: asking you to sign requests the wallet can't explain.
-      Leave this off unless you trust this site completely.
+      <span>
+        Also allow <strong>Blind Signing</strong>: asking you to sign requests the wallet can't explain.
+        Leave this off unless you trust this site completely.
+      </span>
     </label>
 
-    <div class="actions">
+    <div class="decision">
       <button data-reject disabled={busy} onclick={() => decide(false)}>Reject</button>
-      <button data-approve disabled={busy} onclick={() => decide(true)}>Connect</button>
+      <button class={blindOptIn ? "danger-button" : "primary"} data-approve disabled={busy} onclick={() => decide(true)}>
+        Approve Grant
+      </button>
     </div>
   </main>
 {:else if prompt.kind === "unlock"}
-  <main data-approval-ready data-unlock-required>
-    <h1>Unlock to review a request</h1>
-    <p><strong data-origin>{prompt.origin}</strong> sent a signing request for <code data-chain>{prompt.chain}</code>.</p>
-    <p>Unlock your wallet to see it. Nothing is signed until you approve it.</p>
-    <form onsubmit={unlock}>
+  <main class="screen" data-approval-ready data-unlock-required>
+    <div class="title">
+      <h1>Unlock to review a request</h1>
+      <p class="muted small">This site sent a Signing Request. Unlock your wallet to see it. Nothing is signed until you approve it.</p>
+    </div>
+    {@render requester(prompt.origin, prompt.chain)}
+    <form class="card" onsubmit={unlock}>
       <label>
         Password
         <input type="password" autocomplete="current-password" bind:value={password} data-password />
       </label>
-      <button type="submit" disabled={busy} data-unlock>Unlock</button>
+      <button class="primary block" type="submit" disabled={busy} data-unlock><Icon name="lock" size={16} /> Unlock</button>
     </form>
     {#if error}<p class="error" role="alert" data-error>{error}</p>{/if}
   </main>
 {:else if prompt.kind === "sign" && prompt.decoded.kind === "clear"}
   {@const view = prompt.decoded.view}
   {@const labels = prompt.hints?.outputLabels ?? {}}
-  <main data-approval-ready data-clear-view>
-    {#if view.dangerousModes.length > 0}
-      <section class="danger" role="alert">
-        <h2>Dangerous</h2>
-        <ul>
+  {@const dangerous = view.dangerousModes.length > 0}
+  <main class="screen" data-approval-ready data-clear-view>
+    {#if dangerous}
+      <section class="danger-box" role="alert">
+        <h2><Icon name="warning" /> Dangerous</h2>
+        <ul class="stack">
           {#each view.dangerousModes as mode, i (i)}<li data-dangerous-mode>{describe(mode, view)}</li>{/each}
         </ul>
       </section>
     {/if}
 
-    <h1>Signing request</h1>
-    <p>From <strong data-origin>{prompt.origin}</strong> on <code data-chain>{prompt.chain}</code></p>
+    <div class="title">
+      <h1>Signing Request</h1>
+      <span class="badge ok"><Icon name="check" size={14} /> Clear View: decoded by this wallet</span>
+    </div>
+    {@render requester(prompt.origin, prompt.chain)}
 
-    <h2>Outputs</h2>
-    <ol class="rows">
-      {#each view.outputs as output (output.index)}
-        <li data-output>
-          <div class="amount">{amount(output)}</div>
-          {#if output.destination.kind === "address"}
-            <div>to <code data-destination>{output.destination.address}</code></div>
-            {#if output.destination.yours}
-              <div class="yours" data-yours>Yours (verified by this wallet)</div>
-            {:else}
-              <div class="not-yours" data-not-yours>Not yours</div>
-            {/if}
-          {:else}
-            <div>
-              {#if output.destination.l1Address !== undefined}
-                Withdrawal burn to L1 address <code data-destination>{output.destination.l1Address}</code>,
-              {:else}
-                Withdrawal burn to a non-standard L1 script (hex) <code data-destination>{output.destination.l1ScriptPubkey}</code>,
-              {/if}
-              paying {output.destination.payout} after a {output.destination.parentFee} parent fee
+    <section class="stack">
+      <h2>Outputs</h2>
+      <ol class="stack">
+        {#each view.outputs as output (output.index)}
+          <li class="card output" data-output>
+            <div class="output-head">
+              <span class="amount">{output.amount}</span>
+              <span class="muted small">asset <code title={output.asset}>{shortAsset(output.asset)}</code></span>
+              <span class="index muted small">Output {output.index}</span>
             </div>
-            <div class="not-yours" data-not-yours>Not yours: burned</div>
-          {/if}
-          {#if labels[String(output.index)] !== undefined}
-            <div class="reported" data-hint-label>Reported by {prompt.origin}: {labels[String(output.index)]}</div>
-          {/if}
-        </li>
-      {/each}
-    </ol>
+            {#if output.destination.kind === "address"}
+              <div class="small">to <code data-destination>{output.destination.address}</code></div>
+              {#if output.destination.yours}
+                <span class="badge ok" data-yours><Icon name="check" size={14} /> Yours (verified by this wallet)</span>
+              {:else}
+                <span class="badge" data-not-yours>Not yours</span>
+              {/if}
+            {:else}
+              <div class="small">
+                {#if output.destination.l1Address !== undefined}
+                  Withdrawal burn to L1 address <code data-destination>{output.destination.l1Address}</code>,
+                {:else}
+                  Withdrawal burn to a non-standard L1 script (hex) <code data-destination>{output.destination.l1ScriptPubkey}</code>,
+                {/if}
+                paying {output.destination.payout} after a {output.destination.parentFee} parent fee
+              </div>
+              <span class="badge bad" data-not-yours>Not yours: burned</span>
+            {/if}
+            {#if labels[String(output.index)] !== undefined}
+              <p class="reported" data-hint-label>Reported by {prompt.origin}: {labels[String(output.index)]}</p>
+            {/if}
+          </li>
+        {/each}
+      </ol>
+    </section>
 
-    <dl>
+    <dl class="card facts">
       <dt>Fee</dt>
       <dd data-fee>{amount(view.fee)}</dd>
       <dt>Inputs</dt>
@@ -205,52 +237,54 @@
       <p class="reported" data-hint-stray-label>Reported by {prompt.origin}: output {key}: {label}</p>
     {/each}
 
-    <div class="actions">
+    <div class="decision">
       <button data-reject disabled={busy} onclick={() => decide(false)}>Reject</button>
-      <button data-approve disabled={busy} onclick={() => decide(true)}>Sign</button>
+      <button class={dangerous ? "danger-button" : "primary"} data-approve disabled={busy} onclick={() => decide(true)}>Sign</button>
     </div>
   </main>
 {:else if prompt.kind === "sign" && prompt.decoded.kind === "blind"}
   {@const facts = prompt.decoded.verifiableFacts}
-  <main data-approval-ready data-blind>
+  <main class="screen" data-approval-ready data-blind>
     <div class="blind-banner" role="alert">
-      <h1>Blind Signing</h1>
+      <h1><Icon name="eye_off" size={24} /> Blind Signing</h1>
       <p>The wallet <strong>can't show you what this request does.</strong> {prompt.decoded.reason}</p>
       <p>Only approve if you trust this site completely and expected this request.</p>
     </div>
 
-    <p>From <strong data-origin>{prompt.origin}</strong> on <code data-chain>{prompt.chain}</code></p>
-
     {#if facts.dangerousFlags.length > 0}
-      <section class="danger">
-        <h2>Dangerous</h2>
-        <ul>
+      <section class="danger-box">
+        <h2><Icon name="warning" /> Dangerous</h2>
+        <ul class="stack">
           {#each facts.dangerousFlags as flag (flag)}<li data-dangerous-flag>{flag}</li>{/each}
         </ul>
       </section>
     {/if}
 
-    <h2>What the wallet can prove</h2>
-    <dl>
-      <dt>Your inputs it will sign</dt>
-      <dd>
-        {#each facts.ownedInputs as input (input.index)}
-          <div data-owned-input>Input {input.index}: {amount(input)}</div>
-        {:else}<div>None</div>{/each}
-      </dd>
-      <dt>Total leaving your wallet</dt>
-      <dd>
-        {#each facts.totalLeaving as a (a.asset)}<div data-total-leaving>{amount(a)}</div>{:else}<div>Nothing</div>{/each}
-      </dd>
-      <dt>Fee</dt>
-      <dd>{#each facts.fee as a (a.asset)}<div data-fee>{amount(a)}</div>{:else}<div>None stated</div>{/each}</dd>
-      {#if facts.unknownFields.length > 0}
-        <dt>Fields the wallet doesn't understand</dt>
+    {@render requester(prompt.origin, prompt.chain)}
+
+    <section class="stack">
+      <h2>What the wallet can prove</h2>
+      <dl class="card facts">
+        <dt>Your inputs it will sign</dt>
         <dd>
-          <ul>{#each facts.unknownFields as field (field)}<li data-unknown-field>{field}</li>{/each}</ul>
+          {#each facts.ownedInputs as input (input.index)}
+            <div data-owned-input>Input {input.index}: {amount(input)}</div>
+          {:else}<div>None</div>{/each}
         </dd>
-      {/if}
-    </dl>
+        <dt>Total leaving your wallet</dt>
+        <dd>
+          {#each facts.totalLeaving as a (a.asset)}<div data-total-leaving>{amount(a)}</div>{:else}<div>Nothing</div>{/each}
+        </dd>
+        <dt>Fee</dt>
+        <dd>{#each facts.fee as a (a.asset)}<div data-fee>{amount(a)}</div>{:else}<div>None stated</div>{/each}</dd>
+        {#if facts.unknownFields.length > 0}
+          <dt>Fields the wallet doesn't understand</dt>
+          <dd>
+            <ul>{#each facts.unknownFields as field (field)}<li data-unknown-field><code>{field}</code></li>{/each}</ul>
+          </dd>
+        {/if}
+      </dl>
+    </section>
 
     {#if prompt.hints?.summary}
       <p class="reported" data-hint-summary>Reported by {prompt.origin}: {prompt.hints.summary}</p>
@@ -259,65 +293,92 @@
       <p class="reported" data-hint-stray-label>Reported by {prompt.origin}: output {key}: {label}</p>
     {/each}
 
-    <div class="actions">
+    <div class="decision">
       <button data-reject disabled={busy} onclick={() => decide(false)}>Reject</button>
-      <button data-approve disabled={busy} onclick={() => decide(true)}>Sign blindly</button>
+      <button class="danger-button" data-approve disabled={busy} onclick={() => decide(true)}>Sign blindly</button>
     </div>
   </main>
 {/if}
 
 <style>
-  main {
-    font-family: system-ui, sans-serif;
-    padding: 1rem;
+  .title {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
   }
-  .origin {
-    font-size: 1.1rem;
-    word-break: break-all;
+  .centered {
+    align-items: center;
+    text-align: center;
+  }
+  .requester {
+    gap: 4px;
+  }
+  .chain {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+  }
+  .chain .chip {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text);
   }
   .opt-in {
-    display: block;
-    margin: 1rem 0;
-    padding: 0.5rem;
-    border: 1px solid #b00020;
+    flex-direction: row;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--danger-border);
+    border-radius: var(--radius-sm);
+    font-weight: 400;
+  }
+  .opt-in.on {
+    border: 2px solid var(--danger);
+    background: var(--danger-bg);
   }
   .blind-banner {
-    background: #b00020;
-    color: white;
-    padding: 0.5rem 1rem;
-    margin-bottom: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: -16px -16px 0;
+    padding: 20px 16px;
+    background: var(--danger-solid);
+    color: var(--on-danger);
   }
-  .danger {
-    border: 2px solid #b00020;
-    padding: 0 1rem;
+  .blind-banner h1 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1.5rem;
   }
-  .rows li {
-    margin-bottom: 0.5rem;
-    word-break: break-all;
+  .output {
+    gap: 8px;
+  }
+  .output-head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 8px;
   }
   .amount {
-    font-weight: bold;
+    font-size: 1.25rem;
   }
-  .yours {
-    color: #1b5e20;
+  .index {
+    margin-left: auto;
   }
-  .not-yours {
-    color: #555;
+  .facts {
+    gap: 2px;
+    font-size: 0.9rem;
   }
-  .reported {
-    font-style: italic;
-    color: #555;
+  .facts dt {
+    color: var(--muted);
+    font-size: 0.8rem;
   }
-  .error {
-    color: #b00020;
+  .facts dt:not(:first-child) {
+    margin-top: 10px;
   }
-  dd {
-    margin-left: 1rem;
-    word-break: break-all;
-  }
-  .actions {
-    display: flex;
-    gap: 0.5rem;
-    justify-content: flex-end;
+  .facts dd {
+    overflow-wrap: anywhere;
   }
 </style>

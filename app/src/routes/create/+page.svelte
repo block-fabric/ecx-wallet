@@ -1,7 +1,9 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { checkNewPassword, createVault, generateMnemonic, vaultStatus } from "$lib/background";
+  import Icon from "$lib/Icon.svelte";
   import PasswordFields from "$lib/PasswordFields.svelte";
+  import TopBar from "$lib/TopBar.svelte";
 
   /** How many words of the phrase the user must type back. */
   const CONFIRM_COUNT = 3;
@@ -65,40 +67,45 @@
   }
 </script>
 
-<main data-wallet-ready={step === "loading" ? undefined : true}>
-  <h1>Create a wallet</h1>
+<main class="screen" data-wallet-ready={step === "loading" ? undefined : true}>
+  <TopBar title="Create a wallet" back="#/" />
 
   {#if step === "exists"}
-    <p data-already-exists>This browser already has a wallet.</p>
-    <a href="#/">Back</a>
+    <p class="notice" data-already-exists>This browser already has a wallet.</p>
+    <a class="button block" href="#/">Back</a>
   {:else if step === "show"}
-    <p>
-      This is your Master Mnemonic ({words.length} words). Write it down, in order, and keep it somewhere safe and offline.
-      It will not be shown again. Anyone who has it controls your funds.
-    </p>
-    <ol class="phrase" data-phrase>
+    <p>This is your Master Mnemonic ({words.length} words). Write it down, in order, and keep it somewhere safe and offline.</p>
+    <ol class="phrase" style:--rows={Math.ceil(words.length / 2)} data-phrase>
       {#each words as word, i (i)}
         <li data-word>{word}</li>
       {/each}
     </ol>
-    <button onclick={phraseSaved} data-phrase-saved>I've written it down</button>
+    <p class="error warning">
+      <Icon name="warning" />
+      <span>It will not be shown again. Anyone who has it controls your funds.</span>
+    </p>
+    <button class="primary block" onclick={phraseSaved} data-phrase-saved>I've written it down</button>
   {:else if step === "confirm"}
-    <form onsubmit={submit}>
+    <form class="stack" onsubmit={submit}>
       <p>To check your backup, type these words from your Master Mnemonic.</p>
-      {#each positions as n (n)}
-        <label>
-          Word #{n}
-          <input
-            autocomplete="off"
-            autocapitalize="off"
-            spellcheck="false"
-            bind:value={typed[n]}
-            data-confirm-word={n}
-          />
-        </label>
-      {/each}
-      <PasswordFields bind:password bind:repeat />
-      <button type="submit" disabled={busy} data-submit>Create wallet</button>
+      <div class="card">
+        {#each positions as n (n)}
+          <label>
+            Word #{n}
+            <input
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              bind:value={typed[n]}
+              data-confirm-word={n}
+            />
+          </label>
+        {/each}
+      </div>
+      <div class="card">
+        <PasswordFields bind:password bind:repeat />
+      </div>
+      <button class="primary block" type="submit" disabled={busy} data-submit>Create wallet</button>
     </form>
   {/if}
 
@@ -108,21 +115,34 @@
 </main>
 
 <style>
-  main {
-    font-family: system-ui, sans-serif;
-    padding: 1rem;
-    max-width: 30rem;
-  }
   .phrase {
-    columns: 2;
-    font-family: ui-monospace, monospace;
-    font-size: 1.1rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(var(--rows, 6), auto);
+    gap: 8px;
+    counter-reset: word;
   }
-  label {
-    display: block;
-    margin-bottom: 0.5rem;
+  .phrase li {
+    counter-increment: word;
+    display: flex;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    font-family: var(--mono);
+    font-size: 0.95rem;
   }
-  .error {
-    color: #b00020;
+  /* The number is drawn, not text: the word's own text stays exactly the word. */
+  .phrase li::before {
+    content: counter(word);
+    min-width: 1.5em;
+    color: var(--muted);
+    text-align: right;
+  }
+  .warning {
+    display: flex;
+    gap: 10px;
   }
 </style>

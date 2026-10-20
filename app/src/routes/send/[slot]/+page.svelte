@@ -1,6 +1,8 @@
 <script lang="ts">
   import { page } from "$app/state";
+  import { shortAsset } from "$lib/asset";
   import { reportedState, startSend, type SendResult, type SlotReport } from "$lib/background";
+  import TopBar from "$lib/TopBar.svelte";
 
   const slot = Number(page.params.slot);
   let report = $state<SlotReport | undefined>(undefined);
@@ -40,72 +42,47 @@
   }
 </script>
 
-<main data-screen-ready={loaded ? "" : undefined}>
-  <h1>Send on Slot {slot}</h1>
+<main class="screen" data-screen-ready={loaded ? "" : undefined}>
+  <TopBar title="Send on Slot {slot}" back="#/" />
+
+  {#if !loaded}
+    <p class="loading"><span class="spinner"></span>Loading…</p>
+  {/if}
 
   {#if report}
-    <p class="reported">
-      The Sidechain Server at <strong data-server>{report.server}</strong> builds the transaction. You review
-      exactly what it built, decoded by this wallet, before anything is signed.
-    </p>
-    <form onsubmit={submit}>
-      <label>
-        Asset
-        <select bind:value={asset} data-send-asset>
-          {#each report.balances as balance (balance.asset)}
-            <option value={balance.asset}>{balance.asset.slice(0, 8)}… ({balance.amount} reported)</option>
-          {/each}
-        </select>
-      </label>
-      <label>
-        Amount (base units)
-        <input inputmode="numeric" bind:value={amount} data-send-amount />
-      </label>
-      <label>
-        Destination address
-        <input bind:value={destination} autocomplete="off" spellcheck="false" data-send-destination />
-      </label>
-      <button type="submit" disabled={busy || !asset} data-send-submit>Review and send</button>
+    <form class="stack" onsubmit={submit}>
+      <div class="card">
+        <label>
+          Asset
+          <select bind:value={asset} data-send-asset>
+            {#each report.balances as balance (balance.asset)}
+              <option value={balance.asset}>{shortAsset(balance.asset)} ({balance.amount} reported)</option>
+            {/each}
+          </select>
+        </label>
+        <label>
+          Amount (base units)
+          <input inputmode="numeric" bind:value={amount} data-send-amount />
+        </label>
+        <label>
+          Destination address
+          <input class="mono" bind:value={destination} autocomplete="off" spellcheck="false" data-send-destination />
+        </label>
+      </div>
+      <p class="reported">
+        The Sidechain Server at <strong data-server>{report.server}</strong> builds the transaction. You review
+        exactly what it built, decoded by this wallet, before anything is signed.
+      </p>
+      <button class="primary block" type="submit" disabled={busy || !asset} data-send-submit>Review and send</button>
     </form>
-    {#if busy}<p data-send-waiting>Waiting for the Sidechain Server and your approval…</p>{/if}
+    {#if busy}<p class="loading small" data-send-waiting><span class="spinner"></span>Waiting for the Sidechain Server and your approval…</p>{/if}
   {/if}
 
   {#if done}
-    <p class="done" role="status" data-send-done>
+    <p class="success" role="status" data-send-done>
       Signed and submitted to {done.server}{done.accepted ? "" : ", which didn't accept it"}.
       {#if done.txid}Transaction <code>{done.txid}</code>.{/if}
     </p>
   {/if}
   {#if error}<p class="error" role="alert" data-error>{error}</p>{/if}
-
-  <nav><a href="#/">Back to your account</a></nav>
 </main>
-
-<style>
-  main {
-    font-family: system-ui, sans-serif;
-    padding: 1rem;
-    max-width: 30rem;
-  }
-  label {
-    display: block;
-    margin-bottom: 0.5rem;
-  }
-  input,
-  select {
-    display: block;
-    width: 100%;
-  }
-  .reported {
-    font-style: italic;
-    color: #555;
-    word-break: break-all;
-  }
-  .done {
-    color: #1b5e20;
-    word-break: break-all;
-  }
-  .error {
-    color: #b00020;
-  }
-</style>

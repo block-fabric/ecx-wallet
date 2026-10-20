@@ -76,6 +76,7 @@ pnpm typecheck
 
 - Only one browser: `E2E_BROWSERS=brave pnpm test` (default `brave,firefox`). Watch it: `HEADFUL=1`.
 - Load the build by hand: `brave://extensions` → Developer mode → Load unpacked → `extension/dist/chromium`.
+- Screenshot every screen (Brave, light or dark): `node e2e/screenshots.mjs <out dir> [light|dark]` after `pnpm build`.
 
 ### MV3 fixes applied to the SvelteKit output
 

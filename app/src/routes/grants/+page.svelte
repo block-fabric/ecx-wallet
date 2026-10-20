@@ -1,5 +1,6 @@
 <script lang="ts">
   import { listGrants, revokeGrant, type Grant } from "$lib/background";
+  import TopBar from "$lib/TopBar.svelte";
 
   let grants = $state<Grant[] | undefined>(undefined);
 
@@ -24,32 +25,34 @@
   }
 </script>
 
-<main data-screen-ready={grants !== undefined ? "" : undefined}>
-  <h1>Connected sites</h1>
-  <p>Each site below holds a Grant: it may ask for the listed methods on the listed sidechains.</p>
+<main class="screen" data-screen-ready={grants !== undefined ? "" : undefined}>
+  <TopBar title="Grants" back="#/" />
+  <p class="muted small">Each site below holds a Grant: it may ask for the listed methods on the listed sidechains.</p>
 
   {#if grants === undefined}
-    <p>Loading…</p>
+    <p class="loading"><span class="spinner"></span>Loading…</p>
   {:else if grants.length === 0}
-    <p data-no-grants>No site is connected.</p>
+    <p class="notice" data-no-grants>No site holds a Grant.</p>
   {:else}
-    <ul class="grants">
+    <ul class="stack">
       {#each grants as grant (grant.origin)}
-        <li data-grant data-grant-origin={grant.origin}>
+        <li class="card" data-grant data-grant-origin={grant.origin}>
           <p class="origin"><strong data-origin>{grant.origin}</strong></p>
           <dl>
             <dt>Sidechains (Slots)</dt>
-            <dd>
-              {#each grant.slots as slot (slot)}<span class="tag" data-slot>{slot}</span>{/each}
+            <dd class="chips">
+              {#each grant.slots as slot (slot)}<span class="chip" data-slot>{slot}</span>{/each}
             </dd>
             <dt>Allowed to ask for</dt>
-            <dd>
-              {#each grant.methods as method (method)}<span class="tag" data-method>{method}</span>{/each}
+            <dd class="chips">
+              {#each grant.methods as method (method)}<span class="chip" data-method>{method}</span>{/each}
             </dd>
             <dt>Blind Signing</dt>
-            <dd data-blind-signing>{grant.blindSigning ? "On" : "Off"}</dd>
+            <dd>
+              <span class="badge" class:bad={grant.blindSigning} data-blind-signing>{grant.blindSigning ? "On" : "Off"}</span>
+            </dd>
           </dl>
-          <button data-revoke disabled={revoking !== undefined} onclick={() => revoke(grant.origin)}>
+          <button class="small-button revoke" data-revoke disabled={revoking !== undefined} onclick={() => revoke(grant.origin)}>
             Revoke
           </button>
         </li>
@@ -59,32 +62,19 @@
 </main>
 
 <style>
-  main {
-    font-family: system-ui, sans-serif;
-    padding: 1rem;
-  }
-  .grants {
-    list-style: none;
-    padding: 0;
-  }
-  .grants > li {
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    padding: 0.75rem;
-    margin-bottom: 0.75rem;
-  }
-  .origin {
-    margin-top: 0;
-    word-break: break-all;
+  dl {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px 12px;
+    align-items: center;
   }
   dt {
-    font-weight: 600;
+    color: var(--muted);
+    font-size: 0.8rem;
   }
-  dd {
-    margin: 0 0 0.5rem;
-  }
-  .tag {
-    display: inline-block;
-    margin-right: 0.4rem;
+  .revoke {
+    align-self: flex-end;
+    color: var(--danger);
+    border-color: var(--danger-border);
   }
 </style>

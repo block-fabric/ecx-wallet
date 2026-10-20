@@ -9,6 +9,10 @@
     type SlotReport,
     type VaultStatus,
   } from "$lib/background";
+  import { shortAsset } from "$lib/asset";
+  import Icon from "$lib/Icon.svelte";
+  import Mark from "$lib/Mark.svelte";
+  import TopBar from "$lib/TopBar.svelte";
 
   let status = $state<VaultStatus | undefined>(undefined);
   let accounts = $state<SlotAccount[] | undefined>(undefined);
@@ -58,64 +62,82 @@
   }
 </script>
 
-<main data-wallet-home data-wallet-ready={status ? true : undefined} data-vault-state={vaultState}>
-  <h1>ECX Wallet</h1>
+{#snippet lockButton()}
+  <button class="small-button" disabled={busy} onclick={() => act(lockVault)} data-lock>
+    <Icon name="lock" size={16} /> Lock
+  </button>
+{/snippet}
 
+<main class="screen" data-wallet-home data-wallet-ready={status ? true : undefined} data-vault-state={vaultState}>
   {#if vaultState === "onboarding"}
-    <p>Set up your wallet. One Master Mnemonic (a 12- or 24-word phrase) controls your funds on eCash and its sidechains.</p>
-    <p>
-      The wallet stores your Master Mnemonic only encrypted with your password, and never unencrypted.
-    </p>
-    <nav class="actions">
-      <a href="#/create" data-start-create>Create a new wallet</a>
-      <a href="#/import" data-start-import>Import a Master Mnemonic</a>
+    <div class="hero">
+      <Mark size={56} />
+      <h1>ECX Wallet</h1>
+      <p>Set up your wallet. One Master Mnemonic (a 12- or 24-word phrase) controls your funds on eCash and its sidechains.</p>
+    </div>
+    <nav class="stack">
+      <a class="button primary block" href="#/create" data-start-create>Create a new wallet</a>
+      <a class="button block" href="#/import" data-start-import>Import a Master Mnemonic</a>
     </nav>
+    <p class="notice">
+      <Icon name="shield" />
+      <span>The wallet stores your Master Mnemonic only encrypted with your password, and never unencrypted.</span>
+    </p>
   {:else if vaultState === "locked"}
+    <TopBar title="ECX Wallet" />
     <form
+      class="card unlock"
       onsubmit={(e) => {
         e.preventDefault();
         act(() => unlockVault(password));
       }}
     >
+      <span class="lock-icon"><Icon name="lock" size={26} /></span>
+      <h1>Unlock your wallet</h1>
       <label>
         Password
         <input type="password" autocomplete="current-password" bind:value={password} data-password />
       </label>
-      <button type="submit" disabled={busy} data-unlock>Unlock</button>
+      <button class="primary block" type="submit" disabled={busy} data-unlock>Unlock</button>
     </form>
   {:else if vaultState === "unlocked"}
-    <p>Your wallet is unlocked. It locks itself after 15 minutes without use.</p>
+    <TopBar title="ECX Wallet" actions={lockButton} />
+    <p class="muted small status"><span class="dot"></span>Your wallet is unlocked. It locks itself after 15 minutes without use.</p>
     {#each accounts ?? [] as account (account.slot)}
       {#each account.addresses.slice(0, 1) as { chain, address } (address)}
         {@const report = reports[account.slot]}
-        <section class="account" data-account={account.slot}>
-          <h2>Slot {account.slot} <small data-account-chain>{chain}</small></h2>
-          <p>Receive address</p>
-          <code data-receive-address>{address}</code>
+        <section class="card" data-account={account.slot}>
+          <div class="account-head">
+            <h2>Slot {account.slot}</h2>
+            <span class="chip" data-account-chain>{chain}</span>
+          </div>
           {#if report === undefined}
-            <p>Asking the Sidechain Server for your balance…</p>
+            <p class="loading small"><span class="spinner"></span>Asking the Sidechain Server for your balance…</p>
           {:else if "error" in report}
             <p class="error" data-balance-error>Balance unavailable: {report.error}</p>
           {:else}
-            <h3>Balance</h3>
-            <p class="reported" data-reported-by>
-              Reported by {report.server}. This wallet doesn't verify it.
-            </p>
             <ul class="balances">
               {#each report.balances as balance (balance.asset)}
                 <li data-balance data-asset={balance.asset}>
-                  <strong>{balance.amount}</strong> <span class="asset">asset <code>{balance.asset}</code></span>
+                  <strong class="amount">{balance.amount}</strong>
+                  <span class="muted small">asset <code title={balance.asset}>{shortAsset(balance.asset)}</code></span>
                 </li>
               {:else}
-                <li data-no-balance>Nothing reported.</li>
+                <li class="muted" data-no-balance>Nothing reported.</li>
               {/each}
             </ul>
-            <a href="#/send/{account.slot}" data-send-link>Send</a>
+            <p class="reported" data-reported-by>
+              Reported by {report.server}. This wallet doesn't verify it.
+            </p>
+            <a class="button primary block" href="#/send/{account.slot}" data-send-link><Icon name="send" /> Send</a>
           {/if}
+          <div class="receive">
+            <h2>Receive address</h2>
+            <code data-receive-address>{address}</code>
+          </div>
         </section>
       {/each}
     {/each}
-    <button disabled={busy} onclick={() => act(lockVault)} data-lock>Lock</button>
   {/if}
 
   {#if error}
@@ -123,39 +145,101 @@
   {/if}
 
   {#if status?.exists}
-    <nav><a href="#/grants" data-grants-link>Connected sites</a></nav>
+    <a class="card nav-row" href="#/grants" data-grants-link>
+      <span class="stack-tight">
+        <strong>Grants</strong>
+        <span class="muted small">Sites you've let use your wallet</span>
+      </span>
+      <Icon name="forward" />
+    </a>
   {/if}
 </main>
 
 <style>
-  main {
-    font-family: system-ui, sans-serif;
-    padding: 1rem;
-    max-width: 30rem;
-  }
-  .actions {
+  .hero {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    align-items: center;
+    gap: 12px;
+    padding: 24px 8px 8px;
+    text-align: center;
   }
-  label {
-    display: block;
-    margin-bottom: 0.5rem;
+  .hero h1 {
+    font-size: 1.6rem;
   }
-  .account code {
-    display: block;
-    word-break: break-all;
-    margin-bottom: 1rem;
+  .unlock {
+    align-items: center;
+    text-align: center;
+    padding: 28px 20px 20px;
   }
-  .reported {
-    font-style: italic;
-    color: #555;
+  .unlock label {
+    align-self: stretch;
+    text-align: left;
   }
-  .balances code {
-    word-break: break-all;
-    font-size: 0.8em;
+  .lock-icon {
+    display: flex;
+    padding: 14px;
+    border-radius: 50%;
+    background: var(--surface-2);
+    color: var(--accent);
   }
-  .error {
-    color: #b00020;
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ok);
+    flex: none;
+  }
+  .account-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .balances {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .balances li {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .amount {
+    font-size: 1.6rem;
+  }
+  .receive {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+  .receive code {
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    user-select: all;
+  }
+  .nav-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--text);
+    text-decoration: none;
+  }
+  .nav-row:hover {
+    background: var(--surface-2);
+  }
+  .stack-tight {
+    display: flex;
+    flex-direction: column;
   }
 </style>
