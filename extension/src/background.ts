@@ -229,6 +229,13 @@ function fromWalletPage(sender: chrome.runtime.MessageSender): boolean {
   return sender.id === chrome.runtime.id && (sender.url?.startsWith(chrome.runtime.getURL("")) ?? false);
 }
 
+/** A wallet page's `slot`, if the wallet has a Chain Module for it. */
+function supportedSlot(slot: unknown): number {
+  const n = Number(slot);
+  if (!SUPPORTED_SLOTS.includes(n)) throw new ProviderRpcError(ErrorCode.ChainDisconnected, "No Chain Module for that Slot.");
+  return n;
+}
+
 async function route(message: BackgroundMessage, sender: chrome.runtime.MessageSender): Promise<unknown> {
   switch (message?.kind) {
     case "provider.request": {
@@ -268,13 +275,11 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
     case "accounts.reported":
       // What a Slot's Sidechain Server reports (registering the Slot's addresses with it first).
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
-      if (!SUPPORTED_SLOTS.includes(Number(message.slot))) throw new ProviderRpcError(ErrorCode.ChainDisconnected, "No Chain Module for that Slot.");
-      return pullPath.reportedState(Number(message.slot));
+      return pullPath.reportedState(supportedSlot(message.slot));
     case "send.start":
       // The wallet's own Send: resolves once the server accepted the signed payload.
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
-      if (!SUPPORTED_SLOTS.includes(Number(message.slot))) throw new ProviderRpcError(ErrorCode.ChainDisconnected, "No Chain Module for that Slot.");
-      return pullPath.send(Number(message.slot), {
+      return pullPath.send(supportedSlot(message.slot), {
         asset: String(message.asset ?? ""),
         amount: String(message.amount ?? ""),
         destination: String(message.destination ?? ""),
