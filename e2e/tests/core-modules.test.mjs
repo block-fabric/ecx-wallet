@@ -12,6 +12,7 @@ test("every shipped .wasm imports nothing but memory", async () => {
   const wasm = (await readdir(DIST.chromium)).filter((f) => f.endsWith(".wasm"));
   assert.ok(wasm.includes("vault.wasm"), "vault.wasm is packaged");
   assert.ok(wasm.includes("elements.wasm"), "elements.wasm is packaged");
+  assert.ok(wasm.includes("l1.wasm"), "l1.wasm is packaged");
   for (const file of wasm) {
     const module = new WebAssembly.Module(await readFile(path.join(DIST.chromium, file)));
     const imports = WebAssembly.Module.imports(module).filter((i) => i.kind !== "memory");

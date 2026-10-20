@@ -3,8 +3,9 @@
 //
 //   node scripts/build.mjs
 //
-// The e2e build (e2e/scripts/build.mjs) sets $ECX_ELEMENTS_CHAIN_ENTRY (the Chain Entry
-// elements.wasm embeds), $ECX_CORE_DIST (instead of core/dist/) and $CARGO_TARGET_DIR.
+// The e2e build (e2e/scripts/build.mjs) sets $ECX_ELEMENTS_CHAIN_ENTRY and $ECX_L1_CHAIN_ENTRY
+// (the Chain Entries elements.wasm and l1.wasm embed), $ECX_CORE_DIST (instead of core/dist/) and
+// $CARGO_TARGET_DIR.
 //
 // Needs the pinned Rust toolchain (rust-toolchain.toml; rustup installs it) with the
 // wasm32-unknown-unknown target, and a clang with the WebAssembly backend plus llvm-ar for
@@ -27,6 +28,7 @@ const TARGET = "wasm32-unknown-unknown";
 export const MODULES = [
   { crate: "ecx-vault-wasm", file: "vault.wasm" },
   { crate: "ecx-elements-wasm", file: "elements.wasm" },
+  { crate: "ecx-l1-wasm", file: "l1.wasm" },
 ];
 
 const run = (cmd, args, env = {}) =>

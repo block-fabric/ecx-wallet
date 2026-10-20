@@ -1,0 +1,16 @@
+[package]
+name = "ecx-l1"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "The L1 (eCash) Chain Module: BIP84 addresses from the L1 Account Key. Pure Rust, no I/O, no ambient randomness."
+
+[dependencies]
+ecx-chain-entry = { path = "../chain-entry" }
+# Exact pins (spec #18, Build), as in ecx-vault.
+bitcoin = { version = "=0.32.102", default-features = false, features = ["std"] }
+# Only here to switch libsecp256k1 to its `lowmemory` build (small precomputed tables).
+secp256k1 = { version = "=0.29.1", default-features = false, features = ["std", "lowmemory"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = { version = "=1.0.154" }

@@ -296,6 +296,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "ecx-l1"
+version = "0.0.0"
+dependencies = [
+ "bitcoin",
+ "ecx-chain-entry",
+ "secp256k1",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ecx-l1-wasm"
+version = "0.0.0"
+dependencies = [
+ "ecx-l1",
+ "ecx-wasm-abi",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ecx-vault"
 version = "0.0.0"
 dependencies = [

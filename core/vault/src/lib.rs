@@ -39,6 +39,19 @@ pub fn starter(master: &str, passphrase: &str, slot: u32) -> Result<String, Stri
     Ok(bip39::Mnemonic::from_entropy(&digest[..16]).map_err(|e| e.to_string())?.to_string())
 }
 
+/// The L1 Account Key: BIP84 account 0, `m/84'/0'/0'` (coin type 0: ECX shares Bitcoin's keys),
+/// as `[<master fingerprint>/84h/0h/0h]xprv…`. The L1 Chain Module derives every L1 address from it
+/// and never sees the Master Mnemonic; it's never a Starter, and no Slot's module gets it.
+pub fn l1_account_key(master: &str, passphrase: &str) -> Result<String, String> {
+    let seed = parse(master)?.to_seed(passphrase);
+    let secp = Secp256k1::signing_only();
+    // `xprv` serialisation (eCash is Bitcoin's main network kind).
+    let root = Xpriv::new_master(NetworkKind::Main, &seed).map_err(|e| e.to_string())?;
+    let path = [ChildNumber::Hardened { index: 84 }, ChildNumber::Hardened { index: 0 }, ChildNumber::Hardened { index: 0 }];
+    let key = root.derive_priv(&secp, &path).map_err(|e| e.to_string())?;
+    Ok(format!("[{}/84h/0h/0h]{key}", root.fingerprint(&secp)))
+}
+
 /// Argon2id cost parameters. Stored next to the ciphertext so they can be raised later.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct KdfParams {

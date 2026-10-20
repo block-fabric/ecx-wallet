@@ -1,10 +1,10 @@
-// Runs a stub on the e2e build's Slot 24 Sidechain Server URL (e2e/scripts/build.mjs), answering
-// for the "abandon … about" test wallet from the e2e fixtures:
+// Runs stubs on the e2e build's Sidechain Server URLs (e2e/scripts/build.mjs), answering for the
+// "abandon … about" test wallet from the e2e fixtures: eCash's Esplora stub, plus one for Slot 24.
 //
-//   pnpm --filter @ecx/stub-server start             the Esplora stub, which the e2e build speaks to
+//   pnpm --filter @ecx/stub-server start             Slot 24's Esplora stub, which the e2e build speaks to
 //   pnpm --filter @ecx/stub-server start -- ecx-v0   the Standard Sidechain API stub, on the same URL
 import { readFile } from "node:fs/promises";
-import { E2E_SIDECHAIN_SERVER } from "../../e2e/scripts/build.mjs";
+import { E2E_L1_SERVER, E2E_SIDECHAIN_SERVER } from "../../e2e/scripts/build.mjs";
 import { createEsploraStub } from "./esplora.mjs";
 import { createStubServer } from "./server.mjs";
 
@@ -37,4 +37,13 @@ const stub =
       : undefined;
 if (stub === undefined) throw new Error(`Unknown Server API ${api}: esplora or ecx-v0.`);
 const url = new URL(E2E_SIDECHAIN_SERVER.url);
+
+const l1Entry = JSON.parse(await readFile(new URL("core/l1/chain-entry.json", root), "utf8")).networks.betanet;
+const l1Stub = createEsploraStub({
+  identityBlock: l1Entry.identityBlock,
+  // BIP84's m/84'/0'/0'/0/0 for "abandon … about".
+  utxos: { bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu: [{ txid: "bb".repeat(32), vout: 0, value: 250000, confirmed: true }] },
+});
+const l1Url = new URL(E2E_L1_SERVER.url);
+console.log(`stub esplora server for ${l1Entry.chain} at ${await l1Stub.listen(Number(l1Url.port), l1Url.hostname)}`);
 console.log(`stub ${api} Sidechain Server for ${entry.chain} at ${await stub.listen(Number(url.port), url.hostname)}`);

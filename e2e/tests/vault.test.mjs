@@ -5,7 +5,7 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, test } from "node:test";
-import { BROWSERS, launchWallet } from "../harness.mjs";
+import { BROWSERS, homeSettled, launchWallet } from "../harness.mjs";
 
 const PHRASE = "legal winner thank year wave sausage worth useful legal winner thank yellow";
 const PASSPHRASE = "ecx-e2e-passphrase-Q7";
@@ -22,6 +22,7 @@ async function openWallet(session, route = "") {
 async function homeState(session) {
   const page = await openWallet(session);
   const state = await page.$eval("[data-vault-state]", (e) => e.dataset.vaultState);
+  if (state === "unlocked") await homeSettled(page);
   await page.close();
   return state;
 }
@@ -45,6 +46,7 @@ async function importWallet(session, { phrase = PHRASE, passphrase = PASSPHRASE,
 async function setUpWallet(session) {
   const page = await importWallet(session);
   await page.waitForSelector('[data-vault-state="unlocked"]');
+  await homeSettled(page);
   await page.close();
 }
 
@@ -173,6 +175,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       await setUpWallet(session);
       const page = await openWallet(session);
       await unlockedFor(page, 1);
+      await homeSettled(page);
       assert.equal(await homeState(session), "unlocked");
       // Stand in for a minute without activity: bring the stored deadline forward to 1.5 s from now.
       await page.evaluate(() => chrome.storage.session.set({ "vault:unlockedUntil": Date.now() + 1_500 }));

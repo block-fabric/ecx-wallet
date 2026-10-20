@@ -6,6 +6,7 @@
 import {
   createAccounts,
   createChainModules,
+  createL1Module,
   createProviderHandler,
   createPullPath,
   sidechainServer,
@@ -192,10 +193,12 @@ chrome.windows.onRemoved.addListener((windowId) => {
   for (const approval of approvals.values()) if (approval.windowId === windowId) approval.close();
 });
 
-// Each Slot's Chain Module runs in its own WASM instance (instantiated on first use) and gets
-// only that Slot's Starter, per call.
+// Each Chain Module runs in its own WASM instance (instantiated on first use) and gets only its
+// own key, per call: a Slot's module that Slot's Starter, eCash's module the L1 Account Key.
 const chainModule = createChainModules(fetchWasm);
-const accounts = createAccounts({ starter: (slot) => vault.starter(slot), chainModule });
+const l1Module = createL1Module(fetchWasm);
+const keys = { starter: (slot: number) => vault.starter(slot), l1AccountKey: () => vault.l1AccountKey() };
+const accounts = createAccounts({ ...keys, chainModule, l1Module });
 
 /** One review for every Signing Request, whichever path it came by. */
 const signing = {
@@ -203,7 +206,7 @@ const signing = {
   supportedSlots: SUPPORTED_SLOTS,
   isUnlocked: async () => (await vault.status()).unlocked,
   chainModule,
-  starter: (slot: number) => vault.starter(slot),
+  starter: keys.starter,
   now: () => Date.now(),
 };
 
@@ -215,7 +218,7 @@ const handleProviderRequest = createProviderHandler({
 });
 
 // The pull path: each Slot's Sidechain Server, in the Server API its Chain Entry names.
-const pullPath = createPullPath({ ...signing, sidechainServer: (entry, network) => sidechainServer(entry, network) });
+const pullPath = createPullPath({ ...signing, ...keys, l1Module, sidechainServer: (entry, network) => sidechainServer(entry, network) });
 
 /** The requester's web origin as the browser reports it for a content-script message. */
 function requesterOrigin(sender: chrome.runtime.MessageSender): string | undefined {
@@ -272,6 +275,13 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
       return Promise.all(
         SUPPORTED_SLOTS.map(async (slot) => ({ slot, addresses: await accounts.receiveAddresses(slot) })),
       );
+    case "l1.account":
+      // eCash's own account: its receive address and what its server reports are asked separately.
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      return { addresses: await accounts.l1ReceiveAddresses() };
+    case "l1.reported":
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      return pullPath.reportedL1State();
     case "accounts.reported":
       // What a Slot's Sidechain Server reports for the addresses the wallet watches.
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");

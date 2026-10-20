@@ -36,6 +36,16 @@ pub unsafe extern "C" fn starter(
     )
 }
 
+/// Master Mnemonic + passphrase → the L1 Account Key.
+#[no_mangle]
+pub unsafe extern "C" fn l1_account_key(master: *const u8, master_len: usize, passphrase: *const u8, passphrase_len: usize) -> i32 {
+    ret_text(
+        text(master, master_len)
+            .and_then(|m| text(passphrase, passphrase_len).map(|p| (m, p)))
+            .and_then(|(m, p)| ecx_vault::l1_account_key(m, p)),
+    )
+}
+
 /// Password + salt → the 32-byte vault key (Argon2id).
 #[no_mangle]
 pub unsafe extern "C" fn stretch_password(

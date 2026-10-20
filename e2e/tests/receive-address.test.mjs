@@ -8,6 +8,8 @@ import { after, before, describe, test } from "node:test";
 import { BROWSERS, launchWallet, openTestApp, serveTestApp, setUpWallet, WALLET_PASSWORD } from "../harness.mjs";
 
 const SLOT_24_ADDRESS = "elements1qew44aehkjstjm56ng2rjrz57vwxh5g9su6dlpm";
+/** BIP84's own vector for "abandon … about", m/84'/0'/0'/0/0 (bip-0084.mediawiki). */
+const L1_ADDRESS = "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu";
 
 async function openHome(session) {
   const page = await session.openPage("index.html#/");
@@ -43,9 +45,22 @@ for (const browserName of BROWSERS) describe(browserName, () => {
 
   test("the account screen shows the Slot 24 receive address in elements… encoding", async () => {
     const page = await openHome(session);
-    await page.waitForSelector("[data-receive-address]", { timeout: 20_000 });
-    assert.equal(await page.$eval("[data-receive-address]", (e) => e.textContent.trim()), SLOT_24_ADDRESS);
-    assert.match(await page.$eval("[data-account-chain]", (e) => e.textContent), /ecash:betanet-s24/);
+    const card = '[data-account="24"]';
+    await page.waitForSelector(`${card} [data-receive-address]`, { timeout: 20_000 });
+    assert.equal(await page.$eval(`${card} [data-receive-address]`, (e) => e.textContent.trim()), SLOT_24_ADDRESS);
+    assert.match(await page.$eval(`${card} [data-account-chain]`, (e) => e.textContent), /ecash:betanet-s24/);
+    await page.close();
+  });
+
+  test("the account screen shows the eCash receive address, BIP84's m/84'/0'/0'/0/0, above the Slots", async () => {
+    const page = await openHome(session);
+    const card = '[data-account="l1"]';
+    await page.waitForSelector(`${card} [data-receive-address]`, { timeout: 20_000 });
+    assert.equal(await page.$eval(`${card} [data-receive-address]`, (e) => e.textContent.trim()), L1_ADDRESS);
+    assert.match(await page.$eval(`${card} [data-account-chain]`, (e) => e.textContent), /^ecash:betanet$/);
+    await page.waitForSelector('[data-account="24"]', { timeout: 20_000 });
+    const order = await page.$$eval("[data-account]", (cards) => cards.map((c) => c.getAttribute("data-account")));
+    assert.deepEqual(order, ["l1", "24"]);
     await page.close();
   });
 

@@ -28,6 +28,7 @@ const FOREIGN_ADDRESS = "elements1qepkhlwlq2qjggg89d5quqx8z59vz9mr2h6j4pc";
 
 const wallet = await importWallet();
 const elements = await wallet.loadChainModule(await readFile(path.join(DIST.chromium, "elements.wasm")));
+const l1 = await wallet.loadChainModule(await readFile(path.join(DIST.chromium, "l1.wasm")));
 
 /**
  * The pull path for Slot 24 with betanet's server set to `server`. `approve` answers each approval
@@ -51,6 +52,8 @@ function pullPathWith(server, { approve = true } = {}) {
     }),
     isUnlocked: async () => true,
     starter: async () => SLOT_24_STARTER,
+    l1Module: async () => l1,
+    l1AccountKey: async () => assert.fail("Slot 24's pull path asked for the L1 Account Key"),
     now: () => Date.now(),
     sidechainServer: (chainEntry, network) => wallet.sidechainServer(chainEntry, network),
   });

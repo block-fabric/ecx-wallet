@@ -1,7 +1,15 @@
-// Typed access to a Chain Module's .wasm (today: core/elements-wasm as elements.wasm). The shape
-// follows the spec's Chain Module interface. A module returns data only and holds nothing: it gets
-// its own Slot's Starter per call.
+// Typed access to a Chain Module's .wasm (elements.wasm for Slot 24, l1.wasm for eCash itself).
+// The shape follows the spec's Chain Module interface. A module returns data only and holds
+// nothing: it gets its key per call, a Slot's Starter or, for eCash, the L1 Account Key.
 import { CoreModule, CoreModuleError } from "./wasm";
+
+declare const keyKind: unique symbol;
+/** A Slot's Starter, as the Vault hands it out. Only that Slot's Chain Module gets it. */
+export type Starter = string & { readonly [keyKind]: "Starter" };
+/** The L1 Account Key, `[fingerprint/84h/0h/0h]xprv…`. Only the L1 Chain Module gets it. */
+export type L1AccountKey = string & { readonly [keyKind]: "L1AccountKey" };
+/** The key a Chain Module derives from: which one is set by its place in the tree (docs/adr/0003). */
+export type ChainKey = Starter | L1AccountKey;
 
 /** What a module serves: Signing Requests for `chain` in `format`. */
 export interface Binding {
@@ -82,8 +90,11 @@ export interface Account {
   change: DerivedAddress[];
 }
 
+/** `AssetAmount.asset` on a chain without assets (eCash): its only coin, in sats. */
+export const NATIVE_COIN = "";
+
 export interface AssetAmount {
-  /** Display hex. */
+  /** Display hex, or NATIVE_COIN on a chain without assets. */
   asset: string;
   /** Base units, as a decimal string (may be negative for `totalLeaving`). */
   amount: string;
@@ -144,17 +155,21 @@ export class ChainModuleRefusal extends Error {
   }
 }
 
-export interface ChainModule {
+/**
+ * A Chain Module whose key is `K`. The L1 module (`ChainModule<L1AccountKey>`) has no `check`,
+ * `decode` or `sign` exports yet (they come with Deposit, #31): calling them throws.
+ */
+export interface ChainModule<K extends ChainKey = Starter> {
   declare(): Declaration;
   chainEntry(): ChainEntry;
-  /** The Slot's Starter → its account, with the first `receive` receive and `change` (default 0) change addresses. */
-  deriveAccount(starter: string, options: { receive: number; change?: number }): Account;
-  /** Refuses (throws ChainModuleRefusal) what the module would refuse anyway, without the Starter. */
+  /** The module's key → its account, with the first `receive` receive and `change` (default 0) change addresses. */
+  deriveAccount(key: K, options: { receive: number; change?: number }): Account;
+  /** Refuses (throws ChainModuleRefusal) what the module would refuse anyway, without the key. */
   check(payload: string): void;
   /** A request's payload → a Clear View or Blind. Throws ChainModuleRefusal. */
-  decode(payload: string, starter: string): Decoded;
-  /** The payload with signatures on the inputs the Starter owns; nothing else changes. Throws ChainModuleRefusal. */
-  sign(payload: string, starter: string): string;
+  decode(payload: string, key: K): Decoded;
+  /** The payload with signatures on the inputs the key owns; nothing else changes. Throws ChainModuleRefusal. */
+  sign(payload: string, key: K): string;
 }
 
 /** Turns a module's JSON error result into a ChainModuleRefusal. */
@@ -175,15 +190,15 @@ function refusals<T>(call: () => T): T {
   }
 }
 
-export async function loadChainModule(bytes: BufferSource): Promise<ChainModule> {
+export async function loadChainModule<K extends ChainKey = Starter>(bytes: BufferSource): Promise<ChainModule<K>> {
   const m = await CoreModule.instantiate(bytes);
   const json = <T>(name: string, ...args: (string | number)[]) => JSON.parse(m.callText(name, ...args)) as T;
   return {
     declare: () => json<Declaration>("declare"),
     chainEntry: () => json<ChainEntry>("chain_entry"),
-    deriveAccount: (starter, { receive, change = 0 }) => json<Account>("derive_account", starter, receive, change),
+    deriveAccount: (key, { receive, change = 0 }) => json<Account>("derive_account", key, receive, change),
     check: (payload) => refusals(() => void m.callText("check", payload)),
-    decode: (payload, starter) => refusals(() => json<Decoded>("decode", payload, starter)),
-    sign: (payload, starter) => refusals(() => m.callText("sign", payload, starter)),
+    decode: (payload, key) => refusals(() => json<Decoded>("decode", payload, key)),
+    sign: (payload, key) => refusals(() => m.callText("sign", payload, key)),
   };
 }

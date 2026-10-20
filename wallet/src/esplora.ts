@@ -1,7 +1,7 @@
 // The wallet's client for a Sidechain Server that speaks Esplora (docs/adr/0002): the REST API of
 // Blockstream's electrs, limited to the endpoints mempool's electrs fork also serves. Esplora knows
 // nothing of watches: the wallet asks for each watched address's outputs and adds them up itself.
-import type { AssetAmount, IdentityBlock } from "./chain-module";
+import { NATIVE_COIN, type AssetAmount, type IdentityBlock } from "./chain-module";
 import { serverFetch, SidechainServerError, type Fetch, type SidechainServer } from "./sidechain-server";
 
 /** How many address queries run at once (40 addresses per read). */
@@ -58,7 +58,10 @@ export function esploraServer({ url: baseUrl, identityBlock, chainName }: Esplor
     }
   }
 
-  /** The address's confirmed explicit outputs. Confidential ones (commitments, no `value`) aren't counted. */
+  /**
+   * The address's confirmed explicit outputs. Confidential ones (commitments, no `value`) aren't
+   * counted.
+   */
   async function confirmedOutputs(address: string): Promise<AssetAmount[]> {
     let utxos: unknown;
     try {
@@ -72,9 +75,10 @@ export function esploraServer({ url: baseUrl, identityBlock, chainName }: Esplor
       if (typeof utxo?.status?.confirmed !== "boolean") throw malformed("output");
       const { value, asset } = utxo;
       if (!utxo.status.confirmed || value === undefined) return [];
-      if (!Number.isSafeInteger(value) || (value as number) < 0 || typeof asset !== "string" || !/^[0-9a-f]{64}$/.test(asset)) {
-        throw malformed("output");
-      }
+      if (!Number.isSafeInteger(value) || (value as number) < 0) throw malformed("output");
+      // Bitcoin's Esplora (eCash) has no assets: its outputs carry none, and count as the chain's coin.
+      if (asset === undefined) return [{ asset: NATIVE_COIN, amount: String(value) }];
+      if (typeof asset !== "string" || !/^[0-9a-f]{64}$/.test(asset)) throw malformed("output");
       return [{ asset, amount: String(value) }];
     });
   }

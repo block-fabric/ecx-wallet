@@ -2,7 +2,7 @@
 // it came by (a Sidechain App through the Provider, or the wallet's own Send through a Sidechain
 // Server): its Slot's Chain Module, one approval window, then signing.
 import { ErrorCode, ProviderRpcError } from "./errors";
-import { ChainModuleRefusal, type ChainModule, type Decoded } from "./chain-module";
+import { ChainModuleRefusal, type ChainModule, type Decoded, type Starter } from "./chain-module";
 import type { SigningRequest } from "./signing-request";
 
 /** What the approval window shows for a Signing Request. */
@@ -36,7 +36,7 @@ export interface SigningDeps {
   openSigningApproval(context: { origin: string; chain: string }): SigningApproval;
   isUnlocked(): Promise<boolean>;
   /** The Slot's Starter; throws while locked. */
-  starter(slot: number): Promise<string>;
+  starter(slot: number): Promise<Starter>;
   /** Milliseconds since the epoch. */
   now(): number;
 }

@@ -1,11 +1,11 @@
 // What ships: both browser builds, checked as files (no browser needed), and the e2e build,
-// checked to differ from them only in Slot 24's Chain Entry.
+// checked to differ from them only in the Chain Entries' Sidechain Servers.
 import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
 import { DIST, DIST_E2E, importWallet } from "../harness.mjs";
-import { E2E_SIDECHAIN_SERVER } from "../scripts/build.mjs";
+import { E2E_SERVERS } from "../scripts/build.mjs";
 
 const EXPECTED_SCRIPT_SRC = ["'self'", "'wasm-unsafe-eval'"];
 
@@ -63,38 +63,41 @@ function splitManifest(manifest) {
 }
 
 for (const target of Object.keys(DIST)) {
-  test(`${target}: the shipped build reaches Slot 24's betanet server, the Elements explorer, and nothing else`, async () => {
+  test(`${target}: the shipped build reaches eCash's and Slot 24's betanet servers, and nothing else`, async () => {
     const { hostPermissions, connectSrc } = splitManifest(JSON.parse(await readFile(path.join(DIST[target], "manifest.json"), "utf8")));
-    assert.deepEqual(hostPermissions, ["https://explorer.bitnames.info/*"]);
-    assert.equal(connectSrc, "connect-src 'self' https://explorer.bitnames.info");
+    assert.deepEqual(hostPermissions, ["https://esplora.beta.ecash.ninja/*", "https://explorer.bitnames.info/*"]);
+    assert.equal(connectSrc, "connect-src 'self' https://esplora.beta.ecash.ninja https://explorer.bitnames.info");
   });
 
-  test(`${target}: the e2e build differs from the shipped build only in Slot 24's Sidechain Server`, async () => {
+  test(`${target}: the e2e build differs from the shipped build only in the Sidechain Servers`, async () => {
+    const modules = Object.values(E2E_SERVERS);
     const shipped = await files(DIST[target]);
     assert.deepEqual(await files(DIST_E2E[target]), shipped);
-    for (const f of shipped.filter((f) => f !== "manifest.json" && f !== "elements.wasm")) {
+    for (const f of shipped.filter((f) => f !== "manifest.json" && !modules.some((m) => m.wasm === f))) {
       const [a, b] = await Promise.all([readFile(path.join(DIST[target], f)), readFile(path.join(DIST_E2E[target], f))]);
       assert.ok(a.equals(b), `${f} differs between the shipped and e2e builds`);
     }
 
-    // The manifest: only the server's origin.
+    // The manifest: only the servers' origins.
     const [ours, e2e] = await Promise.all(
       [DIST, DIST_E2E].map(async (d) => splitManifest(JSON.parse(await readFile(path.join(d[target], "manifest.json"), "utf8")))),
     );
     assert.deepEqual(e2e.rest, ours.rest);
-    const origin = new URL(E2E_SIDECHAIN_SERVER.url).origin;
-    assert.deepEqual(e2e.hostPermissions, [`${origin}/*`]);
-    assert.equal(e2e.connectSrc, `connect-src 'self' ${origin}`);
+    const origins = modules.map((m) => new URL(m.server.url).origin).sort();
+    assert.deepEqual(e2e.hostPermissions, origins.map((o) => `${o}/*`));
+    assert.equal(e2e.connectSrc, `connect-src 'self' ${origins.join(" ")}`);
 
-    // elements.wasm: the same module, embedding a Chain Entry that differs only in betanet's server.
+    // Each module: the same module, embedding a Chain Entry that differs only in betanet's server.
     const { loadChainModule } = await importWallet();
-    const [shippedModule, e2eModule] = await Promise.all(
-      [DIST, DIST_E2E].map(async (d) => loadChainModule(await readFile(path.join(d[target], "elements.wasm")))),
-    );
-    assert.deepEqual(e2eModule.declare(), shippedModule.declare());
-    const entry = e2eModule.chainEntry();
-    assert.deepEqual(entry.networks.betanet.sidechainServer, E2E_SIDECHAIN_SERVER);
-    entry.networks.betanet.sidechainServer = shippedModule.chainEntry().networks.betanet.sidechainServer;
-    assert.deepEqual(entry, shippedModule.chainEntry());
+    for (const { wasm, server } of modules) {
+      const [shippedModule, e2eModule] = await Promise.all(
+        [DIST, DIST_E2E].map(async (d) => loadChainModule(await readFile(path.join(d[target], wasm)))),
+      );
+      assert.deepEqual(e2eModule.declare(), shippedModule.declare(), wasm);
+      const entry = e2eModule.chainEntry();
+      assert.deepEqual(entry.networks.betanet.sidechainServer, server, wasm);
+      entry.networks.betanet.sidechainServer = shippedModule.chainEntry().networks.betanet.sidechainServer;
+      assert.deepEqual(entry, shippedModule.chainEntry(), wasm);
+    }
   });
 }
