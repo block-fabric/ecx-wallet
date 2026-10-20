@@ -146,17 +146,36 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       await page.close();
     }));
 
-  test("the wallet locks itself after the auto-lock delay without activity", () =>
+  /** Sets the auto-lock delay, then locks and unlocks; returns how long the wallet now stays unlocked (ms). */
+  async function unlockedFor(page, minutes) {
+    await page.evaluate((m) => chrome.runtime.sendMessage({ kind: "vault.setAutoLock", minutes: m }), minutes);
+    await page.click("[data-lock]");
+    await page.waitForSelector('[data-vault-state="locked"]');
+    await unlock(page, PASSWORD);
+    await page.waitForSelector('[data-vault-state="unlocked"]');
+    return page.evaluate(async () => (await chrome.storage.session.get("vault:unlockedUntil"))["vault:unlockedUntil"] - Date.now());
+  }
+
+  test("the auto-lock delay is clamped to 1-15 minutes, so it can never be turned off", () =>
     withWallet(async (session) => {
       await setUpWallet(session);
       const page = await openWallet(session);
-      // Auto-lock after 1.5 s instead of the default 15 minutes.
-      await page.evaluate(() => chrome.runtime.sendMessage({ kind: "vault.setAutoLock", minutes: 0.025 }));
-      await page.click("[data-lock]");
-      await page.waitForSelector('[data-vault-state="locked"]');
-      await unlock(page, PASSWORD);
-      await page.waitForSelector('[data-vault-state="unlocked"]');
+      const near = (ms, minutes) => Math.abs(ms - minutes * 60_000) < 10_000;
+      for (const [asked, expected] of [[0.025, 1], [0, 1], [-5, 1], [5, 5], [1e9, 15]]) {
+        const ms = await unlockedFor(page, asked);
+        assert.ok(near(ms, expected), `asked ${asked} min: unlocked for ${ms} ms, expected about ${expected} min`);
+      }
+      await page.close();
+    }));
+
+  test("the wallet locks itself once the auto-lock deadline passes without activity", () =>
+    withWallet(async (session) => {
+      await setUpWallet(session);
+      const page = await openWallet(session);
+      await unlockedFor(page, 1);
       assert.equal(await homeState(session), "unlocked");
+      // Stand in for a minute without activity: bring the stored deadline forward to 1.5 s from now.
+      await page.evaluate(() => chrome.storage.session.set({ "vault:unlockedUntil": Date.now() + 1_500 }));
       await new Promise((r) => setTimeout(r, 2_500));
       assert.equal(await homeState(session), "locked");
       await page.close();

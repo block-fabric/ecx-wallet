@@ -42,7 +42,9 @@ export class VaultError extends Error {
 }
 
 export const INCORRECT_PASSWORD = "Incorrect password.";
+/** The auto-lock delay: the default is also the longest it can be set to. */
 export const DEFAULT_AUTO_LOCK_MINUTES = 15;
+export const MIN_AUTO_LOCK_MINUTES = 1;
 export const MIN_PASSWORD_LENGTH = 8;
 
 const VAULT_KEY = "vault";
@@ -69,7 +71,7 @@ export function createVault(deps: VaultDeps) {
   const { persistent, session } = deps;
 
   async function autoLockMs(): Promise<number> {
-    return ((await persistent.get<number>(SETTINGS_AUTO_LOCK)) ?? DEFAULT_AUTO_LOCK_MINUTES) * 60_000;
+    return clampAutoLock((await persistent.get<number>(SETTINGS_AUTO_LOCK)) ?? DEFAULT_AUTO_LOCK_MINUTES) * 60_000;
   }
 
   async function lock(): Promise<void> {
@@ -172,9 +174,13 @@ export function createVault(deps: VaultDeps) {
       await unlocked();
     },
 
+    /**
+     * Sets the auto-lock delay, clamped to MIN_AUTO_LOCK_MINUTES-DEFAULT_AUTO_LOCK_MINUTES: it can be
+     * shortened (the e2e suite uses that), never lengthened past the default or turned off.
+     */
     async setAutoLockMinutes(minutes: number): Promise<void> {
-      if (!(Number.isFinite(minutes) && minutes > 0)) throw new VaultError("Auto-lock needs a positive number of minutes.");
-      await persistent.set(SETTINGS_AUTO_LOCK, minutes);
+      if (Number.isNaN(minutes)) throw new VaultError("Auto-lock needs a number of minutes.");
+      await persistent.set(SETTINGS_AUTO_LOCK, clampAutoLock(minutes));
     },
 
     /**
@@ -191,6 +197,11 @@ export function createVault(deps: VaultDeps) {
 }
 
 export type Vault = ReturnType<typeof createVault>;
+
+/** An auto-lock delay within MIN_AUTO_LOCK_MINUTES-DEFAULT_AUTO_LOCK_MINUTES. */
+function clampAutoLock(minutes: number): number {
+  return Math.min(DEFAULT_AUTO_LOCK_MINUTES, Math.max(MIN_AUTO_LOCK_MINUTES, minutes));
+}
 
 async function aesKey(raw: Uint8Array): Promise<CryptoKey> {
   return crypto.subtle.importKey("raw", raw as BufferSource, "AES-GCM", false, ["encrypt", "decrypt"]);
