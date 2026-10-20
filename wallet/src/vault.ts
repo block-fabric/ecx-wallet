@@ -70,6 +70,15 @@ interface VaultSecrets {
 export function createVault(deps: VaultDeps) {
   const { persistent, session } = deps;
 
+  // Unlock-state changes run one at a time: otherwise a use that checked "unlocked" before a lock
+  // could extend the deadline (re-storing the key) after it.
+  let tail: Promise<unknown> = Promise.resolve();
+  function exclusive<T>(step: () => Promise<T>): Promise<T> {
+    const run = tail.then(step, step);
+    tail = run.catch(() => {});
+    return run;
+  }
+
   async function autoLockMs(): Promise<number> {
     return clampAutoLock((await persistent.get<number>(SETTINGS_AUTO_LOCK)) ?? DEFAULT_AUTO_LOCK_MINUTES) * 60_000;
   }
@@ -135,10 +144,11 @@ export function createVault(deps: VaultDeps) {
   }
 
   return {
-    async status(): Promise<VaultStatus> {
-      const exists = (await persistent.get(VAULT_KEY)) !== undefined;
-      return { exists, unlocked: exists && (await unlocked()) !== undefined };
-    },
+    status: (): Promise<VaultStatus> =>
+      exclusive(async () => {
+        const exists = (await persistent.get(VAULT_KEY)) !== undefined;
+        return { exists, unlocked: exists && (await unlocked()) !== undefined };
+      }),
 
     /** A fresh Master Mnemonic for the create flow. Not stored until `create`. */
     async generate(): Promise<string> {
@@ -164,15 +174,13 @@ export function createVault(deps: VaultDeps) {
       // The same work runs for every password; the only signal is whether AES-GCM authenticates.
       const key = (await deps.module()).stretchPassword(new TextEncoder().encode(password), fromBase64(salt), { mKib, t, p });
       if ((await decrypt(vault, key)) === undefined) throw new VaultError(INCORRECT_PASSWORD);
-      await keepUnlocked(key);
+      await exclusive(() => keepUnlocked(key));
     },
 
-    lock,
+    lock: () => exclusive(lock),
 
     /** Locks now if the auto-lock deadline has passed (for a timer firing). */
-    async checkAutoLock(): Promise<void> {
-      await unlocked();
-    },
+    checkAutoLock: () => exclusive(async () => void (await unlocked())),
 
     /**
      * Sets the auto-lock delay, clamped to MIN_AUTO_LOCK_MINUTES-DEFAULT_AUTO_LOCK_MINUTES: it can be
@@ -188,9 +196,12 @@ export function createVault(deps: VaultDeps) {
      * auto-lock deadline). Throws if the wallet is locked.
      */
     async starter(slot: number): Promise<string> {
-      const open = await unlocked();
+      const open = await exclusive(async () => {
+        const open = await unlocked();
+        if (open !== undefined) await keepUnlocked(open.key);
+        return open;
+      });
       if (open === undefined) throw new VaultError("The wallet is locked.");
-      await keepUnlocked(open.key);
       return (await deps.module()).starter(open.secrets.masterMnemonic, open.secrets.passphrase, slot);
     },
   };
