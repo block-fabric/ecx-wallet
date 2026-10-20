@@ -153,7 +153,7 @@ the wallet can re-derive them and show them as "yours". Without it they show as 
 A request built from a pull-path Send **must be fully Clear-decodable**. There is no Grant behind
 it, so there is no Blind Signing opt-in. The wallet refuses, without asking the user, anything its
 Decoder can't fully explain, such as unknown PSET fields or unusual structure.
-Non-default sighash flags and peg-out burns are decodable but listed to the user as dangerous, so
+Non-default sighash flags and withdrawal burns are decodable but listed to the user as dangerous, so
 don't add them to an ordinary transfer.
 
 ### 4. Submit a signed payload: `POST /v1/watch/{watchId}/submissions`

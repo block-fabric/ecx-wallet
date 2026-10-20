@@ -80,15 +80,15 @@ fn an_unknown_field_makes_the_request_blind_with_the_facts_the_wallet_can_prove(
 }
 
 #[test]
-fn in_a_blind_request_a_non_default_sighash_and_a_peg_out_burn_are_dangerous_flags() {
+fn in_a_blind_request_a_non_default_sighash_and_a_withdrawal_burn_are_dangerous_flags() {
     use elements_miniscript::elements::pset::PsbtSighashType;
     let mut pset = transfer_with_unknown_fields();
     pset.inputs_mut()[0].sighash_type = Some(PsbtSighashType::from_u32(0x83));
-    pset.add_output(pay(peg_out_burn_script(), 5_000));
+    pset.add_output(pay(withdrawal_burn_script(), 5_000));
     let Decoded::Blind { verifiable_facts: facts, .. } = decode(&b64(&pset), STARTER).unwrap() else { panic!("expected Blind") };
     let flags = facts.dangerous_flags.join("\n");
     assert!(flags.contains("sighash"), "{flags}");
-    assert!(flags.contains("peg-out"), "{flags}");
+    assert!(flags.contains("withdrawal"), "{flags}");
 }
 
 #[test]

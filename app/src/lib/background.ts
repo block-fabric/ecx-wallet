@@ -33,9 +33,9 @@ export interface VerifiableFacts {
 
 export type Destination =
   | { kind: "address"; address: string; yours: boolean }
-  | { kind: "pegOut"; l1ScriptPubkey: string; payout: string; parentFee: string };
+  | { kind: "withdrawal"; l1ScriptPubkey: string; payout: string; parentFee: string };
 
-export type DangerousMode = { kind: "nonDefaultSighash"; input: number; sighash: number } | { kind: "pegOutBurn"; output: number };
+export type DangerousMode = { kind: "nonDefaultSighash"; input: number; sighash: number } | { kind: "withdrawalBurn"; output: number };
 
 /** What a request the Chain Module fully understands does. */
 export interface ClearView {

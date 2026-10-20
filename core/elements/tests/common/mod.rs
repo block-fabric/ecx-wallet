@@ -155,7 +155,7 @@ pub fn with_confidential_input() -> Pset {
     pset
 }
 
-/// `transfer()` whose foreign payment carries a blinding key (it is meant to be blinded).
+/// `transfer()` whose foreign payment is meant to be blinded (it carries the public key to blind it to).
 pub fn with_confidential_output() -> Pset {
     let mut pset = transfer();
     pset.outputs_mut()[0].blinding_key = Some(key(FOREIGN, 0, 1).pk);
@@ -170,8 +170,8 @@ pub fn with_missing_derivation() -> Pset {
     pset
 }
 
-/// A native-withdrawal (peg-out) burn script: OP_RETURN <parent genesis> <L1 script> <fee, BE u64>.
-pub fn peg_out_burn_script() -> Script {
+/// A withdrawal burn script: OP_RETURN <parent genesis> <L1 script> <fee, BE u64>.
+pub fn withdrawal_burn_script() -> Script {
     use elements_miniscript::elements::opcodes::all::OP_RETURN;
     use elements_miniscript::elements::script::Builder;
     let parent = BlockHash::from_str(&network().parent_genesis_hash).unwrap();
@@ -198,17 +198,17 @@ pub fn address(starter: &str, chain: u32, index: u32) -> String {
     Address::from_script(&key(starter, chain, index).script_pubkey, None, params).unwrap().to_string()
 }
 
-/// `transfer()` plus a 5 000 peg-out burn (output 3) to an L1 p2wpkh, paying a 1 000 parent fee.
-pub fn with_peg_out() -> Pset {
+/// `transfer()` plus a 5 000 withdrawal burn (output 3) to an L1 p2wpkh, paying a 1 000 parent fee.
+pub fn with_withdrawal() -> Pset {
     let mut pset = transfer();
     pset.outputs_mut()[1].amount = Some(24_000); // change shrinks by the burn
-    pset.add_output(pay(peg_out_burn_script(), 5_000));
+    pset.add_output(pay(withdrawal_burn_script(), 5_000));
     pset
 }
 
-/// `with_peg_out()` whose owned input signs with SINGLE|ANYONECANPAY: two dangerous modes.
+/// `with_withdrawal()` whose owned input signs with SINGLE|ANYONECANPAY: two dangerous modes.
 pub fn dangerous() -> Pset {
-    let mut pset = with_peg_out();
+    let mut pset = with_withdrawal();
     pset.inputs_mut()[0].sighash_type = Some(elements_miniscript::elements::pset::PsbtSighashType::from_u32(0x83));
     pset
 }

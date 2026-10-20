@@ -4,7 +4,7 @@
 //!   keys (`tpub`);
 //! - path: LWK's non-mainnet default `m/84'/1'/0'` (provisional, spec #18 "Further Notes");
 //! - descriptor: `elwpkh([fp/84h/1h/0h]tpub…/<0;1>/*)`: LWK's `ct(slip77(..), …)` without the
-//!   blinding key, which the explicit-only wallet doesn't need.
+//!   View Key, which the explicit-only wallet doesn't need.
 //!
 //! Address strings use the Chain Entry's address parameters (`elements1…`), never LWK's built-in
 //! `ert`/`el` ones.

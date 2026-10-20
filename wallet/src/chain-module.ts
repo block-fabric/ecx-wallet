@@ -73,13 +73,13 @@ export interface VerifiableFacts {
 /** Where an output's funds go. `yours` is decided by re-deriving, never by the requester. */
 export type Destination =
   | { kind: "address"; address: string; yours: boolean }
-  /** A peg-out burn: `payout` (the burn minus `parentFee`) may be paid on L1 to `l1ScriptPubkey` (hex). */
-  | { kind: "pegOut"; l1ScriptPubkey: string; payout: string; parentFee: string };
+  /** A withdrawal burn: `payout` (the burn minus `parentFee`) may be paid on L1 to `l1ScriptPubkey` (hex). */
+  | { kind: "withdrawal"; l1ScriptPubkey: string; payout: string; parentFee: string };
 
 /** A risky mode of a request, shown above everything else. */
 export type DangerousMode =
   | { kind: "nonDefaultSighash"; input: number; sighash: number }
-  | { kind: "pegOutBurn"; output: number };
+  | { kind: "withdrawalBurn"; output: number };
 
 /** What a request the Decoder fully understands does. Data only: `app` renders it. */
 export interface ClearView {

@@ -57,10 +57,10 @@ pub struct ClearOutput {
 pub enum Destination {
     /// An address on this chain, in its own encoding; `yours` only if it re-derives to the Starter.
     Address { address: String, yours: bool },
-    /// A peg-out burn (native withdrawal): the amount is destroyed here, and `payout` (the burn
+    /// A withdrawal burn (how a Withdrawal starts): the amount is destroyed here, and `payout` (the burn
     /// minus `parent_fee`) may be paid on L1 to `l1_script_pubkey` once the withdrawal is accepted.
     #[serde(rename_all = "camelCase")]
-    PegOut {
+    Withdrawal {
         /// Hex.
         l1_script_pubkey: String,
         /// Base units, as a decimal string.
@@ -79,7 +79,7 @@ pub enum DangerousMode {
     NonDefaultSighash { input: usize, sighash: u32 },
     /// The output burns funds to withdraw them to L1: irreversible, and paid (if ever) only after
     /// the multi-month BIP300 withdrawal vote.
-    PegOutBurn { output: usize },
+    WithdrawalBurn { output: usize },
 }
 
 /// The Clear View of `pset` (already through rules 5-7), or why the Decoder can't give one.
@@ -116,9 +116,9 @@ pub(crate) fn clear_view(pset: &PartiallySignedTransaction, classified: &Classif
         let destination = match class.kind {
             OutputKind::Fee => continue,
             OutputKind::WithdrawalBurn => {
-                let peg_out = peg_out(output).ok_or_else(|| format!("output {index} is a peg-out burn it can't fully parse."))?;
-                dangerous_modes.push(DangerousMode::PegOutBurn { output: index });
-                peg_out
+                let withdrawal = withdrawal(output).ok_or_else(|| format!("output {index} is a withdrawal burn it can't fully parse."))?;
+                dangerous_modes.push(DangerousMode::WithdrawalBurn { output: index });
+                withdrawal
             }
             OutputKind::Script { yours } => {
                 let address = Address::from_script(&output.script_pubkey, None, address_params())
@@ -173,7 +173,7 @@ fn only_explained_output_fields(output: &Output) -> bool {
 /// (`ParseNativeWithdrawalOutput`): `OP_RETURN <parent genesis> <L1 script> <parent fee, BE u64>`,
 /// exactly three minimal pushes, the L1 script at most 128 bytes, an explicit pegged-asset amount
 /// larger than the parent fee.
-fn peg_out(output: &Output) -> Option<Destination> {
+fn withdrawal(output: &Output) -> Option<Destination> {
     if output.asset? != AssetId::from_str(&network().policy_asset).expect("Chain Entry policy asset is valid") {
         return None;
     }
@@ -192,7 +192,7 @@ fn peg_out(output: &Output) -> Option<Destination> {
     }
     let parent_fee = u64::from_be_bytes(fee.try_into().ok()?);
     let payout = output.amount?.checked_sub(parent_fee).filter(|p| *p > 0)?;
-    Some(Destination::PegOut { l1_script_pubkey: hex(l1_script), payout: payout.to_string(), parent_fee: parent_fee.to_string() })
+    Some(Destination::Withdrawal { l1_script_pubkey: hex(l1_script), payout: payout.to_string(), parent_fee: parent_fee.to_string() })
 }
 
 fn hex(bytes: &[u8]) -> String {

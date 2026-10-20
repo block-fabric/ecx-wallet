@@ -76,14 +76,14 @@ fn a_sighash_type_the_decoder_does_not_know_is_blind() {
 }
 
 #[test]
-fn a_peg_out_burn_is_a_dangerous_mode_and_its_row_names_the_l1_destination_payout_and_parent_fee() {
-    let view = clear(&with_peg_out());
-    assert_eq!(view.dangerous_modes, vec![DangerousMode::PegOutBurn { output: 3 }]);
+fn a_withdrawal_burn_is_a_dangerous_mode_and_its_row_names_the_l1_destination_payout_and_parent_fee() {
+    let view = clear(&with_withdrawal());
+    assert_eq!(view.dangerous_modes, vec![DangerousMode::WithdrawalBurn { output: 3 }]);
     let burn = view.outputs.iter().find(|o| o.index == 3).expect("the burn is a row");
     assert_eq!(burn.amount, "5000");
     assert_eq!(
         burn.destination,
-        Destination::PegOut {
+        Destination::Withdrawal {
             l1_script_pubkey: format!("0014{}", "11".repeat(20)),
             payout: "4000".into(),
             parent_fee: "1000".into(),
@@ -94,18 +94,18 @@ fn a_peg_out_burn_is_a_dangerous_mode_and_its_row_names_the_l1_destination_payou
 #[test]
 fn dangerous_modes_combine() {
     use elements_miniscript::elements::pset::PsbtSighashType;
-    let mut pset = with_peg_out();
+    let mut pset = with_withdrawal();
     pset.inputs_mut()[0].sighash_type = Some(PsbtSighashType::from_u32(0x82));
     assert_eq!(
         clear(&pset).dangerous_modes,
-        vec![DangerousMode::NonDefaultSighash { input: 0, sighash: 0x82 }, DangerousMode::PegOutBurn { output: 3 }]
+        vec![DangerousMode::NonDefaultSighash { input: 0, sighash: 0x82 }, DangerousMode::WithdrawalBurn { output: 3 }]
     );
 }
 
 #[test]
-fn a_peg_out_burn_the_decoder_can_only_partly_parse_is_blind() {
+fn a_withdrawal_burn_the_decoder_can_only_partly_parse_is_blind() {
     use elements_miniscript::elements::script::Builder;
-    let burn = peg_out_burn_script();
+    let burn = withdrawal_burn_script();
     let trailing = Builder::from(burn.to_bytes()).push_slice(&[1, 2, 3]).into_script();
     let cases = [
         ("an extra push", pay(trailing, 5_000)),
@@ -115,12 +115,12 @@ fn a_peg_out_burn_the_decoder_can_only_partly_parse_is_blind() {
     for (what, output) in cases {
         let mut pset = transfer();
         pset.add_output(output);
-        assert!(blind_reason(&pset).contains("peg-out"), "{what}");
+        assert!(blind_reason(&pset).contains("withdrawal"), "{what}");
     }
 }
 
 #[test]
-fn an_op_return_that_is_not_a_peg_out_is_blind() {
+fn an_op_return_that_is_not_a_withdrawal_burn_is_blind() {
     use elements_miniscript::elements::opcodes::all::OP_RETURN;
     use elements_miniscript::elements::script::Builder;
     let mut pset = transfer();

@@ -3,7 +3,7 @@
 //
 // Fixtures come from core/elements/tests/fixtures.rs. `clear` spends one input of the "abandon …
 // about" wallet's Slot 24 account and one foreign input, pays a foreign address 120 000, sends
-// 29 000 change back to us, with a 1 000 fee. `dangerous` is the same plus a peg-out burn
+// 29 000 change back to us, with a 1 000 fee. `dangerous` is the same plus a withdrawal burn
 // (output 3), with our input signing SINGLE|ANYONECANPAY. `signed` is each PSET signed by LWK's own
 // SwSigner.
 import assert from "node:assert/strict";
@@ -102,7 +102,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     assert.deepEqual(await signing, { result: PSETS.clear.signed });
   });
 
-  test("dangerous modes come above everything else; a peg-out is described as irreversible and slow", async () => {
+  test("dangerous modes come above everything else; a withdrawal is described as irreversible and slow", async () => {
     const signing = signTransaction(page, signingRequest(PSETS.dangerous.payload));
     const approval = await session.waitForApprovalWindow();
     const shown = await readClearView(approval);
@@ -110,9 +110,9 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     assert.equal(shown.dangerous.length, 2);
     assert.deepEqual(shown.order.slice(0, 2), ["dangerous", "dangerous"]);
     assert.match(shown.dangerous.join("\n"), /sighash/i);
-    const pegOut = shown.dangerous.find((d) => /peg-out/i.test(d));
-    assert.match(pegOut, /irreversible/i);
-    assert.match(pegOut, /months/i);
+    const withdrawal = shown.dangerous.find((d) => /withdrawal/i.test(d));
+    assert.match(withdrawal, /irreversible/i);
+    assert.match(withdrawal, /months/i);
 
     await approval.click("[data-approve]");
     assert.deepEqual(await signing, { result: PSETS.dangerous.signed });

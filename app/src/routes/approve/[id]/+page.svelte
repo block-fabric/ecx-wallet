@@ -71,11 +71,11 @@
     const output = view.outputs.find((o) => o.index === mode.output);
     const burn = output ? amount(output) : "funds";
     const payout =
-      output?.destination.kind === "pegOut"
+      output?.destination.kind === "withdrawal"
         ? ` If the withdrawal is accepted, ${output.destination.payout} is paid on L1 (after a ${output.destination.parentFee} parent fee).`
         : "";
     return (
-      `Output ${mode.output} is a peg-out burn of ${burn}: it is irreversible. The burned funds leave this sidechain at once, ` +
+      `Output ${mode.output} is a withdrawal burn of ${burn}: it is irreversible. The burned funds leave this sidechain at once, ` +
       `but the L1 withdrawal takes months (the BIP300 miner vote runs about 3 to 6 months), and acceptance doesn't guarantee payment.${payout}`
     );
   }
@@ -172,7 +172,7 @@
             {/if}
           {:else}
             <div>
-              peg-out burn to L1 script <code data-destination>{output.destination.l1ScriptPubkey}</code>, paying
+              withdrawal burn to L1 script <code data-destination>{output.destination.l1ScriptPubkey}</code>, paying
               {output.destination.payout} after a {output.destination.parentFee} parent fee
             </div>
             <div class="not-yours" data-not-yours>Not yours: burned</div>

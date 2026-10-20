@@ -217,7 +217,7 @@ fn verifiable_facts(pset: &PartiallySignedTransaction, classified: &Classified) 
         let i = class.index;
         match class.kind {
             OutputKind::Script { yours: true } => *leaving.entry(class.asset.clone()).or_default() -= class.amount as i128,
-            OutputKind::WithdrawalBurn => dangerous_flags.push(format!("output {i} is a peg-out burn: irreversible")),
+            OutputKind::WithdrawalBurn => dangerous_flags.push(format!("output {i} is a withdrawal burn: irreversible")),
             OutputKind::Fee | OutputKind::Script { yours: false } => {}
         }
         unknown_fields.extend(output.unknown.keys().map(|k| format!("output {i}: unknown field type 0x{:02x}", k.type_value)));
