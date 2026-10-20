@@ -1,0 +1,12 @@
+[package]
+name = "spike-core"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+lwk_signer = { version = "=0.19.0", default-features = false }
+lwk_common = { version = "=0.19.0", default-features = false }
+lwk_wollet = { version = "=0.19.0", default-features = false }
+bip39 = "=2.2.2"
+rand_chacha = "0.3"

@@ -1,0 +1,25 @@
+[package]
+name = "spike-core-wasm"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+spike-core = { path = "../core" }
+wasm-bindgen = "0.2"
+# LWK pulls getrandom 0.2 (rand thread_rng); enable the browser backend only here, never in `core`.
+getrandom = { version = "0.2", features = ["js"] }
+# Only here so the `lowmemory` feature can reach the C libsecp256k1 builds.
+secp256k1-zkp = { version = "0.11.2", default-features = false }
+
+[features]
+# ECMULT_WINDOW_SIZE=4 instead of 15 in both vendored libsecp256k1 copies: drops ~2 MB of
+# precomputed tables at the cost of slower verification/rewind (signing uses ecmult_gen).
+lowmemory = ["secp256k1-zkp/lowmemory"]
+
+[package.metadata.wasm-pack.profile.release]
+# rustc >= 1.87 emits bulk-memory etc. by default; wasm-pack's bundled binaryen needs them enabled explicitly.
+wasm-opt = ["-Oz", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-mutable-globals", "--enable-reference-types", "--enable-multivalue"]

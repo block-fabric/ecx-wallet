@@ -1,0 +1,9 @@
+target/
+pkg/
+pkg-lowmem/
+bench/node_modules/
+bench/out/*
+!bench/out/results-brave.json
+!bench/out/results-firefox.json
+!bench/out/node.log
+bench/.profile-*/
