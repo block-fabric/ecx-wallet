@@ -35,6 +35,43 @@ Other projects in the same ecosystem, all by the same developer: [esplora-liquid
 
 The README still says "Betanet slot 130 (historical Alpha slot 24)". The 2026-10-04 commit "Restore Betanet slot 24" and the header both say 24, so the README is stale. LayerTwo's Alphanet client uses a *different* policy asset (`62dce3bd…2da4`). Asset IDs, genesis and ports change from one network (Alpha/Beta/mainnet) to the next, so **a wallet must treat them as per-network configuration, never as constants.**
 
+### The betanet "Elements" sidechain in slot 24 is this chain
+
+The L1 research (#2) found a community "Elements" sidechain in betanet slot 24, listed next to FreeBank and Solana, without a known maintainer or repo. It is this chain. The evidence:
+
+- **The proposal bytes are in the code.** The node hardcodes the exact betanet M1 proposal it must authenticate during parent replay (`BETANET_EXISTING_ELEMENTS_PROPOSAL_HEX`, hash `866e33f1…2400`, in `src/elements_drivechain_identity.h`). Decoded, the bytes read: title `Elements`, description `Elements Drivechain v11; parameterized controller profile; replay v4; annex v2; one M6 per parent block; withdrawal accumulator v1; BIP301 checkpoint v1; Simplicity active; slot 24`.
+- **The README names FreeBank's slot.** It refers to "the existing FreeBank proposal" in slot 130. That is the chain's earlier, briefly used betanet placement; it went back to slot 24 on 2026-10-04.
+- **Who maintains it:** freewillydev (formerly ekulkisnek).
+- **What a Sidechain Server would talk to:** `elementsd` has a Bitcoin-Core-style JSON-RPC interface (defaults: RPC 7065, P2P 7066, `-chain=elements`; LayerTwo's client uses RPC 29443). It has the standard Elements wallet and PSET RPCs, plus the peg RPCs `importdrivechaindeposit`, `sendtomainchain`, `getdrivechainwithdrawalbundle`, `submitdrivechainwithdrawal` and `verifydrivechainwithdrawalbundle`. The node needs parent RPC access and an mTLS gRPC link to `bip300301_enforcer`.
+- **Indexing:** there is an Esplora/electrs HTTP API from the author's electrs fork, and an Esplora frontend for it.
+- **No wallet-facing server:** there is no separate "sidechain server" beyond the node and the indexer. A Sidechain Server for the Wallet Base would wrap those two.
+
+### Peg mapping against the L1 facts from #2
+
+The L1 facts: OP_DRIVECHAIN is OP_NOP8 (`0xb7`); M5 spends the slot's CTIP; the CTIP is served only by the enforcer's `GetCtip`; the user signs nothing on L1 for a withdrawal.
+
+**Peg-in (deposit = M5)**
+
+1. Someone (the Sidechain Server, or an L1 helper) fetches the current slot-24 CTIP from the enforcer's `GetCtip`.
+2. They build the M5. Its inputs are the CTIP (the `OP_DRIVECHAIN` treasury output, which needs no signature) and the user's own eCash inputs. Its outputs are a new treasury output (old CTIP value plus the deposit), an OP_RETURN that commits the Elements destination address, and change.
+3. **The Wallet Base's L1 signer signs only the user's inputs.** This is the only user signature in a deposit.
+4. After 100 parent confirmations, `importdrivechaindeposit` (run by anyone) produces the deterministic Elements credit transaction. It needs no user signature.
+
+Two practical points:
+
+- Each M5 must spend the *current* CTIP, so deposits into the slot are serialized. An M5 built from a stale CTIP is invalid. A Signing Request for an M5 is therefore short-lived and must be rebuilt if it goes stale.
+- I did not verify the exact M5 byte format (OP_RETURN layout, output order) against `bip300301_enforcer`. Take it from the enforcer source or from #2.
+
+**Peg-out (withdrawal)**
+
+1. The user signs one transaction: an Elements PSET with the explicit burn output (§6).
+2. Everything after that involves no user key:
+   - the node bundles the burn into a blinded M6 and submits it to the enforcer;
+   - L1 miners ACK the bundle;
+   - the payout spends the CTIP directly to the user's eCash script.
+
+This matches #2's finding of no L1 user signature.
+
 ## 2. How it differs from Liquid
 
 | | Liquid (Blockstream) | Elements drivechain |
