@@ -61,8 +61,12 @@ _Avoid_: Permission, connection, session
 ### Signing
 
 **Signing Request**:
-A payload a Sidechain Server hands the Wallet Base to be signed with the user's keys.
+A request, from a Sidechain Server or Sidechain App, for the Wallet Base to sign a transaction or message with the user's keys.
 _Avoid_: Sign request, transaction request, blob
+
+**Sign-In**:
+A Signing Request in which a Sidechain App asks the user to prove control of an address to that App's own origin.
+_Avoid_: Login, auth signature
 
 **Blind Signing**:
 Approving a Signing Request without the Wallet Base being able to show the user what it means.
