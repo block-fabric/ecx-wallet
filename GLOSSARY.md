@@ -58,6 +58,14 @@ Approving a Signing Request without the Wallet Base being able to show the user 
 **Clear Signing**:
 Approving a Signing Request after the Wallet Base has shown the user a decoded, human-readable account of what it does.
 
+**Chain Module**:
+The per-chain unit bundled in the Wallet Base that derives a chain's keys from its Starter, decodes its Signing Requests, and signs them.
+_Avoid_: Signer module, plugin, adapter
+
+**Clear View**:
+The structured, chain-neutral account of a Signing Request that a Decoder produces and the Wallet Base renders for Clear Signing.
+_Avoid_: Preview, summary, decoded transaction
+
 **Decoder**:
-A Wallet Base module that turns one sidechain's Signing Requests into a Clear Signing view.
+The part of a Chain Module that turns its chain's Signing Requests into a Clear View.
 _Avoid_: Parser, interpreter, renderer
