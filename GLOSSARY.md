@@ -34,6 +34,18 @@ _Avoid_: Blinding key (ambiguous: also names the public half), viewing key
 The BIP300 number (1–255) that identifies a sidechain on eCash.
 _Avoid_: Sidechain number, sidechain id
 
+**Treasury**:
+The single eCash output holding all coins deposited to a Slot and not yet withdrawn.
+_Avoid_: CTIP (BIP300's name for it), escrow
+
+**Deposit**:
+Moving coins from eCash into a sidechain by paying them into its Treasury.
+_Avoid_: Peg-in
+
+**Withdrawal**:
+Moving coins from a sidechain back to eCash, paid out of its Treasury once miners approve it over several months.
+_Avoid_: Peg-out
+
 **Chain Entry**:
 The description of one sidechain that ships with a Wallet Base release: its Slot, its networks, and its default Sidechain Server and Official Apps on each.
 _Avoid_: Chain manifest, chain descriptor, network profile
