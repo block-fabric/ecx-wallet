@@ -1,12 +1,13 @@
-// Seam 1 harness: the built extension in headless Brave, driven from outside.
+// Seam 1 harness: the built extension in a real headless browser, driven from outside.
 //
-// - puppeteer-core only, no Chrome download. Browser binary: $BRAVE, default /usr/bin/brave.
+// - puppeteer-core only, no Chrome download. Binaries: $BRAVE (default /usr/bin/brave),
+//   $FIREFOX (default /usr/bin/firefox).
 // - Throwaway profile in a fresh temp dir, deleted on close; never the user's profile.
 // - Puppeteer never attaches to the extension's service worker (`targetFilter`): an attached
 //   debugger keeps a stopped worker from restarting (see spike/elements-wasm RESULTS.md).
 //   Tests that need to stop the worker should do it over a page's CDP session with
 //   `ServiceWorker.stopWorker`, as the spike did.
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -21,11 +22,19 @@ export const DIST = {
   firefox: path.join(ROOT, "extension", "dist", "firefox"),
 };
 
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/** Browsers the Provider suite runs against: `E2E_BROWSERS=brave,firefox` (the default). */
+export const BROWSERS = (process.env.E2E_BROWSERS ?? "brave,firefox").split(",").filter(Boolean);
+
+/** Launches the named browser (one of BROWSERS) with the matching extension build installed. */
+export function launchWallet(name) {
+  if (name === "brave") return launchBrave();
+  if (name === "firefox") return launchFirefox();
+  throw new Error(`Unknown browser ${name}`);
+}
 
 /**
  * Launches headless Brave with the built Chromium extension installed.
- * Returns a session; always `await session.close()` (use `t.after` / try-finally).
+ * Returns a session; always `await session.close()`.
  */
 export async function launchBrave({ extensionPath = DIST.chromium } = {}) {
   const profile = await mkdtemp(path.join(tmpdir(), "ecx-e2e-brave-"));
@@ -55,16 +64,13 @@ export async function launchBrave({ extensionPath = DIST.chromium } = {}) {
     );
     extensionId = await browser.installExtension(extensionPath);
   } catch (error) {
-    await browser.close();
-    await rm(profile, { recursive: true, force: true });
+    await closeBrowser(browser, profile);
     throw error;
   }
 
-  const extensionOrigin = `chrome-extension://${extensionId}`;
   return {
-    browser,
+    ...walletSession(browser, profile, `chrome-extension://${extensionId}/`),
     extensionId,
-    extensionUrl: (p) => `${extensionOrigin}/${p.replace(/^\//, "")}`,
 
     /** Manifest errors, install warnings and runtime errors Brave recorded for the extension. */
     async extensionErrors() {
@@ -77,30 +83,83 @@ export async function launchBrave({ extensionPath = DIST.chromium } = {}) {
         runtimeErrors: info.runtimeErrors ?? [],
       };
     },
-
-    /** Resolves with the next approval window the wallet opens. */
-    async waitForApprovalWindow({ timeout = 10_000 } = {}) {
-      const target = await browser.waitForTarget(
-        (t) => t.url().startsWith(`${extensionOrigin}/`) && t.url().includes("#/approve/"),
-        { timeout },
-      );
-      const page = await target.asPage();
-      await page.waitForSelector("[data-approval-ready]", { timeout });
-      return page;
-    },
-
-    /** Open approval windows right now (for asserting that none was opened). */
-    async approvalWindows() {
-      return browser.targets().filter(
-        (t) => t.url().startsWith(`${extensionOrigin}/`) && t.url().includes("#/approve/"),
-      );
-    },
-
-    async close() {
-      await browser.close().catch(() => {});
-      await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-    },
   };
+}
+
+/**
+ * Launches headless Firefox over WebDriver BiDi with the built Firefox extension temporarily
+ * installed. Same session shape as Brave's, minus `extensionErrors` (no equivalent API).
+ */
+export async function launchFirefox({ extensionPath = DIST.firefox } = {}) {
+  const profile = await mkdtemp(path.join(tmpdir(), "ecx-e2e-firefox-"));
+  const browser = await puppeteer.launch({
+    browser: "firefox",
+    executablePath: process.env.FIREFOX ?? "/usr/bin/firefox",
+    headless: process.env.HEADFUL ? false : true,
+    userDataDir: profile,
+    // Needed to script moz-extension:// pages such as the approval window.
+    args: ["-remote-allow-system-access"],
+    // A snap-launched parent (e.g. VS Code) leaks GTK/GIO paths that crash Firefox's content
+    // processes (spike/elements-wasm RESULTS.md); drop them.
+    env: Object.fromEntries(
+      Object.entries(process.env).filter(([k, v]) => !/\/snap\//.test(v ?? "") && !k.startsWith("SNAP")),
+    ),
+  });
+  try {
+    await browser.installExtension(extensionPath);
+  } catch (error) {
+    await closeBrowser(browser, profile);
+    throw error;
+  }
+  return walletSession(browser, profile, "moz-extension://");
+}
+
+/** What every browser session offers. `walletPrefix` identifies the wallet's own pages. */
+function walletSession(browser, profile, walletPrefix) {
+  const isApproval = (t) => t.url().startsWith(walletPrefix) && t.url().includes("#/approve/");
+  // Over BiDi (Firefox), puppeteer neither reliably reports windows an extension opens nor drops
+  // them from `targets()` once closed, so poll and probe each candidate for liveness.
+  const dead = new WeakSet();
+  async function liveApprovals() {
+    const live = [];
+    for (const target of browser.targets().filter((t) => isApproval(t) && !dead.has(t))) {
+      const page = await target.asPage();
+      const alive = await Promise.race([
+        page.evaluate(() => true).catch(() => false),
+        new Promise((r) => setTimeout(() => r(false), 2_000)),
+      ]);
+      if (alive) live.push(page);
+      else dead.add(target);
+    }
+    return live;
+  }
+
+  return {
+    browser,
+    extensionUrl: (p) => `${walletPrefix}${p.replace(/^\//, "")}`,
+
+    /** Resolves with the next approval window the wallet opens, once it has rendered. */
+    async waitForApprovalWindow({ timeout = 10_000 } = {}) {
+      for (const end = Date.now() + timeout; ; await new Promise((r) => setTimeout(r, 100))) {
+        const [page] = await liveApprovals();
+        if (page) {
+          await page.waitForSelector("[data-approval-ready]", { timeout });
+          return page;
+        }
+        if (Date.now() > end) throw new Error(`No approval window within ${timeout} ms`);
+      }
+    },
+
+    /** Approval windows open right now (to assert that none was opened). */
+    approvalWindows: liveApprovals,
+
+    close: () => closeBrowser(browser, profile),
+  };
+}
+
+async function closeBrowser(browser, profile) {
+  await browser.close().catch(() => {});
+  await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
 
 async function withExtensionsPage(browser, fn) {
@@ -152,5 +211,3 @@ export async function openTestApp(session, app, host) {
   await page.waitForFunction(() => window.testApp !== undefined);
   return page;
 }
-
-export { delay };

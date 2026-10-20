@@ -1,12 +1,14 @@
 // Seam 1: a Sidechain App on a web page finds the wallet and connects to it.
 import assert from "node:assert/strict";
-import { after, before, test } from "node:test";
-import { launchBrave, openTestApp, serveTestApp } from "../harness.mjs";
+import { after, before, describe, test } from "node:test";
+import { BROWSERS, launchWallet, openTestApp, serveTestApp } from "../harness.mjs";
+
+for (const browserName of BROWSERS) describe(browserName, () => {
 
 let session;
 let app;
 before(async () => {
-  [session, app] = await Promise.all([launchBrave(), serveTestApp()]);
+  [session, app] = await Promise.all([launchWallet(browserName), serveTestApp()]);
 });
 after(async () => {
   await session?.close();
@@ -106,6 +108,9 @@ test("a method outside the origin's Grant returns 4100, and Grants never carry o
   await Promise.all([granted.close(), stranger.close()]);
 });
 
-test("none of the above raised extension runtime errors (CSP violations, uncaught exceptions)", async () => {
+// Brave only: Firefox has no API to read an extension's error console.
+test("none of the above raised extension runtime errors (CSP violations, uncaught exceptions)", { skip: browserName !== "brave" }, async () => {
   assert.deepEqual((await session.extensionErrors()).runtimeErrors, []);
+});
+
 });

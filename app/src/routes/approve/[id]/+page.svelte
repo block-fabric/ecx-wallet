@@ -13,8 +13,9 @@
 
   async function decide(approved: boolean) {
     busy = true;
-    // The background closes this window once it has recorded the decision.
     await resolveApproval(id, approved);
+    // The background also closes it; closing here too keeps that from depending on a browser quirk.
+    window.close();
   }
 </script>
 
