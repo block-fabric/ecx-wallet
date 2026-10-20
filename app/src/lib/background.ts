@@ -113,6 +113,32 @@ export interface SlotAccount {
 /** Every Slot the wallet has a Chain Module for (needs the wallet unlocked). */
 export const listAccounts = () => send<SlotAccount[]>({ kind: "accounts.list" });
 
+/** A Slot's balance per asset as its Sidechain Server (`server`) reports it; the wallet doesn't verify it. */
+export interface SlotReport {
+  slot: number;
+  chain: string;
+  server: string;
+  balances: AssetAmount[];
+  history: unknown[];
+}
+
+/** Registers the Slot's addresses with its Sidechain Server and returns what the server reports. */
+export const reportedState = (slot: number) => send<SlotReport>({ kind: "accounts.reported", slot });
+
+export interface SendResult {
+  requestId: string;
+  server: string;
+  accepted: boolean;
+  txid?: string;
+}
+
+/**
+ * Sends from the wallet's own Send screen: the Slot's Sidechain Server builds the transfer, the user
+ * reviews it in an approval window, the wallet signs and submits it. Throws on refusal or rejection.
+ */
+export const startSend = (order: { slot: number; asset: string; amount: string; destination: string }) =>
+  send<SendResult>({ kind: "send.start", ...order });
+
 /** A stored Grant as the Grants screen shows it. */
 export interface Grant {
   origin: string;

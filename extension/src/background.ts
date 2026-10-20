@@ -7,6 +7,9 @@ import {
   createAccounts,
   createChainModules,
   createProviderHandler,
+  createPullPath,
+  sidechainServer,
+  SidechainServerError,
   SUPPORTED_SLOTS,
   createVault,
   ErrorCode,
@@ -26,6 +29,8 @@ import type { BackgroundMessage, ProviderResponse } from "./messages";
 
 /** Error code for Vault failures reported to the wallet's own pages (wrong password, ...). */
 const VAULT_ERROR = -32000;
+/** Error code for a Sidechain Server that couldn't be reached or refused, reported to the wallet's own pages. */
+const SIDECHAIN_SERVER_ERROR = -32001;
 const AUTO_LOCK_ALARM = "vault:auto-lock";
 
 function keyValueStore(area: chrome.storage.StorageArea): KeyValueStore {
@@ -198,17 +203,25 @@ chrome.windows.onRemoved.addListener((windowId) => {
 const chainModule = createChainModules(fetchWasm);
 const accounts = createAccounts({ starter: (slot) => vault.starter(slot), chainModule });
 
-const handleProviderRequest = createProviderHandler({
-  grants,
-  askToConnect,
+/** One review for every Signing Request, whichever path it came by. */
+const signing = {
   openSigningApproval,
   supportedSlots: SUPPORTED_SLOTS,
   isUnlocked: async () => (await vault.status()).unlocked,
-  receiveAddresses: (slot) => accounts.receiveAddresses(slot),
   chainModule,
-  starter: (slot) => vault.starter(slot),
+  starter: (slot: number) => vault.starter(slot),
   now: () => Date.now(),
+};
+
+const handleProviderRequest = createProviderHandler({
+  ...signing,
+  grants,
+  askToConnect,
+  receiveAddresses: (slot) => accounts.receiveAddresses(slot),
 });
+
+// The pull path: each Slot's Sidechain Server, as its Chain Entry names it.
+const pullPath = createPullPath({ ...signing, sidechainServer: (url) => sidechainServer(url) });
 
 /** The requester's web origin as the browser reports it for a content-script message. */
 function requesterOrigin(sender: chrome.runtime.MessageSender): string | undefined {
@@ -258,6 +271,20 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
       return Promise.all(
         SUPPORTED_SLOTS.map(async (slot) => ({ slot, addresses: await accounts.receiveAddresses(slot) })),
       );
+    case "accounts.reported":
+      // What a Slot's Sidechain Server reports (registering the Slot's addresses with it first).
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      if (!SUPPORTED_SLOTS.includes(Number(message.slot))) throw new ProviderRpcError(ErrorCode.ChainDisconnected, "No Chain Module for that Slot.");
+      return pullPath.reportedState(Number(message.slot));
+    case "send.start":
+      // The wallet's own Send: resolves once the server accepted the signed payload.
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      if (!SUPPORTED_SLOTS.includes(Number(message.slot))) throw new ProviderRpcError(ErrorCode.ChainDisconnected, "No Chain Module for that Slot.");
+      return pullPath.send(Number(message.slot), {
+        asset: String(message.asset ?? ""),
+        amount: String(message.amount ?? ""),
+        destination: String(message.destination ?? ""),
+      });
     case "vault.status":
     case "vault.generate":
     case "vault.create":
@@ -309,6 +336,7 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, sender, sendRe
 function toErrorResponse(error: unknown): ProviderResponse {
   if (error instanceof ProviderRpcError) return { ok: false, error: { code: error.code, message: error.message } };
   if (error instanceof VaultError) return { ok: false, error: { code: VAULT_ERROR, message: error.message } };
+  if (error instanceof SidechainServerError) return { ok: false, error: { code: SIDECHAIN_SERVER_ERROR, message: error.message } };
   console.error(error);
   return { ok: false, error: { code: ErrorCode.Internal, message: "Internal wallet error." } };
 }

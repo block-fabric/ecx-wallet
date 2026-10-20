@@ -1,0 +1,9 @@
+{
+  "name": "@ecx/stub-server",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Stub Elements Sidechain Server: the standard Sidechain Server API answered from fixtures (reference implementation and e2e server).",
+  "exports": { ".": "./src/server.mjs" },
+  "scripts": { "start": "node src/main.mjs" }
+}

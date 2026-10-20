@@ -1,8 +1,19 @@
 <script lang="ts">
-  import { listAccounts, lockVault, unlockVault, vaultStatus, type SlotAccount, type VaultStatus } from "$lib/background";
+  import {
+    listAccounts,
+    lockVault,
+    reportedState,
+    unlockVault,
+    vaultStatus,
+    type SlotAccount,
+    type SlotReport,
+    type VaultStatus,
+  } from "$lib/background";
 
   let status = $state<VaultStatus | undefined>(undefined);
   let accounts = $state<SlotAccount[] | undefined>(undefined);
+  /** Per Slot: what its Sidechain Server reports, or why it couldn't be read. */
+  let reports = $state<Record<number, SlotReport | { error: string }>>({});
   let password = $state("");
   let error = $state("");
   let busy = $state(false);
@@ -20,7 +31,15 @@
       return;
     }
     listAccounts().then(
-      (a) => (accounts = a),
+      (a) => {
+        accounts = a;
+        for (const { slot } of a) {
+          reportedState(slot).then(
+            (r) => (reports[slot] = r),
+            (e) => (reports[slot] = { error: (e as Error).message }),
+          );
+        }
+      },
       (e) => (error = (e as Error).message),
     );
   });
@@ -68,10 +87,31 @@
     <p>Your wallet is unlocked. It locks itself after 15 minutes without use.</p>
     {#each accounts ?? [] as account (account.slot)}
       {#each account.addresses.slice(0, 1) as { chain, address } (address)}
+        {@const report = reports[account.slot]}
         <section class="account" data-account={account.slot}>
           <h2>Slot {account.slot} <small data-account-chain>{chain}</small></h2>
           <p>Receive address</p>
           <code data-receive-address>{address}</code>
+          {#if report === undefined}
+            <p>Asking the Sidechain Server for your balance…</p>
+          {:else if "error" in report}
+            <p class="error" data-balance-error>Balance unavailable: {report.error}</p>
+          {:else}
+            <h3>Balance</h3>
+            <p class="reported" data-reported-by>
+              Reported by {report.server}. This wallet doesn't verify it.
+            </p>
+            <ul class="balances">
+              {#each report.balances as balance (balance.asset)}
+                <li data-balance data-asset={balance.asset}>
+                  <strong>{balance.amount}</strong> <span class="asset">asset <code>{balance.asset}</code></span>
+                </li>
+              {:else}
+                <li data-no-balance>Nothing reported.</li>
+              {/each}
+            </ul>
+            <a href="#/send/{account.slot}" data-send-link>Send</a>
+          {/if}
         </section>
       {/each}
     {/each}
@@ -106,6 +146,14 @@
     display: block;
     word-break: break-all;
     margin-bottom: 1rem;
+  }
+  .reported {
+    font-style: italic;
+    color: #555;
+  }
+  .balances code {
+    word-break: break-all;
+    font-size: 0.8em;
   }
   .error {
     color: #b00020;

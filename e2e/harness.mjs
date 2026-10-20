@@ -14,6 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 import puppeteer from "puppeteer-core";
+import { createStubServer } from "@ecx/stub-server";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(here, "..");
@@ -259,6 +260,19 @@ export async function serveTestApp() {
     origin: (host = "app.localhost") => `http://${host}:${port}`,
     close: () => new Promise((resolve) => server.close(resolve)),
   };
+}
+
+/**
+ * Starts the stub Sidechain Server (see stub-server/README.md) at the URL Slot 24's Chain Entry
+ * names as betanet's default server, which is the one the built wallet talks to. `config` is the
+ * stub's fixture table (`state`, `transfers`). Returns the stub plus its `url`; `await close()`.
+ */
+export async function serveSidechainServer(config) {
+  const entry = JSON.parse(await readFile(path.join(ROOT, "core", "elements", "chain-entry.json"), "utf8")).networks.betanet;
+  const url = new URL(entry.sidechainServer);
+  const stub = createStubServer({ chain: entry.chain, ...config });
+  await stub.listen(Number(url.port), url.hostname);
+  return { ...stub, url: url.origin };
 }
 
 /** Opens a wallet screen (a hash route of the app, e.g. `#/grants`) in a new tab, once rendered. */

@@ -6,7 +6,11 @@
 // Inputs: the SvelteKit pages from ../app/build and the core modules' .wasm from ../core/dist (run
 // those builds first; the root `pnpm build` does all three), and the plain-script entry points in
 // src/ bundled with esbuild. Fails if any shipped script contains `eval(` or `new Function(`.
-import { cp, mkdir, readdir, rm, stat } from "node:fs/promises";
+//
+// The manifests are hand-written except for the Sidechain Servers the wallet may reach: those come
+// from the Chain Entries (`core/elements/chain-entry.json`), added as `host_permissions` and as the
+// CSP's `connect-src`, so the wallet can talk to nothing else.
+import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
@@ -18,6 +22,26 @@ const coreDist = path.resolve(root, "..", "core", "dist");
 const dist = path.join(root, "dist");
 const staging = path.join(dist, ".staging");
 const TARGETS = ["chromium", "firefox"];
+const CHAIN_ENTRIES = [path.resolve(root, "..", "core", "elements", "chain-entry.json")];
+
+/** Every network's default Sidechain Server origin, across the bundled Chain Entries. */
+async function sidechainServerOrigins() {
+  const origins = new Set();
+  for (const file of CHAIN_ENTRIES) {
+    const entry = JSON.parse(await readFile(file, "utf8"));
+    for (const network of Object.values(entry.networks)) origins.add(new URL(network.sidechainServer).origin);
+  }
+  return [...origins].sort();
+}
+
+/** The hand-written manifest plus access to the Sidechain Servers. */
+async function manifestFor(target, servers) {
+  const manifest = JSON.parse(await readFile(path.join(root, "manifests", `${target}.json`), "utf8"));
+  manifest.host_permissions = servers.map((origin) => `${origin}/*`);
+  const csp = manifest.content_security_policy;
+  csp.extension_pages = `${csp.extension_pages}; connect-src 'self' ${servers.join(" ")}`;
+  return `${JSON.stringify(manifest, null, 2)}\n`;
+}
 
 await stat(path.join(appBuild, "index.html")).catch(() => {
   throw new Error(`No app build at ${appBuild}; run \`pnpm build\` from the repo root.`);
@@ -42,10 +66,11 @@ for (const file of (await readdir(coreDist)).filter((f) => f.endsWith(".wasm")))
 }
 await checkNoEval(staging);
 
+const servers = await sidechainServerOrigins();
 for (const target of TARGETS) {
   const out = path.join(dist, target);
   await cp(staging, out, { recursive: true });
-  await cp(path.join(root, "manifests", `${target}.json`), path.join(out, "manifest.json"));
+  await writeFile(path.join(out, "manifest.json"), await manifestFor(target, servers));
   console.log(`extension: built ${path.relative(process.cwd(), out)}`);
 }
 await rm(staging, { recursive: true, force: true });

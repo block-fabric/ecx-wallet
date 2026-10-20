@@ -15,6 +15,7 @@ pnpm workspace, one directory per module from the spec:
 | `app/` | SvelteKit UI (adapter-static, hash router, so SSR is off). Built as one `index.html` shell; screens are hash routes, e.g. `index.html#/approve/<id>`, `index.html#/grants`. |
 | `extension/` | MV3 shell: hand-written `manifests/chromium.json` and `manifests/firefox.json`; `src/background.ts`, `src/content.ts`, `src/inpage.ts` bundled with esbuild (not SvelteKit). |
 | `client/` | Library Sidechain Apps use to discover the Provider (`discoverProviders()`). |
+| `stub-server/` | Stub Elements Sidechain Server (`createStubServer`) answering the standard Sidechain Server API from fixtures, and that API's protocol draft (`stub-server/README.md`). |
 | `e2e/` | Seam 1 harness and tests: the built extension in headless Brave and Firefox. |
 
 Request path: page → `client` discovery → injected Provider (`inpage.ts`, main world) → content script
@@ -34,6 +35,17 @@ Slot's Chain Module, each in its own lazily instantiated WASM instance. The home
 when unlocked (`accounts.list` message); the Provider's `getAddresses({ slot })` returns
 `[{ chain, address }]` to an origin whose Grant covers the method and the Slot (4100 otherwise, or
 while locked).
+
+Pull path (`wallet/src/pull-path.ts`, `sidechain-server.ts`): each Slot talks to the Sidechain
+Server its Chain Entry names for the Chain Module's network (Slot 24: `sidechainServer` in
+`core/elements/chain-entry.json`; the extension build turns those URLs into `host_permissions` and
+CSP `connect-src`). The home page registers the Slot's descriptor and first 20 receive addresses
+(`accounts.reported`) and shows the balance per asset, labelled "Reported by <server URL>". The Send
+screen (`#/send/<slot>`, `send.start`) has the server build the transfer. The Signing Request it
+returns goes through the same validation, Chain Module and approval window as a Provider request
+(`wallet/src/signing.ts`), with the server URL as the requester. It must be Clear: there is no Grant,
+so a Blind request is refused without a window. After approval the wallet submits the signed PSET
+to the server.
 
 Signing (`signTransaction`): the Provider handler checks, in the spec's order, the envelope (unknown
 MAJOR → 4200, unknown fields ignored, expired → -32602), the Grant (Slot + method → 4100), then
@@ -79,7 +91,8 @@ pnpm typecheck
 
 `e2e/harness.mjs` exports `launchWallet(name)` / `launchBrave()` / `launchFirefox()`, `setUpWallet(session)`
 (imports `ABANDON`, no passphrase, and leaves the wallet unlocked), `serveTestApp()`
-and `openTestApp(session, app, host)`, and `openWalletPage(session, "#/grants")` for a wallet screen (it waits
+and `openTestApp(session, app, host)`, `serveSidechainServer(config)` (the stub Sidechain Server on the
+Chain Entry's URL, `http://127.0.0.1:24024`, so one pull-path test file at a time), and `openWalletPage(session, "#/grants")` for a wallet screen (it waits
 for `[data-screen-ready]`; Firefox's extension UUID is pinned so its pages have a known URL). Each `<name>.localhost` host is its own origin (Grants are per
 origin). The test Sidechain App (`e2e/test-app/`) exposes `window.testApp.request(method, params)`
 returning `{ result }` or `{ error: { code, message } }`. A session has `waitForApprovalWindow()`,

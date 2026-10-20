@@ -52,6 +52,9 @@ importers:
       '@ecx/client':
         specifier: workspace:*
         version: link:../client
+      '@ecx/stub-server':
+        specifier: workspace:*
+        version: link:../stub-server
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
@@ -77,6 +80,8 @@ importers:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
+
+  stub-server: {}
 
   wallet:
     devDependencies:

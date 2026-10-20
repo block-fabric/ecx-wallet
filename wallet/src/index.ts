@@ -8,6 +8,7 @@ export {
   type SigningApproval,
   type SignPrompt,
 } from "./provider";
+export { chainModuleFor, reviewAndSign, type SigningDeps } from "./signing";
 export { parseSigningRequest, SUPPORTED_MAJOR, type SigningRequest } from "./signing-request";
 export { CoreModule, CoreModuleError, type CoreArg } from "./wasm";
 export { loadVaultModule, type KdfParams, type VaultModule } from "./vault-module";
@@ -49,3 +50,12 @@ export {
   type VaultDeps,
   type VaultStatus,
 } from "./vault";
+export {
+  sidechainServer,
+  SidechainServerError,
+  type ReportedState,
+  type SidechainServer,
+  type TransferOrder,
+  type WatchData,
+} from "./sidechain-server";
+export { createPullPath, WATCHED_RECEIVE_ADDRESSES, type PullPath, type PullPathDeps, type SendResult, type SlotReport } from "./pull-path";

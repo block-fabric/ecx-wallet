@@ -1,8 +1,10 @@
 import { ErrorCode, ProviderRpcError } from "./errors";
 import type { SlotAddress } from "./accounts";
-import { ChainModuleRefusal, type ChainModule, type Decoded } from "./chain-module";
 import { covers, GRANTABLE_METHODS, widen, type GrantableMethod, type GrantStore, type Scope } from "./grants";
-import { parseSigningRequest, type SigningRequest } from "./signing-request";
+import { parseSigningRequest } from "./signing-request";
+import { chainModuleFor, rejected, reviewAndSign, type SigningDeps } from "./signing";
+
+export type { SignPrompt, SigningApproval } from "./signing";
 
 /** What the user is asked to approve when an origin connects. */
 export interface ConnectPrompt extends Scope {
@@ -17,48 +19,13 @@ export interface ConnectAnswer {
   blindSigning: boolean;
 }
 
-/** What the approval window shows for a Signing Request. */
-export interface SignPrompt {
-  /** Who is asking: the browser-reported origin. */
-  origin: string;
-  chain: string;
-  requestId: string;
-  /** The Chain Module's view: a Clear View or Blind. */
-  decoded: Decoded;
-  /** Requester-supplied; shown only tagged "Reported by <origin>". */
-  hints?: SigningRequest["hints"];
-}
-
-/** One approval window for one Signing Request; it opens on the first thing it has to show. */
-export interface SigningApproval {
-  /** Asks the user to unlock; true once the wallet is unlocked, false if they close the window. */
-  unlock(): Promise<boolean>;
-  /** Shows the request; true on approve, false on reject or close. */
-  confirm(prompt: SignPrompt): Promise<boolean>;
-  /** Closes the window, if open. */
-  close(): void;
-}
-
-export interface ProviderDeps {
+export interface ProviderDeps extends SigningDeps {
   grants: GrantStore;
   /** Shows the user a connect approval; a dismissed window counts as rejected. */
   askToConnect(prompt: ConnectPrompt): Promise<ConnectAnswer>;
-  /** A window for the approval of one Signing Request from `origin` for `chain`. */
-  openSigningApproval(context: { origin: string; chain: string }): SigningApproval;
-  /** Slots that have a bundled Chain Module. */
-  supportedSlots: readonly number[];
-  isUnlocked(): Promise<boolean>;
   /** The Slot's receive addresses (only called for a supported Slot while unlocked). */
   receiveAddresses(slot: number): Promise<SlotAddress[]>;
-  /** The Slot's Chain Module (only called for a supported Slot). */
-  chainModule(slot: number): Promise<ChainModule> | undefined;
-  /** The Slot's Starter; throws while locked. */
-  starter(slot: number): Promise<string>;
-  /** Milliseconds since the epoch. */
-  now(): number;
 }
-
-const rejected = () => new ProviderRpcError(ErrorCode.UserRejected, "The user rejected the request.");
 
 /**
  * The wallet's side of the Provider: every request from a Sidechain App ends up here, with the
@@ -113,40 +80,17 @@ export function createProviderHandler(deps: ProviderDeps) {
     if (!grant.slots.includes(request.slot)) {
       throw new ProviderRpcError(ErrorCode.Unauthorized, `${origin} has no Grant for Slot ${request.slot}; call connect first.`);
     }
-    const pending = supportedSlots.includes(request.slot) ? deps.chainModule(request.slot) : undefined;
-    if (pending === undefined) {
-      throw new ProviderRpcError(ErrorCode.ChainDisconnected, `This wallet has no Chain Module for Slot ${request.slot}.`);
-    }
-    const module = await pending;
-    const { binding } = module.declare();
-    if (binding.chain !== request.chain) {
-      throw new ProviderRpcError(ErrorCode.ChainDisconnected, `This wallet's Slot ${request.slot} serves ${binding.chain}, not ${request.chain}.`);
-    }
-    if (binding.format !== request.format) {
-      throw new ProviderRpcError(ErrorCode.UnsupportedMethod, `Unsupported format ${request.format} for ${request.chain}.`);
-    }
+    const module = await chainModuleFor(deps, request);
 
-    const approval = deps.openSigningApproval({ origin, chain: request.chain });
-    try {
-      if (!(await isUnlocked()) && !(await approval.unlock())) throw rejected();
-
-      // 5-7, then Blind or Clear: the Chain Module decides.
-      const decoded = await refusing(async () => module.decode(request.payload, await deps.starter(request.slot)));
-      if (decoded.kind === "blind" && !grant.blindSigning) {
-        throw new ProviderRpcError(
-          ErrorCode.Unauthorized,
-          `This request needs Blind Signing, and ${origin}'s Grant doesn't allow Blind Signing.`,
-        );
-      }
-      const prompt: SignPrompt = { origin, chain: request.chain, requestId: request.id, decoded, ...(request.hints ? { hints: request.hints } : {}) };
-      if (!(await approval.confirm(prompt))) throw rejected();
-      if (request.expiresAt <= nowSeconds()) {
-        throw new ProviderRpcError(ErrorCode.InvalidParams, "This Signing Request expired while waiting for approval.");
-      }
-      return await refusing(async () => module.sign(request.payload, await deps.starter(request.slot)));
-    } finally {
-      approval.close();
-    }
+    // 5-7, then Blind (only with the Grant's opt-in) or Clear, approval and signing.
+    return reviewAndSign(deps, {
+      requester: origin,
+      request,
+      module,
+      ...(grant.blindSigning
+        ? {}
+        : { blindRefusal: `This request needs Blind Signing, and ${origin}'s Grant doesn't allow Blind Signing.` }),
+    });
   }
 
   return async function handle(origin: string, method: unknown, params: unknown): Promise<unknown> {
@@ -159,16 +103,6 @@ export function createProviderHandler(deps: ProviderDeps) {
     if (isGrantable(method)) return granted(origin, method, params);
     throw new ProviderRpcError(ErrorCode.UnsupportedMethod, `Unsupported method: ${String(method)}`);
   };
-}
-
-/** A Chain Module's refusal, as the requester sees it. */
-async function refusing<T>(call: () => Promise<T>): Promise<T> {
-  try {
-    return await call();
-  } catch (error) {
-    if (error instanceof ChainModuleRefusal) throw new ProviderRpcError(ErrorCode.InvalidParams, error.message);
-    throw error;
-  }
 }
 
 function isGrantable(method: unknown): method is GrantableMethod {
