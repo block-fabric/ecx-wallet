@@ -1,0 +1,10 @@
+packages:
+  - core
+  - wallet
+  - app
+  - extension
+  - client
+  - e2e
+  - stub-server
+allowBuilds:
+  esbuild: true

@@ -1,0 +1,383 @@
+// Seam 1 harness: the built extension in a real headless browser, driven from outside.
+//
+// - puppeteer-core only, no Chrome download. Binaries: $BRAVE (default /usr/bin/brave),
+//   $FIREFOX (default /usr/bin/firefox).
+// - Throwaway profile in a fresh temp dir, deleted on close; never the user's profile.
+// - Puppeteer never attaches to the extension's service worker (`targetFilter`): an attached
+//   debugger keeps a stopped worker from restarting (see spike/elements-wasm RESULTS.md).
+//   To stop the worker, use the Brave session's `stopServiceWorker()` (CDP
+//   `ServiceWorker.stopWorker` over an extension page's session, as the spike did), or
+//   `stopBackground()`, which both browsers' sessions offer.
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import * as esbuild from "esbuild";
+import puppeteer from "puppeteer-core";
+import { createStubServer } from "@ecx/stub-server";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+export const ROOT = path.resolve(here, "..");
+export const DIST = {
+  chromium: path.join(ROOT, "extension", "dist", "chromium"),
+  firefox: path.join(ROOT, "extension", "dist", "firefox"),
+};
+
+/** Browsers the Provider suite runs against: `E2E_BROWSERS=brave,firefox` (the default). */
+export const BROWSERS = (process.env.E2E_BROWSERS ?? "brave,firefox").split(",").filter(Boolean);
+
+/** Launches the named browser (one of BROWSERS) with the matching extension build installed. */
+export function launchWallet(name, options) {
+  if (name === "brave") return launchBrave(options);
+  if (name === "firefox") return launchFirefox(options);
+  throw new Error(`Unknown browser ${name}`);
+}
+
+/**
+ * Launches headless Brave with the built Chromium extension installed.
+ * Returns a session; always `await session.close()`.
+ *
+ * `profile`: reuse this profile dir (e.g. to restart the browser on the same profile); the caller
+ * then owns it and `close()` leaves it in place. Default: a fresh throwaway profile.
+ */
+export async function launchBrave({ extensionPath = DIST.chromium, profile: reuse } = {}) {
+  const profile = reuse ?? (await mkdtemp(path.join(tmpdir(), "ecx-e2e-brave-")));
+  const keepProfile = reuse !== undefined;
+  const browser = await puppeteer.launch({
+    executablePath: process.env.BRAVE ?? "/usr/bin/brave",
+    headless: process.env.HEADFUL ? false : true,
+    pipe: true,
+    enableExtensions: true,
+    userDataDir: profile,
+    targetFilter: (target) => target.type() !== "service_worker",
+    args: [
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-sync",
+      "--disable-features=BraveRewards,BraveWallet,BraveNews",
+      // Every *.localhost name is the test server, so each test can use its own web origin
+      // (Grants are per origin) while staying a secure context.
+      "--host-resolver-rules=MAP *.localhost 127.0.0.1",
+    ],
+  });
+  let extensionId;
+  try {
+    // Developer mode turns on the extension error console, so runtime errors (CSP violations,
+    // uncaught exceptions) are recorded and `extensionErrors()` can report them.
+    await withExtensionsPage(browser, (page) =>
+      page.evaluate(() => chrome.developerPrivate.updateProfileConfiguration({ inDeveloperMode: true })),
+    );
+    extensionId = await browser.installExtension(extensionPath);
+  } catch (error) {
+    await closeBrowser(browser, keepProfile ? undefined : profile);
+    throw error;
+  }
+
+  const extensionOrigin = `chrome-extension://${extensionId}/`;
+  return {
+    ...walletSession(browser, keepProfile ? undefined : profile, extensionOrigin),
+    extensionId,
+
+    /**
+     * Stops the extension's service worker the way the browser's idle timeout does (CDP
+     * `ServiceWorker.stopWorker` over an extension page's session, never by attaching to the
+     * worker). Resolves with how many running worker versions were stopped once all are stopped.
+     */
+    async stopServiceWorker() {
+      const page = await browser.newPage();
+      try {
+        // An extension page that sends no messages, so it doesn't wake the worker itself.
+        await page.goto(`${extensionOrigin}manifest.json`);
+        const cdp = await page.createCDPSession();
+        const versions = new Map();
+        cdp.on("ServiceWorker.workerVersionUpdated", ({ versions: updated }) => {
+          for (const v of updated) versions.set(v.versionId, v);
+        });
+        await cdp.send("ServiceWorker.enable");
+        await new Promise((r) => setTimeout(r, 300));
+        const ours = () => [...versions.values()].filter((v) => v.scriptURL.startsWith(extensionOrigin));
+        const running = ours().filter((v) => v.runningStatus !== "stopped");
+        for (const v of running) await cdp.send("ServiceWorker.stopWorker", { versionId: v.versionId });
+        for (let i = 0; ours().some((v) => v.runningStatus !== "stopped"); i++) {
+          if (i > 50) throw new Error("The service worker did not stop");
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        return running.length;
+      } finally {
+        await page.close();
+      }
+    },
+
+    /** The background, for tests that run on every browser, is the service worker. */
+    stopBackground() {
+      return this.stopServiceWorker();
+    },
+
+    /** Manifest errors, install warnings and runtime errors Brave recorded for the extension. */
+    async extensionErrors() {
+      const info = await withExtensionsPage(browser, (page) =>
+        page.evaluate((id) => chrome.developerPrivate.getExtensionInfo(id), extensionId),
+      );
+      return {
+        manifestErrors: info.manifestErrors ?? [],
+        installWarnings: info.installWarnings ?? [],
+        runtimeErrors: info.runtimeErrors ?? [],
+      };
+    },
+  };
+}
+
+// Pins the Firefox extension's internal UUID so tests can open its pages (moz-extension://<uuid>/).
+const FIREFOX_EXTENSION_ID = "wallet@ecx.invalid";
+const FIREFOX_EXTENSION_UUID = "6c1f6e1e-ec0a-4c1b-9a51-ec0000000024";
+const FIREFOX_EXTENSION_ORIGIN = `moz-extension://${FIREFOX_EXTENSION_UUID}/`;
+
+/**
+ * Launches headless Firefox over WebDriver BiDi with the built Firefox extension temporarily
+ * installed. Same session shape as Brave's; `extensionErrors()` reads the extension's manifest
+ * errors and warnings and every error the browser console records from the extension's scripts
+ * and pages (Firefox has no extension error console API, so this runs in the browser's chrome
+ * context, which `-remote-allow-system-access` opens to BiDi `script.evaluate`).
+ *
+ * `profile`: reuse this profile dir to restart the browser on it; the caller owns it. The add-on
+ * is installed again on each launch (temporary add-ons don't survive a restart), keeping its
+ * storage and UUID.
+ */
+export async function launchFirefox({ extensionPath = DIST.firefox, profile: reuse } = {}) {
+  const profile = reuse ?? (await mkdtemp(path.join(tmpdir(), "ecx-e2e-firefox-")));
+  const keepProfile = reuse !== undefined;
+  const browser = await puppeteer.launch({
+    browser: "firefox",
+    executablePath: process.env.FIREFOX ?? "/usr/bin/firefox",
+    headless: process.env.HEADFUL ? false : true,
+    userDataDir: profile,
+    extraPrefsFirefox: {
+      "extensions.webextensions.uuids": JSON.stringify({ [FIREFOX_EXTENSION_ID]: FIREFOX_EXTENSION_UUID }),
+      // A temporary add-on is uninstalled when Firefox closes, and uninstalling deletes its
+      // storage. Keeping it lets a relaunch on the same profile reinstall the add-on and find its
+      // `storage.local` as a permanently installed add-on would (see "Firefox" in README.md).
+      "extensions.webextensions.keepStorageOnUninstall": true,
+      "extensions.webextensions.keepUuidOnUninstall": true,
+    },
+    // Needed to script moz-extension:// pages such as the approval window, and the chrome context.
+    args: ["-remote-allow-system-access"],
+    // A snap-launched parent (e.g. VS Code) leaks GTK/GIO paths that crash Firefox's content
+    // processes (spike/elements-wasm RESULTS.md); drop them.
+    env: Object.fromEntries(
+      Object.entries(process.env).filter(([k, v]) => !/\/snap\//.test(v ?? "") && !k.startsWith("SNAP")),
+    ),
+  });
+  let chrome;
+  try {
+    chrome = await firefoxChrome(browser);
+    // Listen before installing, so errors raised while the extension starts are kept too.
+    await chrome(`(() => {
+      globalThis.ecxConsole = [];
+      Services.console.registerListener({ observe: (message) => void globalThis.ecxConsole.push(message) });
+    })()`);
+    await browser.installExtension(extensionPath);
+  } catch (error) {
+    await closeBrowser(browser, keepProfile ? undefined : profile);
+    throw error;
+  }
+  return {
+    ...walletSession(browser, keepProfile ? undefined : profile, FIREFOX_EXTENSION_ORIGIN),
+
+    /**
+     * Stops the extension's background (a non-persistent event page in Firefox MV3) the way
+     * Firefox's idle timeout does (`Extension.terminateBackground`). Resolves with how many
+     * running backgrounds were stopped (0 or 1); the next extension event starts it again.
+     */
+    stopBackground: () =>
+      chrome(`(async () => {
+        const extension = WebExtensionPolicy.getByID(${JSON.stringify(FIREFOX_EXTENSION_ID)}).extension;
+        if (extension.backgroundState !== "running") return 0;
+        await extension.terminateBackground();
+        if (extension.backgroundState !== "stopped") throw new Error("The background did not stop");
+        return 1;
+      })()`),
+
+    /** Manifest errors and warnings, and errors the browser console recorded from the extension. */
+    extensionErrors: () =>
+      chrome(`(() => {
+        const extension = WebExtensionPolicy.getByID(${JSON.stringify(FIREFOX_EXTENSION_ID)}).extension;
+        const runtimeErrors = globalThis.ecxConsole
+          .filter((m) => m instanceof Ci.nsIScriptError && !(m.flags & Ci.nsIScriptError.warningFlag))
+          .filter((m) => m.sourceName.startsWith(${JSON.stringify(FIREFOX_EXTENSION_ORIGIN)}))
+          .map((m) => ({ source: m.sourceName, line: m.lineNumber, category: m.category, message: m.errorMessage }));
+        return { manifestErrors: [...extension.errors], installWarnings: [...extension.warnings], runtimeErrors };
+      })()`),
+  };
+}
+
+/**
+ * Returns `evaluate(expression)` for Firefox's chrome (privileged browser UI) context: the
+ * expression's value comes back JSON-serialised; promises are awaited.
+ */
+async function firefoxChrome(browser) {
+  const tree = await browser.connection.send("browsingContext.getTree", { "moz:scope": "chrome" });
+  const context = tree.result.contexts[0].context;
+  return async (expression) => {
+    const { result } = await browser.connection.send("script.evaluate", {
+      expression: `Promise.resolve(${expression}).then((v) => JSON.stringify(v ?? null))`,
+      target: { context },
+      awaitPromise: true,
+      resultOwnership: "none",
+    });
+    if (result.type !== "success") throw new Error(`chrome-context evaluation failed: ${JSON.stringify(result.exceptionDetails)}`);
+    return JSON.parse(result.result.value);
+  };
+}
+
+/** What every browser session offers. `walletPrefix` identifies the wallet's own pages. */
+function walletSession(browser, profile, walletPrefix) {
+  const isApproval = (t) => t.url().startsWith(walletPrefix) && t.url().includes("#/approve/");
+  // Over BiDi (Firefox), puppeteer neither reliably reports windows an extension opens nor drops
+  // them from `targets()` once closed, so poll and probe each candidate for liveness.
+  const dead = new WeakSet();
+  async function liveApprovals() {
+    const live = [];
+    for (const target of browser.targets().filter((t) => isApproval(t) && !dead.has(t))) {
+      const page = await target.asPage();
+      const alive = await Promise.race([
+        page.evaluate(() => true).catch(() => false),
+        new Promise((r) => setTimeout(() => r(false), 2_000)),
+      ]);
+      if (alive) live.push(page);
+      else dead.add(target);
+    }
+    return live;
+  }
+
+  const extensionUrl = (p) => `${walletPrefix}${p.replace(/^\//, "")}`;
+  return {
+    browser,
+    extensionUrl,
+
+    /**
+     * Opens one of the wallet's own pages (e.g. "index.html#/import") in a new tab. Wait for
+     * something on it before using it: over BiDi, Firefox never reports a moz-extension://
+     * navigation as finished, so there the navigation isn't awaited.
+     */
+    async openPage(p) {
+      const page = await browser.newPage();
+      const navigation = page.goto(extensionUrl(p));
+      if (walletPrefix.startsWith("moz-extension://")) navigation.catch(() => {});
+      else await navigation;
+      return page;
+    },
+
+    /** Resolves with the next approval window the wallet opens, once it has rendered. */
+    async waitForApprovalWindow({ timeout = 10_000 } = {}) {
+      for (const end = Date.now() + timeout; ; await new Promise((r) => setTimeout(r, 100))) {
+        const [page] = await liveApprovals();
+        if (page) {
+          await page.waitForSelector("[data-approval-ready]", { timeout });
+          return page;
+        }
+        if (Date.now() > end) throw new Error(`No approval window within ${timeout} ms`);
+      }
+    },
+
+    /** Approval windows open right now (to assert that none was opened). */
+    approvalWindows: liveApprovals,
+
+    close: () => closeBrowser(browser, profile),
+  };
+}
+
+/** Closes the browser and deletes `profile` (pass undefined to keep it). */
+async function closeBrowser(browser, profile) {
+  await browser.close().catch(() => {});
+  if (profile) await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+}
+
+async function withExtensionsPage(browser, fn) {
+  const page = await browser.newPage();
+  try {
+    await page.goto("chrome://extensions");
+    await page.waitForFunction(() => typeof chrome?.developerPrivate !== "undefined");
+    return await fn(page);
+  } finally {
+    await page.close();
+  }
+}
+
+/**
+ * Serves the test Sidechain App (e2e/test-app) on 127.0.0.1, with the `client` library bundled in.
+ * `url(host)` / `origin(host)` give the app under any `<name>.localhost` host, each its own origin.
+ */
+export async function serveTestApp() {
+  const bundle = await esbuild.build({
+    entryPoints: [path.join(here, "test-app", "app.js")],
+    bundle: true,
+    format: "esm",
+    write: false,
+  });
+  const appJs = bundle.outputFiles[0].text;
+  const html = await readFile(path.join(here, "test-app", "index.html"), "utf8");
+  const server = createServer((request, response) => {
+    if (request.url === "/app.js") {
+      response.writeHead(200, { "Content-Type": "text/javascript" });
+      response.end(appJs);
+    } else {
+      response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      response.end(html);
+    }
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  return {
+    url: (host = "app.localhost") => `http://${host}:${port}/`,
+    origin: (host = "app.localhost") => `http://${host}:${port}`,
+    close: () => new Promise((resolve) => server.close(resolve)),
+  };
+}
+
+/**
+ * Starts the stub Sidechain Server (see stub-server/README.md) at the URL Slot 24's Chain Entry
+ * names as betanet's default server, which is the one the built wallet talks to. `config` is the
+ * stub's fixture table (`state`, `transfers`). Returns the stub plus its `url`; `await close()`.
+ */
+export async function serveSidechainServer(config) {
+  const entry = JSON.parse(await readFile(path.join(ROOT, "core", "elements", "chain-entry.json"), "utf8")).networks.betanet;
+  const url = new URL(entry.sidechainServer);
+  const stub = createStubServer({ chain: entry.chain, ...config });
+  await stub.listen(Number(url.port), url.hostname);
+  return { ...stub, url: url.origin };
+}
+
+/** Opens a wallet screen (a hash route of the app, e.g. `#/grants`) in a new tab, once rendered. */
+export async function openWalletPage(session, route) {
+  const page = await session.browser.newPage();
+  // Over BiDi (Firefox) the navigation to a moz-extension:// page never reports completion, though
+  // the page loads; so wait for the screen itself rather than for goto.
+  page.goto(session.extensionUrl(`index.html${route}`)).catch(() => {});
+  await page.waitForSelector("[data-screen-ready]");
+  return page;
+}
+
+/** A Master Mnemonic whose Slot 24 Starter and address are fixed test vectors (see the core crates' tests). */
+export const ABANDON = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+export const WALLET_PASSWORD = "correct horse battery";
+
+/** Imports `phrase` (no passphrase) under `password` and waits until the wallet is unlocked. */
+export async function setUpWallet(session, { phrase = ABANDON, password = WALLET_PASSWORD } = {}) {
+  const page = await session.openPage("index.html#/import");
+  await page.waitForSelector("[data-wallet-ready]", { timeout: 10_000 });
+  await page.type("[data-import-phrase]", phrase);
+  await page.type("[data-new-password]", password);
+  await page.type("[data-repeat-password]", password);
+  await page.click("[data-submit]");
+  await page.waitForSelector('[data-vault-state="unlocked"]');
+  await page.close();
+}
+
+/** Opens the test app in a new tab and waits until its script is ready. */
+export async function openTestApp(session, app, host) {
+  const page = await session.browser.newPage();
+  await page.goto(app.url(host));
+  await page.waitForFunction(() => window.testApp !== undefined);
+  return page;
+}

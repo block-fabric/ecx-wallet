@@ -1,0 +1,108 @@
+// The core modules as they ship: each `.wasm` in the extension build, loaded through the wallet's
+// hand-written glue exactly as the background loads it (no browser needed).
+import assert from "node:assert/strict";
+import { readdir, readFile } from "node:fs/promises";
+import path from "node:path";
+import { test } from "node:test";
+import * as esbuild from "esbuild";
+import { DIST, ROOT } from "../harness.mjs";
+
+const ABANDON = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+/** The wallet's TypeScript glue, bundled for node the way esbuild bundles it for the background. */
+async function importWallet() {
+  const out = await esbuild.build({
+    entryPoints: [path.join(ROOT, "wallet", "src", "index.ts")],
+    bundle: true,
+    format: "esm",
+    platform: "neutral",
+    write: false,
+  });
+  return import(`data:text/javascript;base64,${Buffer.from(out.outputFiles[0].text).toString("base64")}`);
+}
+
+test("every shipped .wasm imports nothing but memory", async () => {
+  const wasm = (await readdir(DIST.chromium)).filter((f) => f.endsWith(".wasm"));
+  assert.ok(wasm.includes("vault.wasm"), "vault.wasm is packaged");
+  assert.ok(wasm.includes("elements.wasm"), "elements.wasm is packaged");
+  for (const file of wasm) {
+    const module = new WebAssembly.Module(await readFile(path.join(DIST.chromium, file)));
+    const imports = WebAssembly.Module.imports(module).filter((i) => i.kind !== "memory");
+    assert.deepEqual(imports, [], `${file} imports more than memory`);
+  }
+});
+
+test("the shipped Vault yields the BitWindow Slot 24 Starters, with and without a passphrase", async () => {
+  const { loadVaultModule } = await importWallet();
+  const vault = await loadVaultModule(await readFile(path.join(DIST.chromium, "vault.wasm")));
+  assert.equal(vault.starter(ABANDON, "", 24), "buyer citizen congress doll secret merry denial law live wait pass drive");
+  assert.equal(vault.starter(ABANDON, "TREZOR", 24), "raw sister combine impact penalty improve soap power tomato topic frog flip");
+});
+
+test("the shipped Vault creates from caller entropy, checks imports and stretches passwords", async () => {
+  const { loadVaultModule } = await importWallet();
+  const vault = await loadVaultModule(await readFile(path.join(DIST.chromium, "vault.wasm")));
+  assert.equal(vault.masterMnemonicFromEntropy(new Uint8Array(16)), ABANDON);
+  assert.equal(vault.canonicalMnemonic(`  ${ABANDON.toUpperCase()} `), ABANDON);
+  assert.throws(() => vault.canonicalMnemonic("abandon abandon"), /word count|invalid/i);
+  const key = vault.stretchPassword(
+    new TextEncoder().encode("password"),
+    new TextEncoder().encode("somesaltsomesalt"),
+    { mKib: 65536, t: 3, p: 1 },
+  );
+  assert.equal(Buffer.from(key).toString("hex"), "7664ad4ba1a3c999fcdd0991ffc2270f78302d2383233db5e7befc85d1bb1819");
+});
+
+// The Slot 24 Starter of ABANDON (no passphrase); address fixtures as in core/elements/tests.
+const SLOT_24_STARTER = "buyer citizen congress doll secret merry denial law live wait pass drive";
+
+test("the shipped Elements Chain Module declares its binding and bundles Slot 24's Chain Entry", async () => {
+  const { loadChainModule } = await importWallet();
+  const elements = await loadChainModule(await readFile(path.join(DIST.chromium, "elements.wasm")));
+  assert.deepEqual(elements.declare(), {
+    binding: { chain: "ecash:betanet-s24", format: "pset", payloadVersions: ["1"] },
+    capabilities: [],
+  });
+  const entry = elements.chainEntry();
+  assert.equal(entry.slot, 24);
+  assert.equal(entry.networks.betanet.chain, "ecash:betanet-s24");
+  assert.equal(entry.networks.betanet.genesisHash, "a7754ce0debc40baddbd8c47e79d19209685f22c63edaaf8b69cf54116374d7f");
+  assert.equal(entry.networks.betanet.policyAsset, "5836dcc06130dcf6a65b6ac493813fd65559955283e44cc3f07966294eccb2c8");
+});
+
+test("the shipped Elements Chain Module derives the Slot 24 receive addresses from the Starter", async () => {
+  const { loadChainModule } = await importWallet();
+  const elements = await loadChainModule(await readFile(path.join(DIST.chromium, "elements.wasm")));
+  const account = elements.deriveAccount(SLOT_24_STARTER, { receive: 2 });
+  assert.deepEqual(account.receive.map((a) => a.address), [
+    "elements1qew44aehkjstjm56ng2rjrz57vwxh5g9su6dlpm",
+    "elements1qnx6kczxpu35ypahwhqddx2pn6q0nuyaap97ygn",
+  ]);
+  assert.match(account.descriptor, /^elwpkh\(\[3b27f87d\/84h\/1h\/0h\]tpub/);
+  assert.throws(() => elements.deriveAccount("not a starter", { receive: 1 }), /Starter/);
+});
+
+const PSETS = JSON.parse(await readFile(path.join(ROOT, "e2e", "fixtures", "elements-psets.json"), "utf8"));
+
+test("the shipped Elements Chain Module decodes a request it can't explain as Blind, with its verifiable facts", async () => {
+  const { loadChainModule } = await importWallet();
+  const elements = await loadChainModule(await readFile(path.join(DIST.chromium, "elements.wasm")));
+  const decoded = elements.decode(PSETS.blind.payload, SLOT_24_STARTER);
+  assert.equal(decoded.kind, "blind");
+  assert.deepEqual(decoded.verifiableFacts.ownedInputs.map((i) => [i.index, i.amount]), [[0, "100000"]]);
+  assert.deepEqual(decoded.verifiableFacts.fee.map((f) => f.amount), ["1000"]);
+});
+
+test("the shipped Elements Chain Module signs its own input exactly as LWK does, and refuses by rule", async () => {
+  const { loadChainModule, ChainModuleRefusal } = await importWallet();
+  const elements = await loadChainModule(await readFile(path.join(DIST.chromium, "elements.wasm")));
+  assert.equal(elements.sign(PSETS.blind.payload, SLOT_24_STARTER), PSETS.blind.signed);
+  assert.throws(
+    () => elements.sign(PSETS.wrongGenesis.payload, SLOT_24_STARTER),
+    (e) => e instanceof ChainModuleRefusal && e.code === "wrongGenesis",
+  );
+  assert.throws(
+    () => elements.decode(PSETS.confidentialInput.payload, SLOT_24_STARTER),
+    (e) => e instanceof ChainModuleRefusal && e.code === "confidential",
+  );
+});

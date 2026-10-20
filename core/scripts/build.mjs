@@ -1,0 +1,69 @@
+// Builds every core module to its own `.wasm` in core/dist/, reproducibly, and fails unless each
+// one imports nothing but memory.
+//
+//   node scripts/build.mjs
+//
+// Needs the pinned Rust toolchain (rust-toolchain.toml; rustup installs it) with the
+// wasm32-unknown-unknown target, and a clang with the WebAssembly backend plus llvm-ar for
+// libsecp256k1's C code (override with $CC_wasm32_unknown_unknown / $AR_wasm32_unknown_unknown;
+// on macOS point them at Homebrew LLVM). wasm-opt comes pinned from npm (binaryen).
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, rm } from "node:fs/promises";
+import { homedir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { checkWasmImports } from "./check-wasm-imports.mjs";
+
+const core = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const dist = path.join(core, "dist");
+const TARGET = "wasm32-unknown-unknown";
+
+/** One entry per module: the C-ABI crate and the file it ships as. */
+export const MODULES = [
+  { crate: "ecx-vault-wasm", file: "vault.wasm" },
+  { crate: "ecx-elements-wasm", file: "elements.wasm" },
+];
+
+const run = (cmd, args, env = {}) =>
+  execFileSync(cmd, args, { cwd: core, stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, ...env } })
+    .toString()
+    .trim();
+
+// Keep build-machine paths out of the binaries (panic locations embed source paths), so the
+// bytes don't depend on where the repo or the cargo/rustup homes live.
+const cargoHome = process.env.CARGO_HOME ?? path.join(homedir(), ".cargo");
+const sysroot = run("rustc", ["--print", "sysroot"]);
+const rustflags = [
+  `--remap-path-prefix=${core}=/ecx/core`,
+  `--remap-path-prefix=${cargoHome}=/cargo`,
+  `--remap-path-prefix=${sysroot}=/rustc`,
+];
+
+const env = {
+  CC_wasm32_unknown_unknown: process.env.CC_wasm32_unknown_unknown ?? "clang",
+  AR_wasm32_unknown_unknown: process.env.AR_wasm32_unknown_unknown ?? "llvm-ar",
+  CARGO_INCREMENTAL: "0",
+  SOURCE_DATE_EPOCH: "946684800",
+  CARGO_ENCODED_RUSTFLAGS: rustflags.join("\x1f"),
+};
+
+await rm(dist, { recursive: true, force: true });
+await mkdir(dist, { recursive: true });
+const wasmOpt = path.join(core, "node_modules", "binaryen", "bin", "wasm-opt");
+
+for (const { crate, file } of MODULES) {
+  run("cargo", ["build", "--locked", "--release", "--target", TARGET, "-p", crate], env);
+  const raw = path.join(core, "target", TARGET, "release", `${crate.replaceAll("-", "_")}.wasm`);
+  const out = path.join(dist, file);
+  // rustc emits bulk-memory and friends; wasm-opt rejects them unless enabled explicitly.
+  run(process.execPath, [
+    wasmOpt, "-Oz",
+    "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext",
+    "--enable-mutable-globals", "--enable-reference-types", "--enable-multivalue",
+    raw, "-o", out,
+  ]);
+  const bytes = await readFile(out);
+  checkWasmImports(file, bytes);
+  console.log(`core: ${file} ${bytes.length} B sha256 ${createHash("sha256").update(bytes).digest("hex")}`);
+}
