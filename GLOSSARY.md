@@ -20,6 +20,10 @@ _Avoid_: Seed phrase, recovery phrase, master seed
 The per-Slot mnemonic derived from the Master Mnemonic, from which one sidechain's keys are derived by that chain's own rules.
 _Avoid_: Sidechain seed, child mnemonic, sub-wallet
 
+**View Key**:
+The private blinding key that reveals the hidden amounts of a user's confidential outputs on a sidechain.
+_Avoid_: Blinding key (ambiguous: also names the public half), viewing key
+
 ### Sidechains
 
 **Slot**:
@@ -33,6 +37,10 @@ _Avoid_: Adapter, backend, sidechain plugin
 **Sidechain App**:
 A sidechain's own web UI that asks the Wallet Base to sign for that chain's specific features.
 _Avoid_: dApp, frontend, sidechain website
+
+**Provider**:
+The object the Wallet Base exposes to Sidechain Apps, through which they connect, ask for Grants, and send Signing Requests.
+_Avoid_: Wallet API, bridge, connector
 
 **Grant**:
 A user's stored approval letting one Sidechain App, identified by its web origin, request certain methods on certain Slots.
