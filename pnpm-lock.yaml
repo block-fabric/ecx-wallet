@@ -9,6 +9,10 @@ importers:
   .: {}
 
   app:
+    dependencies:
+      '@ecx/wallet':
+        specifier: workspace:*
+        version: link:../wallet
     devDependencies:
       '@sveltejs/adapter-static':
         specifier: 3.0.10

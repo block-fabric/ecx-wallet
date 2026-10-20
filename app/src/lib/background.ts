@@ -1,60 +1,20 @@
 // The app's only channel to the wallet: messages to the extension background, which holds every
 // secret and makes every decision. The app renders what it is given and reports the user's choice.
 
-export interface ConnectPrompt {
-  kind: "connect";
-  origin: string;
-  slots: number[];
-  methods: string[];
-}
+import type {
+  ApprovalPrompt,
+  AssetAmount,
+  ClearView,
+  DangerousMode,
+  Grant,
+  SendResult,
+  SlotAddress,
+  SlotReport,
+  VaultStatus,
+} from "@ecx/wallet";
 
-/** A Signing Request arrived while locked: unlock first, in the approval window. */
-export interface UnlockPrompt {
-  kind: "unlock";
-  origin: string;
-  chain: string;
-}
-
-export interface AssetAmount {
-  asset: string;
-  amount: string;
-}
-
-/** What the Chain Module can prove about a request it can't explain. */
-export interface VerifiableFacts {
-  ownedInputs: (AssetAmount & { index: number })[];
-  totalLeaving: AssetAmount[];
-  fee: AssetAmount[];
-  unknownFields: string[];
-  dangerousFlags: string[];
-}
-
-export type Destination =
-  | { kind: "address"; address: string; yours: boolean }
-  | { kind: "withdrawal"; l1Address?: string; l1ScriptPubkey: string; payout: string; parentFee: string };
-
-export type DangerousMode = { kind: "nonDefaultSighash"; input: number; sighash: number } | { kind: "withdrawalBurn"; output: number };
-
-/** What a request the Chain Module fully understands does. */
-export interface ClearView {
-  dangerousModes: DangerousMode[];
-  inputs: (AssetAmount & { index: number; yours: boolean })[];
-  outputs: (AssetAmount & { index: number; destination: Destination })[];
-  fee: AssetAmount;
-}
-
-export type Decoded = { kind: "clear"; view: ClearView } | { kind: "blind"; reason: string; verifiableFacts: VerifiableFacts };
-
-export interface SignPrompt {
-  kind: "sign";
-  origin: string;
-  chain: string;
-  requestId: string;
-  decoded: Decoded;
-  hints?: { summary?: string; outputLabels?: Record<string, string> };
-}
-
-export type ApprovalPrompt = ConnectPrompt | UnlockPrompt | SignPrompt;
+// The shapes the background sends are the wallet package's own types.
+export type { ApprovalPrompt, AssetAmount, ClearView, DangerousMode, Grant, SendResult, SlotReport, VaultStatus };
 
 type Response<T> = { ok: true; result: T } | { ok: false; error: { code: number; message: string } };
 
@@ -72,11 +32,6 @@ export const resolveApproval = (id: string, approved: boolean, options: { blindS
 
 /** Unlocks the wallet from an approval window; throws on a wrong password. */
 export const unlockApproval = (id: string, password: string) => send<null>({ kind: "approval.unlock", id, password });
-
-export interface VaultStatus {
-  exists: boolean;
-  unlocked: boolean;
-}
 
 export const vaultStatus = () => send<VaultStatus>({ kind: "vault.status" });
 
@@ -105,30 +60,14 @@ export function checkNewPassword(password: string, repeat: string): string {
 /** One Slot's account: its receive address(es) in the chain's own encoding. */
 export interface SlotAccount {
   slot: number;
-  addresses: { chain: string; address: string }[];
+  addresses: SlotAddress[];
 }
 
 /** Every Slot the wallet has a Chain Module for (needs the wallet unlocked). */
 export const listAccounts = () => send<SlotAccount[]>({ kind: "accounts.list" });
 
-/** A Slot's balance per asset as its Sidechain Server (`server`) reports it; the wallet doesn't verify it. */
-export interface SlotReport {
-  slot: number;
-  chain: string;
-  server: string;
-  balances: AssetAmount[];
-  history: unknown[];
-}
-
 /** Registers the Slot's addresses with its Sidechain Server and returns what the server reports. */
 export const reportedState = (slot: number) => send<SlotReport>({ kind: "accounts.reported", slot });
-
-export interface SendResult {
-  requestId: string;
-  server: string;
-  accepted: boolean;
-  txid?: string;
-}
 
 /**
  * Sends from the wallet's own Send screen: the Slot's Sidechain Server builds the transfer, the user
@@ -136,14 +75,6 @@ export interface SendResult {
  */
 export const startSend = (order: { slot: number; asset: string; amount: string; destination: string }) =>
   send<SendResult>({ kind: "send.start", ...order });
-
-/** A stored Grant as the Grants screen shows it. */
-export interface Grant {
-  origin: string;
-  slots: number[];
-  methods: string[];
-  blindSigning: boolean;
-}
 
 export const listGrants = () => send<Grant[]>({ kind: "grants.list" });
 

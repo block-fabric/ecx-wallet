@@ -2,7 +2,7 @@ import { ErrorCode, ProviderRpcError } from "./errors";
 import type { SlotAddress } from "./accounts";
 import { covers, GRANTABLE_METHODS, widen, type GrantableMethod, type GrantStore, type Scope } from "./grants";
 import { parseSigningRequest } from "./signing-request";
-import { chainModuleFor, rejected, reviewAndSign, type SigningDeps } from "./signing";
+import { chainModuleFor, rejected, reviewAndSign, type SignPrompt, type SigningDeps } from "./signing";
 
 export type { SignPrompt, SigningApproval } from "./signing";
 
@@ -11,6 +11,12 @@ export interface ConnectPrompt extends Scope {
   /** The requester's web origin as the browser reported it. */
   origin: string;
 }
+
+/** What an approval window shows: a connect prompt, an unlock first, or a Signing Request. */
+export type ApprovalPrompt =
+  | ({ kind: "connect" } & ConnectPrompt)
+  | { kind: "unlock"; origin: string; chain: string }
+  | ({ kind: "sign" } & SignPrompt);
 
 /** The user's answer to a connect prompt. */
 export interface ConnectAnswer {

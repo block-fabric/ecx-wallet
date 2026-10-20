@@ -16,13 +16,13 @@ import {
   loadVaultModule,
   ProviderRpcError,
   VaultError,
+  type ApprovalPrompt,
   type ConnectAnswer,
   type ConnectPrompt,
   type Grant,
   type GrantStore,
   type KeyValueStore,
   type SigningApproval,
-  type SignPrompt,
   type VaultModule,
 } from "@ecx/wallet";
 import type { BackgroundMessage, ProviderResponse } from "./messages";
@@ -101,12 +101,6 @@ const grants: GrantStore = {
 
 // Approval windows. Their state lives in memory. Provisional: if the worker is stopped while an
 // approval window is open, the request is lost and the page gets 4900 from the content script.
-
-/** What an approval window shows; the page renders it and reports the user's answer. */
-type ApprovalPrompt =
-  | ({ kind: "connect" } & ConnectPrompt)
-  | { kind: "unlock"; origin: string; chain: string }
-  | ({ kind: "sign" } & SignPrompt);
 
 /** The user's answer; null when the window was closed. */
 type ApprovalAnswer = { approved: boolean; blindSigning?: boolean } | null;
