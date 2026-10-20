@@ -1,0 +1,17 @@
+# The signing core: pure-Rust libraries plus one thin C-ABI crate per `.wasm`.
+# No wasm-bindgen anywhere: each module's `.wasm` imports nothing (see README.md).
+[workspace]
+resolver = "2"
+members = ["abi", "vault", "vault-wasm"]
+
+[workspace.package]
+edition = "2021"
+publish = false
+license = "MIT"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

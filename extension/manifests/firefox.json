@@ -11,7 +11,7 @@
     "default_title": "ECX Wallet",
     "default_popup": "index.html"
   },
-  "permissions": ["storage"],
+  "permissions": ["storage", "alarms"],
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],

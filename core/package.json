@@ -2,5 +2,13 @@
   "name": "@ecx/core",
   "private": true,
   "version": "0.0.0",
-  "description": "Rust signing core (Vault, Chain Modules), one WASM per module. Placeholder until the WASM pipeline lands (#20)."
+  "type": "module",
+  "description": "Rust signing core (Vault, Chain Modules), one import-free WASM per module, in core/dist/.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "cargo test --locked --workspace"
+  },
+  "devDependencies": {
+    "binaryen": "132.0.0"
+  }
 }

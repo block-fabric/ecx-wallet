@@ -33,4 +33,11 @@ export type BackgroundMessage =
   | { kind: "approval.get"; id: string }
   | { kind: "approval.resolve"; id: string; approved: boolean }
   | { kind: "grants.list" }
-  | { kind: "grants.revoke"; origin: string };
+  | { kind: "grants.revoke"; origin: string }
+  // Vault: accepted only from the wallet's own pages.
+  | { kind: "vault.status" }
+  | { kind: "vault.generate" }
+  | { kind: "vault.create"; masterMnemonic: string; passphrase?: string; password: string }
+  | { kind: "vault.unlock"; password: string }
+  | { kind: "vault.lock" }
+  | { kind: "vault.setAutoLock"; minutes: number };

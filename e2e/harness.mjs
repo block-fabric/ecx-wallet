@@ -5,8 +5,8 @@
 // - Throwaway profile in a fresh temp dir, deleted on close; never the user's profile.
 // - Puppeteer never attaches to the extension's service worker (`targetFilter`): an attached
 //   debugger keeps a stopped worker from restarting (see spike/elements-wasm RESULTS.md).
-//   Tests that need to stop the worker should do it over a page's CDP session with
-//   `ServiceWorker.stopWorker`, as the spike did.
+//   To stop the worker, use the Brave session's `stopServiceWorker()` (CDP
+//   `ServiceWorker.stopWorker` over an extension page's session, as the spike did).
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -35,9 +35,13 @@ export function launchWallet(name) {
 /**
  * Launches headless Brave with the built Chromium extension installed.
  * Returns a session; always `await session.close()`.
+ *
+ * `profile`: reuse this profile dir (e.g. to restart the browser on the same profile); the caller
+ * then owns it and `close()` leaves it in place. Default: a fresh throwaway profile.
  */
-export async function launchBrave({ extensionPath = DIST.chromium } = {}) {
-  const profile = await mkdtemp(path.join(tmpdir(), "ecx-e2e-brave-"));
+export async function launchBrave({ extensionPath = DIST.chromium, profile: reuse } = {}) {
+  const profile = reuse ?? (await mkdtemp(path.join(tmpdir(), "ecx-e2e-brave-")));
+  const keepProfile = reuse !== undefined;
   const browser = await puppeteer.launch({
     executablePath: process.env.BRAVE ?? "/usr/bin/brave",
     headless: process.env.HEADFUL ? false : true,
@@ -64,13 +68,44 @@ export async function launchBrave({ extensionPath = DIST.chromium } = {}) {
     );
     extensionId = await browser.installExtension(extensionPath);
   } catch (error) {
-    await closeBrowser(browser, profile);
+    await closeBrowser(browser, keepProfile ? undefined : profile);
     throw error;
   }
 
+  const extensionOrigin = `chrome-extension://${extensionId}/`;
   return {
-    ...walletSession(browser, profile, `chrome-extension://${extensionId}/`),
+    ...walletSession(browser, keepProfile ? undefined : profile, extensionOrigin),
     extensionId,
+
+    /**
+     * Stops the extension's service worker the way the browser's idle timeout does (CDP
+     * `ServiceWorker.stopWorker` over an extension page's session, never by attaching to the
+     * worker). Resolves with how many running worker versions were stopped once all are stopped.
+     */
+    async stopServiceWorker() {
+      const page = await browser.newPage();
+      try {
+        // An extension page that sends no messages, so it doesn't wake the worker itself.
+        await page.goto(`${extensionOrigin}manifest.json`);
+        const cdp = await page.createCDPSession();
+        const versions = new Map();
+        cdp.on("ServiceWorker.workerVersionUpdated", ({ versions: updated }) => {
+          for (const v of updated) versions.set(v.versionId, v);
+        });
+        await cdp.send("ServiceWorker.enable");
+        await new Promise((r) => setTimeout(r, 300));
+        const ours = () => [...versions.values()].filter((v) => v.scriptURL.startsWith(extensionOrigin));
+        const running = ours().filter((v) => v.runningStatus !== "stopped");
+        for (const v of running) await cdp.send("ServiceWorker.stopWorker", { versionId: v.versionId });
+        for (let i = 0; ours().some((v) => v.runningStatus !== "stopped"); i++) {
+          if (i > 50) throw new Error("The service worker did not stop");
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        return running.length;
+      } finally {
+        await page.close();
+      }
+    },
 
     /** Manifest errors, install warnings and runtime errors Brave recorded for the extension. */
     async extensionErrors() {
@@ -141,9 +176,23 @@ function walletSession(browser, profile, walletPrefix) {
     return live;
   }
 
+  const extensionUrl = (p) => `${walletPrefix}${p.replace(/^\//, "")}`;
   return {
     browser,
-    extensionUrl: (p) => `${walletPrefix}${p.replace(/^\//, "")}`,
+    extensionUrl,
+
+    /**
+     * Opens one of the wallet's own pages (e.g. "index.html#/import") in a new tab. Wait for
+     * something on it before using it: over BiDi, Firefox never reports a moz-extension://
+     * navigation as finished, so there the navigation isn't awaited.
+     */
+    async openPage(p) {
+      const page = await browser.newPage();
+      const navigation = page.goto(extensionUrl(p));
+      if (walletPrefix.startsWith("moz-extension://")) navigation.catch(() => {});
+      else await navigation;
+      return page;
+    },
 
     /** Resolves with the next approval window the wallet opens, once it has rendered. */
     async waitForApprovalWindow({ timeout = 10_000 } = {}) {
@@ -164,9 +213,10 @@ function walletSession(browser, profile, walletPrefix) {
   };
 }
 
+/** Closes the browser and deletes `profile` (pass undefined to keep it). */
 async function closeBrowser(browser, profile) {
   await browser.close().catch(() => {});
-  await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  if (profile) await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
 
 async function withExtensionsPage(browser, fn) {
