@@ -51,8 +51,16 @@ The description of one sidechain that ships with a Wallet Base release: its Slot
 _Avoid_: Chain manifest, chain descriptor, network profile
 
 **Sidechain Server**:
-A server run by a sidechain's maintainers that knows that chain's rules and state and produces unsigned payloads for the Wallet Base to sign.
+A server, by default run by a sidechain's maintainers, from which the Wallet Base reads that chain's state over the Server API its Chain Entry names; over the Standard Sidechain API it also builds unsigned payloads for the Wallet Base to sign and broadcasts the signed ones.
 _Avoid_: Adapter, backend, sidechain plugin
+
+**Server API**:
+The protocol the Wallet Base speaks to a Sidechain Server, named next to its URL in the Chain Entry: the Standard Sidechain API, or an existing indexer API the Wallet Base supports (Esplora).
+_Avoid_: Backend type, server kind
+
+**Standard Sidechain API**:
+The HTTPS + JSON API this project defines (`/v1`) for a sidechain with no existing indexer: register watch data, read reported state, build a transfer as a Signing Request, submit the signed payload.
+_Avoid_: Sidechain Server API (reads as "any API a Sidechain Server speaks"), pull API
 
 **Sidechain App**:
 A sidechain's own web UI that asks the Wallet Base to sign for that chain's specific features.
