@@ -12,7 +12,7 @@ pnpm workspace, one directory per module from the spec:
 |---|---|
 | `core/` | Rust signing core: a Cargo workspace, one import-free `.wasm` per module (today `vault.wasm`). See `core/README.md`. |
 | `wallet/` | Target-agnostic TypeScript: Grants, the Provider request handler (`createProviderHandler`), Vault orchestration (`createVault`: encryption at rest, unlock state, auto-lock) and the hand-written WASM glue (`CoreModule`, `loadVaultModule`). Later: Signing Request validation, Chain Module loading. |
-| `app/` | SvelteKit UI (adapter-static, hash router, so SSR is off). Built as one `index.html` shell; screens are hash routes, e.g. `index.html#/approve/<id>`. |
+| `app/` | SvelteKit UI (adapter-static, hash router, so SSR is off). Built as one `index.html` shell; screens are hash routes, e.g. `index.html#/approve/<id>`, `index.html#/grants`. |
 | `extension/` | MV3 shell: hand-written `manifests/chromium.json` and `manifests/firefox.json`; `src/background.ts`, `src/content.ts`, `src/inpage.ts` bundled with esbuild (not SvelteKit). |
 | `client/` | Library Sidechain Apps use to discover the Provider (`discoverProviders()`). |
 | `e2e/` | Seam 1 harness and tests: the built extension in headless Brave and Firefox. |
@@ -61,13 +61,14 @@ pnpm typecheck
 ### Writing e2e tests
 
 `e2e/harness.mjs` exports `launchWallet(name)` / `launchBrave()` / `launchFirefox()`, `serveTestApp()`
-and `openTestApp(session, app, host)`. Each `<name>.localhost` host is its own origin (Grants are per
+and `openTestApp(session, app, host)`, and `openWalletPage(session, "#/grants")` for a wallet screen (it waits
+for `[data-screen-ready]`; Firefox's extension UUID is pinned so its pages have a known URL). Each `<name>.localhost` host is its own origin (Grants are per
 origin). The test Sidechain App (`e2e/test-app/`) exposes `window.testApp.request(method, params)`
 returning `{ result }` or `{ error: { code, message } }`. A session has `waitForApprovalWindow()`,
 `approvalWindows()`, `openPage(path)` (a wallet page, e.g. `index.html#/import`; wait for an element
 on it before use, since Firefox never reports moz-extension loads as finished), and on Brave
 `extensionErrors()` and `stopServiceWorker()`. `launchBrave({ profile })` reuses a profile dir to
-restart the browser on it. Firefox's extension UUID is pinned, so wallet pages have a fixed URL.
+restart the browser on it.
 
 Puppeteer must never attach to the extension's service worker (`targetFilter` in the harness); to
 restart the worker, use `session.stopServiceWorker()` (CDP `ServiceWorker.stopWorker` over an

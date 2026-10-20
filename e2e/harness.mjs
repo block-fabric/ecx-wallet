@@ -125,6 +125,10 @@ export async function launchBrave({ extensionPath = DIST.chromium, profile: reus
  * Launches headless Firefox over WebDriver BiDi with the built Firefox extension temporarily
  * installed. Same session shape as Brave's, minus `extensionErrors` (no equivalent API).
  */
+// Pins the Firefox extension's internal UUID so tests can open its pages (moz-extension://<uuid>/).
+const FIREFOX_EXTENSION_ID = "wallet@ecx.invalid";
+const FIREFOX_EXTENSION_UUID = "6c1f6e1e-ec0a-4c1b-9a51-ec0000000024";
+
 export async function launchFirefox({ extensionPath = DIST.firefox } = {}) {
   const profile = await mkdtemp(path.join(tmpdir(), "ecx-e2e-firefox-"));
   const browser = await puppeteer.launch({
@@ -132,12 +136,11 @@ export async function launchFirefox({ extensionPath = DIST.firefox } = {}) {
     executablePath: process.env.FIREFOX ?? "/usr/bin/firefox",
     headless: process.env.HEADFUL ? false : true,
     userDataDir: profile,
+    extraPrefsFirefox: {
+      "extensions.webextensions.uuids": JSON.stringify({ [FIREFOX_EXTENSION_ID]: FIREFOX_EXTENSION_UUID }),
+    },
     // Needed to script moz-extension:// pages such as the approval window.
     args: ["-remote-allow-system-access"],
-    // Pin the extension's internal UUID so its pages have a known moz-extension:// URL.
-    extraPrefsFirefox: {
-      "extensions.webextensions.uuids": JSON.stringify({ [FIREFOX_ADDON_ID]: FIREFOX_EXTENSION_UUID }),
-    },
     // A snap-launched parent (e.g. VS Code) leaks GTK/GIO paths that crash Firefox's content
     // processes (spike/elements-wasm RESULTS.md); drop them.
     env: Object.fromEntries(
@@ -152,9 +155,6 @@ export async function launchFirefox({ extensionPath = DIST.firefox } = {}) {
   }
   return walletSession(browser, profile, `moz-extension://${FIREFOX_EXTENSION_UUID}/`);
 }
-
-const FIREFOX_ADDON_ID = "wallet@ecx.invalid"; // manifests/firefox.json gecko id
-const FIREFOX_EXTENSION_UUID = "0ec0e2e0-0000-4000-8000-00000000ec0e";
 
 /** What every browser session offers. `walletPrefix` identifies the wallet's own pages. */
 function walletSession(browser, profile, walletPrefix) {
@@ -259,6 +259,16 @@ export async function serveTestApp() {
     origin: (host = "app.localhost") => `http://${host}:${port}`,
     close: () => new Promise((resolve) => server.close(resolve)),
   };
+}
+
+/** Opens a wallet screen (a hash route of the app, e.g. `#/grants`) in a new tab, once rendered. */
+export async function openWalletPage(session, route) {
+  const page = await session.browser.newPage();
+  // Over BiDi (Firefox) the navigation to a moz-extension:// page never reports completion, though
+  // the page loads; so wait for the screen itself rather than for goto.
+  page.goto(session.extensionUrl(`index.html${route}`)).catch(() => {});
+  await page.waitForSelector("[data-screen-ready]");
+  return page;
 }
 
 /** Opens the test app in a new tab and waits until its script is ready. */

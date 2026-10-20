@@ -48,3 +48,15 @@ export function checkNewPassword(password: string, repeat: string): string {
   if (password !== repeat) return "The passwords don't match.";
   return "";
 }
+
+/** A stored Grant as the Grants screen shows it. */
+export interface Grant {
+  origin: string;
+  slots: number[];
+  methods: string[];
+  blindSigning: boolean;
+}
+
+export const listGrants = () => send<Grant[]>({ kind: "grants.list" });
+
+export const revokeGrant = (origin: string) => send<null>({ kind: "grants.revoke", origin });

@@ -59,6 +59,10 @@
   {#if error}
     <p class="error" role="alert" data-error>{error}</p>
   {/if}
+
+  {#if status?.exists}
+    <nav><a href="#/grants" data-grants-link>Connected sites</a></nav>
+  {/if}
 </main>
 
 <style>

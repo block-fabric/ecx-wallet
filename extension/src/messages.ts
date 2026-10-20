@@ -32,6 +32,8 @@ export type BackgroundMessage =
   | { kind: "provider.request"; method: unknown; params: unknown }
   | { kind: "approval.get"; id: string }
   | { kind: "approval.resolve"; id: string; approved: boolean }
+  | { kind: "grants.list" }
+  | { kind: "grants.revoke"; origin: string }
   // Vault: accepted only from the wallet's own pages.
   | { kind: "vault.status" }
   | { kind: "vault.generate" }
