@@ -33,7 +33,7 @@ export interface VerifiableFacts {
 
 export type Destination =
   | { kind: "address"; address: string; yours: boolean }
-  | { kind: "withdrawal"; l1ScriptPubkey: string; payout: string; parentFee: string };
+  | { kind: "withdrawal"; l1Address?: string; l1ScriptPubkey: string; payout: string; parentFee: string };
 
 export type DangerousMode = { kind: "nonDefaultSighash"; input: number; sighash: number } | { kind: "withdrawalBurn"; output: number };
 

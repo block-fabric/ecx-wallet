@@ -113,6 +113,9 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     const withdrawal = shown.dangerous.find((d) => /withdrawal/i.test(d));
     assert.match(withdrawal, /irreversible/i);
     assert.match(withdrawal, /months/i);
+    // The burn's row names its L1 destination as an L1 address, not as raw script hex.
+    const burn = shown.outputs.find((o) => /withdrawal/i.test(o.text));
+    assert.equal(burn.address, "bc1qzyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3h8ffkz");
 
     await approval.click("[data-approve]");
     assert.deepEqual(await signing, { result: PSETS.dangerous.signed });

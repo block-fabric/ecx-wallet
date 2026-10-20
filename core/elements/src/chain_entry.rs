@@ -28,6 +28,8 @@ pub struct NetworkEntry {
     /// The pegged asset, display hex.
     pub policy_asset: String,
     pub address_params: AddressParamsEntry,
+    /// How the parent (L1) chain encodes addresses: a Withdrawal's L1 destination is shown in it.
+    pub parent_address_params: ParentAddressParamsEntry,
     /// Default Sidechain Server URL (placeholder until the stub server lands).
     pub sidechain_server: String,
     /// Official App origins (placeholder).
@@ -42,6 +44,19 @@ pub struct AddressParamsEntry {
     pub blinded_prefix: u8,
     pub bech_hrp: String,
     pub blech_hrp: String,
+}
+
+/// An L1 chain's address encoding (Bitcoin Core's `base58Prefixes` and `bech32_hrp`).
+///
+/// betanet's parent is ECX mainnet: its `parentGenesisHash` is the genesis `CMainParams` asserts in
+/// the ECX node, github.com/ecash-com/bitcoin `src/kernel/chainparams.cpp` (commit 6e582335), whose
+/// `base58Prefixes[PUBKEY_ADDRESS]` is 0, `base58Prefixes[SCRIPT_ADDRESS]` 5 and `bech32_hrp` "bc".
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ParentAddressParamsEntry {
+    pub p2pkh_prefix: u8,
+    pub p2sh_prefix: u8,
+    pub bech_hrp: String,
 }
 
 /// The parsed Chain Entry. The JSON is compiled in, so a parse failure is a build bug.

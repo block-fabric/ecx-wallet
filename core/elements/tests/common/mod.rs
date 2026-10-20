@@ -172,14 +172,18 @@ pub fn with_missing_derivation() -> Pset {
 
 /// A withdrawal burn script: OP_RETURN <parent genesis> <L1 script> <fee, BE u64>.
 pub fn withdrawal_burn_script() -> Script {
+    withdrawal_burn_script_to(&[&[0x00, 0x14][..], &[0x11; 20]].concat())
+}
+
+/// A withdrawal burn paying `l1_script` on L1, with a 1 000 parent fee.
+pub fn withdrawal_burn_script_to(l1_script: &[u8]) -> Script {
     use elements_miniscript::elements::opcodes::all::OP_RETURN;
     use elements_miniscript::elements::script::Builder;
     let parent = BlockHash::from_str(&network().parent_genesis_hash).unwrap();
-    let l1_p2wpkh = [&[0x00, 0x14][..], &[0x11; 20]].concat();
     Builder::new()
         .push_opcode(OP_RETURN)
         .push_slice(parent.as_byte_array())
-        .push_slice(&l1_p2wpkh)
+        .push_slice(l1_script)
         .push_slice(&1_000u64.to_be_bytes())
         .into_script()
 }

@@ -24,6 +24,8 @@ export interface NetworkEntry {
   parentGenesisHash: string;
   policyAsset: string;
   addressParams: { p2pkhPrefix: number; p2shPrefix: number; blindedPrefix: number; bechHrp: string; blechHrp: string };
+  /** The parent (L1) chain's address encoding, for a Withdrawal's L1 destination. */
+  parentAddressParams: { p2pkhPrefix: number; p2shPrefix: number; bechHrp: string };
   /** Default Sidechain Server URL. */
   sidechainServer: string;
   /** Official App origins. */
@@ -73,8 +75,11 @@ export interface VerifiableFacts {
 /** Where an output's funds go. `yours` is decided by re-deriving, never by the requester. */
 export type Destination =
   | { kind: "address"; address: string; yours: boolean }
-  /** A withdrawal burn: `payout` (the burn minus `parentFee`) may be paid on L1 to `l1ScriptPubkey` (hex). */
-  | { kind: "withdrawal"; l1ScriptPubkey: string; payout: string; parentFee: string };
+  /**
+   * A withdrawal burn (how a Withdrawal starts): `payout` (the burn minus `parentFee`) may be paid
+   * on L1 to `l1ScriptPubkey` (hex), which `l1Address` gives as an L1 address if it is standard.
+   */
+  | { kind: "withdrawal"; l1Address?: string; l1ScriptPubkey: string; payout: string; parentFee: string };
 
 /** A risky mode of a request, shown above everything else. */
 export type DangerousMode =

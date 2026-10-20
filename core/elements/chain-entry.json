@@ -14,6 +14,11 @@
         "bechHrp": "elements",
         "blechHrp": "elementsl"
       },
+      "parentAddressParams": {
+        "p2pkhPrefix": 0,
+        "p2shPrefix": 5,
+        "bechHrp": "bc"
+      },
       "sidechainServer": "http://127.0.0.1:24024",
       "officialApps": ["https://elements-app.invalid"]
     }

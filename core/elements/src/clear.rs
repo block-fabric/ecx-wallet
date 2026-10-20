@@ -7,6 +7,8 @@ use std::str::FromStr;
 
 use elements_miniscript::elements::pset::{Input, Output, PartiallySignedTransaction};
 use elements_miniscript::elements::script::Instruction;
+use bech32::{segwit, Fe32, Hrp};
+use elements_miniscript::bitcoin::base58;
 use elements_miniscript::elements::hashes::Hash;
 use elements_miniscript::elements::{Address, AssetId, Txid};
 use serde::Serialize;
@@ -61,6 +63,10 @@ pub enum Destination {
     /// minus `parent_fee`) may be paid on L1 to `l1_script_pubkey` once the withdrawal is accepted.
     #[serde(rename_all = "camelCase")]
     Withdrawal {
+        /// The L1 destination as an L1 address (the parent chain's encoding), if it is a standard
+        /// script; otherwise only `l1_script_pubkey` says where it goes.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        l1_address: Option<String>,
         /// Hex.
         l1_script_pubkey: String,
         /// Base units, as a decimal string.
@@ -192,7 +198,25 @@ fn withdrawal(output: &Output) -> Option<Destination> {
     }
     let parent_fee = u64::from_be_bytes(fee.try_into().ok()?);
     let payout = output.amount?.checked_sub(parent_fee).filter(|p| *p > 0)?;
-    Some(Destination::Withdrawal { l1_script_pubkey: hex(l1_script), payout: payout.to_string(), parent_fee: parent_fee.to_string() })
+    Some(Destination::Withdrawal { l1_address: l1_address(l1_script), l1_script_pubkey: hex(l1_script), payout: payout.to_string(), parent_fee: parent_fee.to_string() })
+}
+
+/// `script` as an address in the parent chain's encoding (the Chain Entry's
+/// `parentAddressParams`): P2PKH and P2SH in base58check, segwit in bech32/bech32m. None for any
+/// other script.
+fn l1_address(script: &[u8]) -> Option<String> {
+    let params = &network().parent_address_params;
+    let base58 = |prefix: u8, hash: &[u8]| Some(base58::encode_check(&[&[prefix][..], hash].concat()));
+    match script {
+        [0x76, 0xa9, 0x14, hash @ .., 0x88, 0xac] if hash.len() == 20 => base58(params.p2pkh_prefix, hash),
+        [0xa9, 0x14, hash @ .., 0x87] if hash.len() == 20 => base58(params.p2sh_prefix, hash),
+        [version @ (0x00 | 0x51..=0x60), len, program @ ..] if *len as usize == program.len() => {
+            let version = Fe32::try_from(if *version == 0 { 0 } else { version - 0x50 }).ok()?;
+            let hrp = Hrp::parse(&params.bech_hrp).expect("Chain Entry parent bech HRP is valid");
+            segwit::encode(hrp, version, program).ok()
+        }
+        _ => None,
+    }
 }
 
 fn hex(bytes: &[u8]) -> String {

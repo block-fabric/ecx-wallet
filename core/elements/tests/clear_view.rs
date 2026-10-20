@@ -84,11 +84,39 @@ fn a_withdrawal_burn_is_a_dangerous_mode_and_its_row_names_the_l1_destination_pa
     assert_eq!(
         burn.destination,
         Destination::Withdrawal {
+            l1_address: Some("bc1qzyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3h8ffkz".into()),
             l1_script_pubkey: format!("0014{}", "11".repeat(20)),
             payout: "4000".into(),
             parent_fee: "1000".into(),
         }
     );
+}
+
+#[test]
+fn a_withdrawal_names_its_l1_destination_as_an_l1_address_and_a_non_standard_script_only_as_hex() {
+    // Expected addresses from the reference BIP173/BIP350/base58check encoders, with the parent
+    // chain's address parameters (HRP "bc", P2PKH 0, P2SH 5).
+    let p2pkh = [&[0x76, 0xa9, 0x14][..], &[0x22; 20], &[0x88, 0xac]].concat();
+    let p2sh = [&[0xa9, 0x14][..], &[0x33; 20], &[0x87]].concat();
+    let p2tr = [&[0x51, 0x20][..], &[0x44; 32]].concat();
+    let non_standard = vec![0x51];
+    let cases = [
+        (p2pkh, Some("147Us9aEq2PvBC5wobBJw1yEpQEbPKzssA")),
+        (p2sh, Some("36MjimMJHwQkrTKrKyw4KepHsd975kSGTs")),
+        (p2tr, Some("bc1pg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zq8ss0kf")),
+        (non_standard, None),
+    ];
+    for (l1_script, expected) in cases {
+        let mut pset = transfer();
+        pset.outputs_mut()[1].amount = Some(24_000);
+        pset.add_output(pay(withdrawal_burn_script_to(&l1_script), 5_000));
+        let view = clear(&pset);
+        let Destination::Withdrawal { l1_address, l1_script_pubkey, .. } = &view.outputs[2].destination else {
+            panic!("expected a withdrawal row: {:?}", view.outputs)
+        };
+        assert_eq!(l1_address.as_deref(), expected);
+        assert_eq!(l1_script_pubkey, &l1_script.iter().map(|b| format!("{b:02x}")).collect::<String>());
+    }
 }
 
 #[test]

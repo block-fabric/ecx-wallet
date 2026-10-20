@@ -172,8 +172,12 @@
             {/if}
           {:else}
             <div>
-              withdrawal burn to L1 script <code data-destination>{output.destination.l1ScriptPubkey}</code>, paying
-              {output.destination.payout} after a {output.destination.parentFee} parent fee
+              {#if output.destination.l1Address !== undefined}
+                Withdrawal burn to L1 address <code data-destination>{output.destination.l1Address}</code>,
+              {:else}
+                Withdrawal burn to a non-standard L1 script (hex) <code data-destination>{output.destination.l1ScriptPubkey}</code>,
+              {/if}
+              paying {output.destination.payout} after a {output.destination.parentFee} parent fee
             </div>
             <div class="not-yours" data-not-yours>Not yours: burned</div>
           {/if}
