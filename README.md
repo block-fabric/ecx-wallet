@@ -100,7 +100,9 @@ arguments), then "credited" once the Slot's server reports an output of exactly 
 The toolbar popup closes when the approval window opens, so the Deposit screen that asked may be
 gone by the time a Deposit is sent or refused. A Deposit that fails after approval (a refused
 broadcast, say) is therefore also kept for the session (`deposit.refused`) and shown on the Slot
-card, "Your Deposit of N sats failed: <reason>", until dismissed or the next Deposit is sent.
+card, "Your Deposit of N sats failed: <reason>" with "Try again", until closed (×) or the next
+Deposit is sent. A stuck Deposit (its server doesn't know it, or its status can't be read) offers
+"Stop tracking": the wallet forgets it, the transaction is unaffected. Healthy ones offer nothing.
 
 Signing (`signTransaction`): the Provider handler checks, in the spec's order, the envelope (unknown
 MAJOR → 4200, unknown fields ignored, expired → -32602), the Grant (Slot + method → 4100), then

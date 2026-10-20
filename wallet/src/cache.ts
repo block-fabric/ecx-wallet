@@ -19,7 +19,7 @@ export const cacheKey = {
   /**
    * The Slot's last Deposit that failed after the user approved it. Not for speed: the page that
    * asked may be gone by then (the popup closes when the approval window opens), so the home
-   * page shows it instead, until dismissed or the next Deposit is sent.
+   * page shows it instead, until closed or the next Deposit is sent.
    */
   depositRefused: (slot: number) => `${CACHE_PREFIX}deposit-refused:${slot}`,
 };

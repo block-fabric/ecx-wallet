@@ -184,8 +184,11 @@
   {@const failed = refused[slot]}
   {#if failed}
     <div class="error small refused" role="alert">
-      <span data-deposit-refused>Your Deposit of {failed.value} sats failed: {failed.reason}</span>
-      <button class="small-button" onclick={() => dismissRefused(slot)} data-deposit-refused-dismiss>Dismiss</button>
+      <div class="stack">
+        <span data-deposit-refused>Your Deposit of {failed.value} sats failed: {failed.reason}</span>
+        <a href="#/deposit/{slot}" data-deposit-retry>Try again</a>
+      </div>
+      <button class="close" aria-label="Close" title="Close" onclick={() => dismissRefused(slot)} data-deposit-refused-close>×</button>
     </div>
   {/if}
   {#if list !== undefined && "error" in list}
@@ -198,7 +201,10 @@
           <li class="deposit" data-deposit={d.txid} data-deposit-state={d.state}>
             <div class="deposit-head">
               <strong>{d.value} sats</strong>
-              <button class="small-button" onclick={() => dismiss(slot, d.txid)} data-deposit-dismiss>Dismiss</button>
+              {#if d.state === "notFound" || d.state === "unavailable"}
+                <!-- Only for a stuck Deposit: the transaction is unaffected, the wallet just stops following it. -->
+                <button class="small-button" onclick={() => dismiss(slot, d.txid)} data-deposit-stop-tracking>Stop tracking</button>
+              {/if}
             </div>
             <span class="small" data-deposit-status>{depositState(d)}</span>
             <code class="small txid" title="Transaction id on eCash" data-deposit-txid>{d.txid}</code>
@@ -420,8 +426,15 @@
   .refused {
     align-items: flex-start;
   }
-  .refused button {
+  .refused .close {
     flex: none;
+    padding: 0 4px;
+    border: none;
+    background: none;
+    color: inherit;
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
   }
   .txid {
     overflow-wrap: anywhere;

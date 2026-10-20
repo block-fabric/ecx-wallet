@@ -31,7 +31,7 @@ const FALLBACK_FEE_RATE = 1;
 /** sat/vB the rate never goes below (besides the server's own 1008-block floor). */
 const MIN_FEE_RATE = 0.1;
 
-/** A broadcast Deposit the wallet keeps an eye on, until it is credited or dismissed. */
+/** A broadcast Deposit the wallet keeps an eye on, until it is credited or the user stops tracking it. */
 export interface PendingDeposit {
   slot: number;
   /** The Slot's chain, by name. */
@@ -295,7 +295,7 @@ export function createDeposits(deps: DepositDeps) {
       }
     },
 
-    /** The Slot's last Deposit refused after approval this session, if not dismissed since. */
+    /** The Slot's last Deposit refused after approval this session, if not closed since. */
     refused: async (slot: number): Promise<RefusedDeposit | undefined> => (await deps.cache?.get<RefusedDeposit | null>(cacheKey.depositRefused(slot))) ?? undefined,
 
     /** Forgets the Slot's refused Deposit. */

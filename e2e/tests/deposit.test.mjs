@@ -102,6 +102,7 @@ async function readDeposits(session) {
     [...document.querySelectorAll("[data-deposit]")].map((e) => ({
       txid: e.getAttribute("data-deposit"),
       shownTxid: e.querySelector("[data-deposit-txid]")?.textContent.trim(),
+      stopTracking: e.querySelector("[data-deposit-stop-tracking]") !== null,
       state: e.getAttribute("data-deposit-state"),
       status: e.querySelector("[data-deposit-status]").textContent.trim(),
       claim: e.querySelector("[data-claim]")
@@ -206,8 +207,8 @@ for (const browserName of BROWSERS) describe(browserName, () => {
 
     test("the Slot 24 card follows it, showing its txid: confirmations, then the operator's import with the claim, then credited", async () => {
       assert.deepEqual(
-        (await readDeposits(session)).map(({ txid, shownTxid, state, status }) => ({ txid, shownTxid, state, status })),
-        [{ txid: depositTxid, shownTxid: depositTxid, state: "confirming", status: "0 / 100 confirmations on eCash" }],
+        (await readDeposits(session)).map(({ txid, shownTxid, stopTracking, state, status }) => ({ txid, shownTxid, stopTracking, state, status })),
+        [{ txid: depositTxid, shownTxid: depositTxid, stopTracking: false, state: "confirming", status: "0 / 100 confirmations on eCash" }],
       );
 
       const broadcast = L1.txs.find((t) => parseTx(t.hex).txid === depositTxid);
@@ -282,6 +283,24 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       await page.close();
     });
 
+    test("a Deposit the server no longer knows can be stopped tracking", async () => {
+      const page = await startDeposit(session, "5000");
+      await (await session.waitForApprovalWindow({ timeout: 20_000 })).click("[data-approve]");
+      const { txid } = await outcome(page);
+      await page.close();
+      L1.txs = L1.txs.filter((t) => parseTx(t.hex).txid !== txid); // dropped from the server's mempool
+
+      const [dropped] = await readDeposits(session);
+      assert.deepEqual({ txid: dropped.txid, state: dropped.state, stopTracking: dropped.stopTracking }, { txid, state: "notFound", stopTracking: true });
+      const home = await session.openPage("index.html#/");
+      await home.waitForSelector(`[data-deposit="${txid}"] [data-deposit-stop-tracking]`, { timeout: 20_000 });
+      assert.equal(await home.$eval("[data-deposit-stop-tracking]", (e) => e.textContent.trim()), "Stop tracking");
+      await home.click("[data-deposit-stop-tracking]");
+      await home.waitForFunction((t) => document.querySelector(`[data-deposit="${t}"]`) === null, { timeout: 10_000 }, txid);
+      await home.close();
+      assert.deepEqual(await readDeposits(session), []);
+    });
+
     test("a server that sends another transaction than the one asked for is refused, and nothing is kept", async () => {
       // A Treasury this session hasn't fetched yet (the earlier ones' transactions are kept).
       const unseen = tx("f6", [{ value: 100000, script: TREASURY }, { value: 0, script: ADDRESS_OUTPUT }]);
@@ -333,7 +352,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
 
   // After the runtime-errors check: closing the page while its `deposit.start` is pending makes
   // Firefox log "Promise rejected after context unloaded", as a real popup closing does.
-  test("a Deposit refused after approval, with its page already closed (as the popup closes), shows why on the home page until dismissed", async () => {
+  test("a Deposit refused after approval, with its page already closed (as the popup closes), shows why on the home page until closed", async () => {
     Object.assign(L1, l1Config([FUNDING, TREASURY_TX]));
     L1.refuseBroadcast = 'sendrawtransaction RPC error: {"code":-26,"message":"min relay fee not met"}';
     const page = await startDeposit(session, "5000");
@@ -345,12 +364,13 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     await home.waitForSelector('[data-account="24"] [data-deposit-refused]', { timeout: 20_000 });
     const refused = await home.$eval("[data-deposit-refused]", (e) => e.textContent.replace(/\s+/g, " ").trim());
     assert.match(refused, /^Your Deposit of 5000 sats failed: .*min relay fee not met.* Nothing was sent\./);
-    await home.click("[data-deposit-refused-dismiss]");
+    assert.equal(await home.$eval("[data-deposit-retry]", (e) => [e.textContent.trim(), e.getAttribute("href")].join(" → ")), "Try again → #/deposit/24");
+    await home.click("[data-deposit-refused-close]");
     await home.waitForFunction(() => document.querySelector("[data-deposit-refused]") === null, { timeout: 5_000 });
     await home.close();
     const again = await session.openPage("index.html#/");
     await again.waitForSelector('[data-account="24"][data-deposits-ready]', { timeout: 20_000 });
-    assert.equal(await again.$("[data-deposit-refused]"), null, "dismissed for good");
+    assert.equal(await again.$("[data-deposit-refused]"), null, "closed for good");
     await again.close();
   });
 });
