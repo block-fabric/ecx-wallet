@@ -1,0 +1,39 @@
+/** Methods a Grant can cover. `connect` needs no Grant; `disconnect` arrives with #25. */
+export const GRANTABLE_METHODS = ["getAddresses", "signTransaction"] as const;
+export type GrantableMethod = (typeof GRANTABLE_METHODS)[number];
+
+export interface Scope {
+  slots: number[];
+  methods: GrantableMethod[];
+}
+
+/** A user's stored approval for one web origin. */
+export interface Grant extends Scope {
+  origin: string;
+  /** Separate, off-by-default opt-in. Nothing sets it yet. */
+  blindSigning: boolean;
+}
+
+/** Where Grants persist. The extension backs it with `storage.local`. */
+export interface GrantStore {
+  get(origin: string): Promise<Grant | undefined>;
+  put(grant: Grant): Promise<void>;
+}
+
+export function covers(grant: Grant | undefined, scope: Scope): boolean {
+  return (
+    grant !== undefined &&
+    scope.slots.every((s) => grant.slots.includes(s)) &&
+    scope.methods.every((m) => grant.methods.includes(m))
+  );
+}
+
+/** The Grant after the user approves `scope`: the union with what the origin already had. */
+export function widen(existing: Grant | undefined, origin: string, scope: Scope): Grant {
+  return {
+    origin,
+    slots: [...new Set([...(existing?.slots ?? []), ...scope.slots])],
+    methods: [...new Set([...(existing?.methods ?? []), ...scope.methods])],
+    blindSigning: existing?.blindSigning ?? false,
+  };
+}

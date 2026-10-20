@@ -1,0 +1,20 @@
+{
+  "name": "@ecx/extension",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "MV3 shell: hand-written Chromium and Firefox manifests, background, content script and injected Provider.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@ecx/client": "workspace:*",
+    "@ecx/wallet": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.3.5",
+    "esbuild": "0.28.2",
+    "typescript": "5.9.3"
+  }
+}

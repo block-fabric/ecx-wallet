@@ -15,3 +15,7 @@ Default vocabulary: needs-triage, needs-info, ready-for-agent, ready-for-human, 
 ### Domain docs
 
 Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Build and test
+
+One command: `pnpm test` (builds, then runs the e2e suite in headless Brave and Firefox). Layout and harness: `README.md`.

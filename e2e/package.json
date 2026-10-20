@@ -1,0 +1,14 @@
+{
+  "name": "@ecx/e2e",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 --test-timeout=120000 'tests/*.test.mjs'"
+  },
+  "dependencies": {
+    "@ecx/client": "workspace:*",
+    "esbuild": "0.28.2",
+    "puppeteer-core": "25.14.0"
+  }
+}
