@@ -12,3 +12,5 @@ crate-type = ["cdylib"]
 [dependencies]
 ecx-elements = { path = "../elements" }
 ecx-wasm-abi = { path = "../abi" }
+serde = { version = "=1.0.229" }
+serde_json = { version = "=1.0.154" }

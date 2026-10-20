@@ -283,6 +283,8 @@ version = "0.0.0"
 dependencies = [
  "ecx-elements",
  "ecx-wasm-abi",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

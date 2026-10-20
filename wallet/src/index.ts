@@ -4,6 +4,16 @@ export { createProviderHandler, type ConnectPrompt, type ProviderDeps } from "./
 export { CoreModule, CoreModuleError, type CoreArg } from "./wasm";
 export { loadVaultModule, type KdfParams, type VaultModule } from "./vault-module";
 export {
+  loadChainModule,
+  type Account,
+  type Binding,
+  type ChainEntry,
+  type ChainModule,
+  type Declaration,
+  type DerivedAddress,
+  type NetworkEntry,
+} from "./chain-module";
+export {
   createVault,
   DEFAULT_AUTO_LOCK_MINUTES,
   INCORRECT_PASSWORD,

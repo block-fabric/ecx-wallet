@@ -24,6 +24,7 @@ async function importWallet() {
 test("every shipped .wasm imports nothing but memory", async () => {
   const wasm = (await readdir(DIST.chromium)).filter((f) => f.endsWith(".wasm"));
   assert.ok(wasm.includes("vault.wasm"), "vault.wasm is packaged");
+  assert.ok(wasm.includes("elements.wasm"), "elements.wasm is packaged");
   for (const file of wasm) {
     const module = new WebAssembly.Module(await readFile(path.join(DIST.chromium, file)));
     const imports = WebAssembly.Module.imports(module).filter((i) => i.kind !== "memory");
@@ -50,4 +51,33 @@ test("the shipped Vault creates from caller entropy, checks imports and stretche
     { mKib: 65536, t: 3, p: 1 },
   );
   assert.equal(Buffer.from(key).toString("hex"), "7664ad4ba1a3c999fcdd0991ffc2270f78302d2383233db5e7befc85d1bb1819");
+});
+
+// The Slot 24 Starter of ABANDON (no passphrase); address fixtures as in core/elements/tests.
+const SLOT_24_STARTER = "buyer citizen congress doll secret merry denial law live wait pass drive";
+
+test("the shipped Elements Chain Module declares its binding and bundles Slot 24's Chain Entry", async () => {
+  const { loadChainModule } = await importWallet();
+  const elements = await loadChainModule(await readFile(path.join(DIST.chromium, "elements.wasm")));
+  assert.deepEqual(elements.declare(), {
+    binding: { chain: "ecash:betanet-s24", format: "pset", payloadVersions: ["1"] },
+    capabilities: [],
+  });
+  const entry = elements.chainEntry();
+  assert.equal(entry.slot, 24);
+  assert.equal(entry.networks.betanet.chain, "ecash:betanet-s24");
+  assert.equal(entry.networks.betanet.genesisHash, "a7754ce0debc40baddbd8c47e79d19209685f22c63edaaf8b69cf54116374d7f");
+  assert.equal(entry.networks.betanet.policyAsset, "5836dcc06130dcf6a65b6ac493813fd65559955283e44cc3f07966294eccb2c8");
+});
+
+test("the shipped Elements Chain Module derives the Slot 24 receive addresses from the Starter", async () => {
+  const { loadChainModule } = await importWallet();
+  const elements = await loadChainModule(await readFile(path.join(DIST.chromium, "elements.wasm")));
+  const account = elements.deriveAccount(SLOT_24_STARTER, { receive: 2 });
+  assert.deepEqual(account.receive.map((a) => a.address), [
+    "elements1qew44aehkjstjm56ng2rjrz57vwxh5g9su6dlpm",
+    "elements1qnx6kczxpu35ypahwhqddx2pn6q0nuyaap97ygn",
+  ]);
+  assert.match(account.descriptor, /^elwpkh\(\[3b27f87d\/84h\/1h\/0h\]tpub/);
+  assert.throws(() => elements.deriveAccount("not a starter", { receive: 1 }), /Starter/);
 });
