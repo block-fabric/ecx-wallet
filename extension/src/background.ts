@@ -13,6 +13,9 @@ import {
 } from "@ecx/wallet";
 import type { BackgroundMessage, ProviderResponse } from "./messages";
 
+const GRANT_PREFIX = "grant:";
+const grantKey = (origin: string) => `${GRANT_PREFIX}${origin}`;
+
 const grants: GrantStore = {
   async get(origin) {
     const key = grantKey(origin);
@@ -21,8 +24,16 @@ const grants: GrantStore = {
   async put(grant) {
     await chrome.storage.local.set({ [grantKey(grant.origin)]: grant });
   },
+  async remove(origin) {
+    await chrome.storage.local.remove(grantKey(origin));
+  },
+  async list() {
+    const all = await chrome.storage.local.get(null);
+    return Object.entries(all)
+      .filter(([key]) => key.startsWith(GRANT_PREFIX))
+      .map(([, grant]) => grant as Grant);
+  },
 };
-const grantKey = (origin: string) => `grant:${origin}`;
 
 // Pending approvals live in memory. Provisional: if the worker is stopped while an approval
 // window is open, the request is lost and the page gets 4900 from the content script.
@@ -86,6 +97,13 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
     case "approval.resolve":
       if (!fromWalletPage(sender)) return null;
       approvals.get(message.id)?.settle(message.approved === true);
+      return null;
+    case "grants.list":
+      if (!fromWalletPage(sender)) return null;
+      return (await grants.list()).sort((a, b) => a.origin.localeCompare(b.origin));
+    case "grants.revoke":
+      if (!fromWalletPage(sender)) return null;
+      if (typeof message.origin === "string") await grants.remove(message.origin);
       return null;
     default:
       throw new ProviderRpcError(ErrorCode.UnsupportedMethod, "Unknown message.");

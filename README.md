@@ -12,7 +12,7 @@ pnpm workspace, one directory per module from the spec:
 |---|---|
 | `core/` | Rust signing core (Vault, Chain Modules), one `.wasm` per module. Placeholder until #20. |
 | `wallet/` | Target-agnostic TypeScript: Grants and the Provider request handler (`createProviderHandler`). Later: Vault orchestration, Signing Request validation, Chain Module WASM loading. |
-| `app/` | SvelteKit UI (adapter-static, hash router, so SSR is off). Built as one `index.html` shell; screens are hash routes, e.g. `index.html#/approve/<id>`. |
+| `app/` | SvelteKit UI (adapter-static, hash router, so SSR is off). Built as one `index.html` shell; screens are hash routes, e.g. `index.html#/approve/<id>`, `index.html#/grants`. |
 | `extension/` | MV3 shell: hand-written `manifests/chromium.json` and `manifests/firefox.json`; `src/background.ts`, `src/content.ts`, `src/inpage.ts` bundled with esbuild (not SvelteKit). |
 | `client/` | Library Sidechain Apps use to discover the Provider (`discoverProviders()`). |
 | `e2e/` | Seam 1 harness and tests: the built extension in headless Brave and Firefox. |
@@ -46,7 +46,8 @@ pnpm typecheck
 ### Writing e2e tests
 
 `e2e/harness.mjs` exports `launchWallet(name)` / `launchBrave()` / `launchFirefox()`, `serveTestApp()`
-and `openTestApp(session, app, host)`. Each `<name>.localhost` host is its own origin (Grants are per
+and `openTestApp(session, app, host)`, and `openWalletPage(session, "#/grants")` for a wallet screen (it waits
+for `[data-screen-ready]`; Firefox's extension UUID is pinned so its pages have a known URL). Each `<name>.localhost` host is its own origin (Grants are per
 origin). The test Sidechain App (`e2e/test-app/`) exposes `window.testApp.request(method, params)`
 returning `{ result }` or `{ error: { code, message } }`. A session has `waitForApprovalWindow()`,
 `approvalWindows()`, and on Brave `extensionErrors()`.

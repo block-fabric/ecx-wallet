@@ -42,6 +42,11 @@ export function createProviderHandler({ grants, askToConnect }: ProviderDeps) {
 
   return async function handle(origin: string, method: unknown, params: unknown): Promise<unknown> {
     if (method === "connect") return connect(origin, params);
+    if (method === "disconnect") {
+      // Only ever the caller's own Grant: the origin comes from the browser, never from params.
+      await grants.remove(origin);
+      return null;
+    }
     if (isGrantable(method)) return granted(origin, method);
     throw new ProviderRpcError(ErrorCode.UnsupportedMethod, `Unsupported method: ${String(method)}`);
   };

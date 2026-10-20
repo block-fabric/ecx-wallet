@@ -1,4 +1,4 @@
-/** Methods a Grant can cover. `connect` needs no Grant; `disconnect` arrives with #25. */
+/** Methods a Grant can cover. `connect` and `disconnect` need no Grant. */
 export const GRANTABLE_METHODS = ["getAddresses", "signTransaction"] as const;
 export type GrantableMethod = (typeof GRANTABLE_METHODS)[number];
 
@@ -18,6 +18,10 @@ export interface Grant extends Scope {
 export interface GrantStore {
   get(origin: string): Promise<Grant | undefined>;
   put(grant: Grant): Promise<void>;
+  /** Removing a Grant that isn't there is a no-op. */
+  remove(origin: string): Promise<void>;
+  /** Every stored Grant, for the Grants screen. */
+  list(): Promise<Grant[]>;
 }
 
 export function covers(grant: Grant | undefined, scope: Scope): boolean {

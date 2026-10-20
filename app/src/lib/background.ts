@@ -19,3 +19,15 @@ export const getApproval = (id: string) => send<ConnectPrompt | null>({ kind: "a
 
 export const resolveApproval = (id: string, approved: boolean) =>
   send<null>({ kind: "approval.resolve", id, approved });
+
+/** A stored Grant as the Grants screen shows it. */
+export interface Grant {
+  origin: string;
+  slots: number[];
+  methods: string[];
+  blindSigning: boolean;
+}
+
+export const listGrants = () => send<Grant[]>({ kind: "grants.list" });
+
+export const revokeGrant = (origin: string) => send<null>({ kind: "grants.revoke", origin });
