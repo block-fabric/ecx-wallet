@@ -19,3 +19,32 @@ export const getApproval = (id: string) => send<ConnectPrompt | null>({ kind: "a
 
 export const resolveApproval = (id: string, approved: boolean) =>
   send<null>({ kind: "approval.resolve", id, approved });
+
+export interface VaultStatus {
+  exists: boolean;
+  unlocked: boolean;
+}
+
+export const vaultStatus = () => send<VaultStatus>({ kind: "vault.status" });
+
+/** A fresh Master Mnemonic to show once for backup; nothing is stored until `createVault`. */
+export const generateMnemonic = async () =>
+  (await send<{ masterMnemonic: string }>({ kind: "vault.generate" })).masterMnemonic;
+
+/** Stores the (new or imported) Master Mnemonic encrypted under `password`; leaves it unlocked. */
+export const createVault = (args: { masterMnemonic: string; passphrase?: string; password: string }) =>
+  send<VaultStatus>({ kind: "vault.create", ...args });
+
+export const unlockVault = (password: string) => send<VaultStatus>({ kind: "vault.unlock", password });
+
+export const lockVault = () => send<VaultStatus>({ kind: "vault.lock" });
+
+/** Passwords shorter than this are refused (the background enforces it too). */
+export const MIN_PASSWORD_LENGTH = 8;
+
+/** Checks a new password and its repetition; returns an error message or "". */
+export function checkNewPassword(password: string, repeat: string): string {
+  if (password.length < MIN_PASSWORD_LENGTH) return `The password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
+  if (password !== repeat) return "The passwords don't match.";
+  return "";
+}
