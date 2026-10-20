@@ -119,7 +119,7 @@ test("a method outside the origin's Grant returns 4100, and Grants never carry o
 });
 
 // Brave only: Firefox has no API to read an extension's error console.
-test("none of the above raised extension runtime errors (CSP violations, uncaught exceptions)", { skip: browserName !== "brave" }, async () => {
+test("none of the above raised extension runtime errors (CSP violations, uncaught exceptions)", async () => {
   assert.deepEqual((await session.extensionErrors()).runtimeErrors, []);
 });
 

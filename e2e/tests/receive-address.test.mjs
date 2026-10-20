@@ -80,7 +80,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     await Promise.all([page.close(), home.close()]);
   });
 
-  test("none of the above raised extension runtime errors", { skip: browserName !== "brave" }, async () => {
+  test("none of the above raised extension runtime errors", async () => {
     assert.deepEqual((await session.extensionErrors()).runtimeErrors, []);
   });
 });

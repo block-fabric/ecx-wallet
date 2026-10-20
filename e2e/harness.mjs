@@ -6,7 +6,8 @@
 // - Puppeteer never attaches to the extension's service worker (`targetFilter`): an attached
 //   debugger keeps a stopped worker from restarting (see spike/elements-wasm RESULTS.md).
 //   To stop the worker, use the Brave session's `stopServiceWorker()` (CDP
-//   `ServiceWorker.stopWorker` over an extension page's session, as the spike did).
+//   `ServiceWorker.stopWorker` over an extension page's session, as the spike did), or
+//   `stopBackground()`, which both browsers' sessions offer.
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -27,9 +28,9 @@ export const DIST = {
 export const BROWSERS = (process.env.E2E_BROWSERS ?? "brave,firefox").split(",").filter(Boolean);
 
 /** Launches the named browser (one of BROWSERS) with the matching extension build installed. */
-export function launchWallet(name) {
-  if (name === "brave") return launchBrave();
-  if (name === "firefox") return launchFirefox();
+export function launchWallet(name, options) {
+  if (name === "brave") return launchBrave(options);
+  if (name === "firefox") return launchFirefox(options);
   throw new Error(`Unknown browser ${name}`);
 }
 
@@ -108,6 +109,11 @@ export async function launchBrave({ extensionPath = DIST.chromium, profile: reus
       }
     },
 
+    /** The background, for tests that run on every browser, is the service worker. */
+    stopBackground() {
+      return this.stopServiceWorker();
+    },
+
     /** Manifest errors, install warnings and runtime errors Brave recorded for the extension. */
     async extensionErrors() {
       const info = await withExtensionsPage(browser, (page) =>
@@ -122,16 +128,25 @@ export async function launchBrave({ extensionPath = DIST.chromium, profile: reus
   };
 }
 
-/**
- * Launches headless Firefox over WebDriver BiDi with the built Firefox extension temporarily
- * installed. Same session shape as Brave's, minus `extensionErrors` (no equivalent API).
- */
 // Pins the Firefox extension's internal UUID so tests can open its pages (moz-extension://<uuid>/).
 const FIREFOX_EXTENSION_ID = "wallet@ecx.invalid";
 const FIREFOX_EXTENSION_UUID = "6c1f6e1e-ec0a-4c1b-9a51-ec0000000024";
+const FIREFOX_EXTENSION_ORIGIN = `moz-extension://${FIREFOX_EXTENSION_UUID}/`;
 
-export async function launchFirefox({ extensionPath = DIST.firefox } = {}) {
-  const profile = await mkdtemp(path.join(tmpdir(), "ecx-e2e-firefox-"));
+/**
+ * Launches headless Firefox over WebDriver BiDi with the built Firefox extension temporarily
+ * installed. Same session shape as Brave's; `extensionErrors()` reads the extension's manifest
+ * errors and warnings and every error the browser console records from the extension's scripts
+ * and pages (Firefox has no extension error console API, so this runs in the browser's chrome
+ * context, which `-remote-allow-system-access` opens to BiDi `script.evaluate`).
+ *
+ * `profile`: reuse this profile dir to restart the browser on it; the caller owns it. The add-on
+ * is installed again on each launch (temporary add-ons don't survive a restart), keeping its
+ * storage and UUID.
+ */
+export async function launchFirefox({ extensionPath = DIST.firefox, profile: reuse } = {}) {
+  const profile = reuse ?? (await mkdtemp(path.join(tmpdir(), "ecx-e2e-firefox-")));
+  const keepProfile = reuse !== undefined;
   const browser = await puppeteer.launch({
     browser: "firefox",
     executablePath: process.env.FIREFOX ?? "/usr/bin/firefox",
@@ -139,8 +154,13 @@ export async function launchFirefox({ extensionPath = DIST.firefox } = {}) {
     userDataDir: profile,
     extraPrefsFirefox: {
       "extensions.webextensions.uuids": JSON.stringify({ [FIREFOX_EXTENSION_ID]: FIREFOX_EXTENSION_UUID }),
+      // A temporary add-on is uninstalled when Firefox closes, and uninstalling deletes its
+      // storage. Keeping it lets a relaunch on the same profile reinstall the add-on and find its
+      // `storage.local` as a permanently installed add-on would (see "Firefox" in README.md).
+      "extensions.webextensions.keepStorageOnUninstall": true,
+      "extensions.webextensions.keepUuidOnUninstall": true,
     },
-    // Needed to script moz-extension:// pages such as the approval window.
+    // Needed to script moz-extension:// pages such as the approval window, and the chrome context.
     args: ["-remote-allow-system-access"],
     // A snap-launched parent (e.g. VS Code) leaks GTK/GIO paths that crash Firefox's content
     // processes (spike/elements-wasm RESULTS.md); drop them.
@@ -148,13 +168,66 @@ export async function launchFirefox({ extensionPath = DIST.firefox } = {}) {
       Object.entries(process.env).filter(([k, v]) => !/\/snap\//.test(v ?? "") && !k.startsWith("SNAP")),
     ),
   });
+  let chrome;
   try {
+    chrome = await firefoxChrome(browser);
+    // Listen before installing, so errors raised while the extension starts are kept too.
+    await chrome(`(() => {
+      globalThis.ecxConsole = [];
+      Services.console.registerListener({ observe: (message) => void globalThis.ecxConsole.push(message) });
+    })()`);
     await browser.installExtension(extensionPath);
   } catch (error) {
-    await closeBrowser(browser, profile);
+    await closeBrowser(browser, keepProfile ? undefined : profile);
     throw error;
   }
-  return walletSession(browser, profile, `moz-extension://${FIREFOX_EXTENSION_UUID}/`);
+  return {
+    ...walletSession(browser, keepProfile ? undefined : profile, FIREFOX_EXTENSION_ORIGIN),
+
+    /**
+     * Stops the extension's background (a non-persistent event page in Firefox MV3) the way
+     * Firefox's idle timeout does (`Extension.terminateBackground`). Resolves with how many
+     * running backgrounds were stopped (0 or 1); the next extension event starts it again.
+     */
+    stopBackground: () =>
+      chrome(`(async () => {
+        const extension = WebExtensionPolicy.getByID(${JSON.stringify(FIREFOX_EXTENSION_ID)}).extension;
+        if (extension.backgroundState !== "running") return 0;
+        await extension.terminateBackground();
+        if (extension.backgroundState !== "stopped") throw new Error("The background did not stop");
+        return 1;
+      })()`),
+
+    /** Manifest errors and warnings, and errors the browser console recorded from the extension. */
+    extensionErrors: () =>
+      chrome(`(() => {
+        const extension = WebExtensionPolicy.getByID(${JSON.stringify(FIREFOX_EXTENSION_ID)}).extension;
+        const runtimeErrors = globalThis.ecxConsole
+          .filter((m) => m instanceof Ci.nsIScriptError && !(m.flags & Ci.nsIScriptError.warningFlag))
+          .filter((m) => m.sourceName.startsWith(${JSON.stringify(FIREFOX_EXTENSION_ORIGIN)}))
+          .map((m) => ({ source: m.sourceName, line: m.lineNumber, category: m.category, message: m.errorMessage }));
+        return { manifestErrors: [...extension.errors], installWarnings: [...extension.warnings], runtimeErrors };
+      })()`),
+  };
+}
+
+/**
+ * Returns `evaluate(expression)` for Firefox's chrome (privileged browser UI) context: the
+ * expression's value comes back JSON-serialised; promises are awaited.
+ */
+async function firefoxChrome(browser) {
+  const tree = await browser.connection.send("browsingContext.getTree", { "moz:scope": "chrome" });
+  const context = tree.result.contexts[0].context;
+  return async (expression) => {
+    const { result } = await browser.connection.send("script.evaluate", {
+      expression: `Promise.resolve(${expression}).then((v) => JSON.stringify(v ?? null))`,
+      target: { context },
+      awaitPromise: true,
+      resultOwnership: "none",
+    });
+    if (result.type !== "success") throw new Error(`chrome-context evaluation failed: ${JSON.stringify(result.exceptionDetails)}`);
+    return JSON.parse(result.result.value);
+  };
 }
 
 /** What every browser session offers. `walletPrefix` identifies the wallet's own pages. */

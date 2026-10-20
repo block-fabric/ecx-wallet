@@ -5,7 +5,7 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, test } from "node:test";
-import { BROWSERS, launchBrave, launchWallet } from "../harness.mjs";
+import { BROWSERS, launchWallet } from "../harness.mjs";
 
 const PHRASE = "legal winner thank year wave sausage worth useful legal winner thank yellow";
 const PASSPHRASE = "ecx-e2e-passphrase-Q7";
@@ -176,17 +176,17 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     }));
 });
 
-// Brave only: stopping the service worker and restarting the browser on one profile need CDP and
-// a persistent profile (Firefox's temporary add-ons don't survive a restart).
-describe("brave: restarts", { skip: !BROWSERS.includes("brave") }, () => {
-  test("the wallet stays unlocked across a forced service-worker restart", async () => {
-    const session = await launchBrave();
+// Restarts: the background (Brave's service worker, Firefox's event page) is stopped the way the
+// browser stops it when idle, and the browser is restarted on the same profile.
+for (const browserName of BROWSERS) describe(`${browserName}: restarts`, () => {
+  test("the wallet stays unlocked across a forced background restart", async () => {
+    const session = await launchWallet(browserName);
     try {
       await setUpWallet(session);
       assert.equal(await homeState(session), "unlocked");
-      assert.ok((await session.stopServiceWorker()) > 0, "a running worker was stopped");
+      assert.ok((await session.stopBackground()) > 0, "a running background was stopped");
       assert.equal(await homeState(session), "unlocked");
-      // And the restarted worker can still lock it.
+      // And the restarted background can still lock it.
       const page = await openWallet(session);
       await page.click("[data-lock]");
       await page.waitForSelector('[data-vault-state="locked"]');
@@ -197,9 +197,9 @@ describe("brave: restarts", { skip: !BROWSERS.includes("brave") }, () => {
   });
 
   test("a browser restart leaves the wallet locked, and the profile on disk holds no plaintext secret", async () => {
-    const profile = await mkdtemp(path.join(tmpdir(), "ecx-e2e-brave-restart-"));
+    const profile = await mkdtemp(path.join(tmpdir(), `ecx-e2e-${browserName}-restart-`));
     try {
-      const first = await launchBrave({ profile });
+      const first = await launchWallet(browserName, { profile });
       try {
         await setUpWallet(first);
         assert.equal(await homeState(first), "unlocked");
@@ -214,7 +214,7 @@ describe("brave: restarts", { skip: !BROWSERS.includes("brave") }, () => {
         }
       }
 
-      const second = await launchBrave({ profile });
+      const second = await launchWallet(browserName, { profile });
       try {
         assert.equal(await homeState(second), "locked");
         const page = await openWallet(second);

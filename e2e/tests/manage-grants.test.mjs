@@ -98,7 +98,7 @@ test("revoking a Grant on the Grants screen makes that origin's next request fai
 });
 
 // Brave only: Firefox has no API to read an extension's error console.
-test("none of the above raised extension runtime errors", { skip: browserName !== "brave" }, async () => {
+test("none of the above raised extension runtime errors", async () => {
   assert.deepEqual((await session.extensionErrors()).runtimeErrors, []);
 });
 

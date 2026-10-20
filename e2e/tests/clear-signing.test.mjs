@@ -126,7 +126,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     assert.equal((await session.approvalWindows()).length, 0);
   });
 
-  test("none of the above raised extension runtime errors", { skip: browserName !== "brave" }, async () => {
+  test("none of the above raised extension runtime errors", async () => {
     assert.deepEqual((await session.extensionErrors()).runtimeErrors, []);
   });
 });

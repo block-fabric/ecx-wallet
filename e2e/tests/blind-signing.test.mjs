@@ -151,7 +151,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     assert.deepEqual(await signing, { result: PSETS.blind.signed });
   });
 
-  test("none of the above raised extension runtime errors", { skip: browserName !== "brave" }, async () => {
+  test("none of the above raised extension runtime errors", async () => {
     assert.deepEqual((await session.extensionErrors()).runtimeErrors, []);
   });
 });

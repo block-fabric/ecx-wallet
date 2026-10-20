@@ -97,10 +97,30 @@ for `[data-screen-ready]`; Firefox's extension UUID is pinned so its pages have 
 origin). The test Sidechain App (`e2e/test-app/`) exposes `window.testApp.request(method, params)`
 returning `{ result }` or `{ error: { code, message } }`. A session has `waitForApprovalWindow()`,
 `approvalWindows()`, `openPage(path)` (a wallet page, e.g. `index.html#/import`; wait for an element
-on it before use, since Firefox never reports moz-extension loads as finished), and on Brave
-`extensionErrors()` and `stopServiceWorker()`. `launchBrave({ profile })` reuses a profile dir to
-restart the browser on it.
+on it before use, since Firefox never reports moz-extension loads as finished), `extensionErrors()`
+(`{ manifestErrors, installWarnings, runtimeErrors }`) and `stopBackground()`.
+`launchWallet(name, { profile })` reuses a profile dir to restart the browser on it.
 
 Puppeteer must never attach to the extension's service worker (`targetFilter` in the harness); to
-restart the worker, use `session.stopServiceWorker()` (CDP `ServiceWorker.stopWorker` over an
+restart the worker, use `session.stopBackground()` (on Brave, CDP `ServiceWorker.stopWorker` over an
 extension page's session).
+
+### Firefox
+
+Every e2e test runs on both browsers. On Firefox the background is a non-persistent event page,
+and the harness differs from Brave's in three places:
+
+- `extensionErrors()`: Firefox has no extension error console API, so the harness evaluates in the
+  browser's chrome context over BiDi (`-remote-allow-system-access`). It reads the add-on's manifest
+  errors and warnings (`Extension.errors` / `.warnings`) and every error the browser console records
+  from a `moz-extension://` source: uncaught exceptions and CSP violations. `extension-loads`
+  installs a deliberately broken build to show these checks aren't vacuous.
+- `stopBackground()` calls `Extension.terminateBackground()`, the call Firefox's idle timeout
+  makes to suspend the event page.
+- Browser restart: Firefox drops a temporary add-on, and its storage, when it closes. A permanent
+  install needs a signed add-on, which release Firefox won't skip. So the harness sets
+  `extensions.webextensions.keepStorageOnUninstall` and `keepUuidOnUninstall`, and reinstalls the
+  add-on on relaunch. What the restart test checks still holds: `storage.local` (the encrypted
+  vault) persists, `storage.session` (unlock state) doesn't, and the wallet comes back locked.
+  The part the harness simulates is the add-on surviving the restart. That isn't automated; check it
+  by hand on a signed or Developer Edition install.
