@@ -361,7 +361,7 @@ export async function serveSidechainServer(config) {
 
 /**
  * Starts the stub Esplora server where the e2e build's Slot 24 Chain Entry names betanet's server,
- * so one test file that uses it at a time. `config` (`genesisHash`, `utxos`) is read on every
+ * so one test file that uses it at a time. `config` (`identityBlock`, `utxos`) is read on every
  * request, so a test may change it. Returns the stub plus its `url`; `await close()`.
  */
 export async function serveEsplora(config) {

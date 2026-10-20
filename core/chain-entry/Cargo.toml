@@ -1,0 +1,10 @@
+[package]
+name = "ecx-chain-entry"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "The Chain Entry every bundled chain ships (docs/adr/0003): the shared envelope, generic over each module's own params."
+
+[dependencies]
+serde = { version = "=1.0.229", features = ["derive"] }

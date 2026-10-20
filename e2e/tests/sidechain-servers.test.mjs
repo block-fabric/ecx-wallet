@@ -148,7 +148,7 @@ describe("Standard Sidechain API", () => {
 });
 
 describe("Esplora", () => {
-  const config = { genesisHash: GENESIS, utxos: {} };
+  const config = { identityBlock: { height: 0, hash: GENESIS }, utxos: {} };
   let stub;
   let url;
   before(async () => {
@@ -183,13 +183,13 @@ describe("Esplora", () => {
   });
 
   test("a server on another chain is a hard error, and nothing else is asked of it", async () => {
-    config.genesisHash = "00".repeat(32);
+    config.identityBlock = { height: 0, hash: "00".repeat(32) };
     const before = stub.requests().length;
     try {
       await assert.rejects(reported(), (e) => e instanceof wallet.SidechainServerError && /another chain/.test(e.message));
       assert.deepEqual(stub.requests().slice(before), ["/block-height/0"]);
     } finally {
-      config.genesisHash = GENESIS;
+      config.identityBlock = { height: 0, hash: GENESIS };
     }
   });
 

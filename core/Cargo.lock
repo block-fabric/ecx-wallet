@@ -264,10 +264,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ecx-chain-entry"
+version = "0.0.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "ecx-elements"
 version = "0.0.0"
 dependencies = [
  "bech32",
+ "ecx-chain-entry",
  "elements-miniscript",
  "getrandom 0.2.17",
  "lwk_common",

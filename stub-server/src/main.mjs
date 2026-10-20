@@ -10,6 +10,7 @@ import { createStubServer } from "./server.mjs";
 
 const root = new URL("../../", import.meta.url);
 const entry = JSON.parse(await readFile(new URL("core/elements/chain-entry.json", root), "utf8")).networks.betanet;
+const { policyAsset } = entry.params;
 const psets = JSON.parse(await readFile(new URL("e2e/fixtures/elements-psets.json", root), "utf8"));
 const ADDRESS = "elements1qew44aehkjstjm56ng2rjrz57vwxh5g9su6dlpm";
 
@@ -17,16 +18,16 @@ const api = process.argv[2] ?? "esplora";
 const stub =
   api === "esplora"
     ? createEsploraStub({
-        genesisHash: entry.genesisHash,
-        utxos: { [ADDRESS]: [{ txid: "aa".repeat(32), vout: 0, value: 150000, asset: entry.policyAsset, confirmed: true }] },
+        identityBlock: entry.identityBlock,
+        utxos: { [ADDRESS]: [{ txid: "aa".repeat(32), vout: 0, value: 150000, asset: policyAsset, confirmed: true }] },
       })
     : api === "ecx-v0"
       ? createStubServer({
           chain: entry.chain,
-          state: { [ADDRESS]: { balances: [{ asset: entry.policyAsset, amount: "150000" }], history: [] } },
+          state: { [ADDRESS]: { balances: [{ asset: policyAsset, amount: "150000" }], history: [] } },
           transfers: [
             {
-              asset: entry.policyAsset,
+              asset: policyAsset,
               amount: "120000",
               destination: "elements1qepkhlwlq2qjggg89d5quqx8z59vz9mr2h6j4pc",
               payload: psets.clear.payload,

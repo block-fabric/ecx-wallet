@@ -78,7 +78,7 @@ pub fn derive_account(starter: &str, receive_count: u32, change_count: u32) -> R
 pub(crate) fn address_params() -> &'static AddressParams {
     static PARAMS: OnceLock<AddressParams> = OnceLock::new();
     PARAMS.get_or_init(|| {
-        let p = &network().address_params;
+        let p = &network().params.address_params;
         AddressParams {
             p2pkh_prefix: p.p2pkh_prefix,
             p2sh_prefix: p.p2sh_prefix,

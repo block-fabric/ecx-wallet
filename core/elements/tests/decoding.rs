@@ -102,5 +102,5 @@ fn an_input_claiming_our_key_without_proof_is_a_dangerous_flag_and_not_counted_a
 }
 
 fn network_policy_asset() -> String {
-    ecx_elements::network().policy_asset.clone()
+    ecx_elements::network().params.policy_asset.clone()
 }

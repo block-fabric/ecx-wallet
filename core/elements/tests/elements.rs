@@ -75,6 +75,15 @@ fn betanet_reads_its_state_from_the_elements_explorers_esplora() {
     assert_eq!(server.url, "https://explorer.bitnames.info/api");
 }
 
+#[test]
+fn betanet_is_a_child_of_ecash_betanet_identified_by_its_genesis() {
+    let network = &chain_entry().networks["betanet"];
+    assert_eq!(chain_entry().slot, Some(24));
+    assert_eq!(network.parent.as_deref(), Some("ecash:betanet"));
+    // Elements isn't a fork: the identity block is its own genesis.
+    assert_eq!((network.identity_block.height, network.identity_block.hash.as_str()), (0, network.params.genesis_hash.as_str()));
+}
+
 /// The shipped Chain Entry with betanet's `sidechainServer` replaced.
 fn with_server(server: serde_json::Value) -> Result<ChainEntry, serde_json::Error> {
     let mut entry: serde_json::Value = serde_json::from_str(CHAIN_ENTRY_JSON).unwrap();

@@ -104,7 +104,7 @@ pub(crate) fn validated(payload: &str) -> Result<PartiallySignedTransaction, Ref
         .map_err(|e| refuse(RefusalCode::Malformed, format!("The payload is not a PSET: {e}")))?;
 
     // 5. ELIP-101 genesis.
-    let expected = BlockHash::from_str(&network().genesis_hash).expect("Chain Entry genesis is valid");
+    let expected = BlockHash::from_str(&network().params.genesis_hash).expect("Chain Entry genesis is valid");
     match pset.global.proprietary.get(&genesis_key()) {
         None => return Err(refuse(RefusalCode::WrongGenesis, "The PSET doesn't name its chain (no ELIP-101 genesis hash).")),
         Some(found) if found.as_slice() != expected.as_byte_array() => {

@@ -135,7 +135,7 @@ pub(crate) fn clear_view(pset: &PartiallySignedTransaction, classified: &Classif
         outputs.push(ClearOutput { index, asset: class.asset.clone(), amount: class.amount.to_string(), destination });
     }
 
-    let policy_asset = &network().policy_asset;
+    let policy_asset = &network().params.policy_asset;
     if let Some(other) = classified.fee.keys().find(|asset| *asset != policy_asset) {
         return Err(format!("it pays a fee in asset {other}, not in the chain's policy asset."));
     }
@@ -180,7 +180,7 @@ fn only_explained_output_fields(output: &Output) -> bool {
 /// exactly three minimal pushes, the L1 script at most 128 bytes, an explicit pegged-asset amount
 /// larger than the parent fee.
 fn withdrawal(output: &Output) -> Option<Destination> {
-    if output.asset? != AssetId::from_str(&network().policy_asset).expect("Chain Entry policy asset is valid") {
+    if output.asset? != AssetId::from_str(&network().params.policy_asset).expect("Chain Entry policy asset is valid") {
         return None;
     }
     let pushes: Vec<&[u8]> = output
@@ -205,7 +205,7 @@ fn withdrawal(output: &Output) -> Option<Destination> {
 /// `parentAddressParams`): P2PKH and P2SH in base58check, segwit in bech32/bech32m. None for any
 /// other script.
 fn l1_address(script: &[u8]) -> Option<String> {
-    let params = &network().parent_address_params;
+    let params = &network().params.parent_address_params;
     let base58 = |prefix: u8, hash: &[u8]| Some(base58::encode_check(&[&[prefix][..], hash].concat()));
     match script {
         [0x76, 0xa9, 0x14, hash @ .., 0x88, 0xac] if hash.len() == 20 => base58(params.p2pkh_prefix, hash),

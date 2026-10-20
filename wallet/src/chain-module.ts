@@ -26,26 +26,46 @@ export interface SidechainServerEntry {
   url: string;
 }
 
-/** One network of a sidechain, as its Chain Entry describes it. */
-export interface NetworkEntry {
+/** A block by height and hash (display hex): a server must have it to be on the chain. */
+export interface IdentityBlock {
+  height: number;
+  hash: string;
+}
+
+/** One network of a chain, as its Chain Entry describes it. `params` are the module's own. */
+export interface NetworkEntry<P = unknown> {
+  /** CAIP-2: `ecash:<network>` for the root, `ecash:<network>-s<slot>` under it. */
   chain: string;
+  /** The parent chain's `chain`; absent for the root (eCash). */
+  parent?: string;
+  /** Height 0 and the genesis, or for a fork the first block after it (docs/adr/0003). */
+  identityBlock: IdentityBlock;
+  /** Default Sidechain Server. */
+  sidechainServer: SidechainServerEntry;
+  /** Official App origins. */
+  officialApps: string[];
+  params: P;
+}
+
+/**
+ * The description of one chain of the tree, eCash itself or a sidechain, that ships with its Chain
+ * Module. The root has neither `slot` nor `parent`; every other chain has both (docs/adr/0003).
+ */
+export interface ChainEntry<P = unknown> {
+  /** The chain's Slot under its parent; absent for the root. */
+  slot?: number;
+  name: string;
+  networks: Record<string, NetworkEntry<P>>;
+}
+
+/** Elements' own per-network values (`core/elements/src/chain_entry.rs`). */
+export interface ElementsParams {
   genesisHash: string;
   parentGenesisHash: string;
   policyAsset: string;
   addressParams: { p2pkhPrefix: number; p2shPrefix: number; blindedPrefix: number; bechHrp: string; blechHrp: string };
   /** The parent (L1) chain's address encoding, for a Withdrawal's L1 destination. */
   parentAddressParams: { p2pkhPrefix: number; p2shPrefix: number; bechHrp: string };
-  /** Default Sidechain Server. */
-  sidechainServer: SidechainServerEntry;
-  /** Official App origins. */
-  officialApps: string[];
-}
-
-/** The description of one sidechain that ships with its Chain Module. */
-export interface ChainEntry {
-  slot: number;
-  name: string;
-  networks: Record<string, NetworkEntry>;
 }
 
 export interface DerivedAddress {

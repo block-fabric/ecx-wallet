@@ -1,5 +1,5 @@
 // The stub Esplora server: the Esplora endpoints the wallet uses (docs/adr/0002), answered from
-// fixtures. The e2e build's Slot 24 Sidechain Server.
+// fixtures. The e2e build's Sidechain Servers.
 //
 // Like the Elements explorer it stands in for, it sends no CORS headers: the extension reaches it
 // through its `host_permissions`, as it reaches the real one. Dependency-free node `http`.
@@ -8,12 +8,13 @@ import { createServer } from "node:http";
 /**
  * @typedef {{ txid: string, vout: number, value?: number, asset?: string, valuecommitment?: string,
  *   assetcommitment?: string, confirmed: boolean }} UtxoFixture
- * @typedef {{ genesisHash: string, utxos?: Record<string, UtxoFixture[]> }} EsploraStubConfig
+ * @typedef {{ identityBlock: { height: number, hash: string }, utxos?: Record<string, UtxoFixture[]> }} EsploraStubConfig
  */
 
 /**
  * A stub answering from `config`, read on every request (a test may change it between calls):
- * - `GET /block-height/0`: `config.genesisHash`;
+ * - `GET /block-height/{config.identityBlock.height}`: its `hash`; any other height is past the
+ *   tip (404), as on a server that has only synced that far;
  * - `GET /address/{address}/utxo`: `config.utxos[address]` (none if absent), each as Esplora
  *   shows it: explicit (`value`, `asset`) or confidential (commitments), with its `status`.
  */
@@ -23,7 +24,11 @@ export function createEsploraStub(config) {
 
   function route(method, pathname) {
     if (method !== "GET") return [405, "Method not allowed"];
-    if (pathname === "/block-height/0") return [200, config.genesisHash];
+    const height = /^\/block-height\/([0-9]+)$/.exec(pathname);
+    if (height) {
+      const { identityBlock } = config;
+      return Number(height[1]) === identityBlock.height ? [200, identityBlock.hash] : [404, "Block not found"];
+    }
     const utxo = /^\/address\/([^/]+)\/utxo$/.exec(pathname);
     if (utxo) {
       const address = decodeURIComponent(utxo[1]);

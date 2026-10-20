@@ -2,7 +2,7 @@
 # No wasm-bindgen anywhere: each module's `.wasm` imports nothing (see README.md).
 [workspace]
 resolver = "2"
-members = ["abi", "vault", "vault-wasm", "elements", "elements-wasm"]
+members = ["abi", "chain-entry", "vault", "vault-wasm", "elements", "elements-wasm"]
 
 [workspace.package]
 edition = "2021"

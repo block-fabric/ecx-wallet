@@ -4,23 +4,27 @@
   "networks": {
     "betanet": {
       "chain": "ecash:betanet-s24",
-      "genesisHash": "a7754ce0debc40baddbd8c47e79d19209685f22c63edaaf8b69cf54116374d7f",
-      "parentGenesisHash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
-      "policyAsset": "5836dcc06130dcf6a65b6ac493813fd65559955283e44cc3f07966294eccb2c8",
-      "addressParams": {
-        "p2pkhPrefix": 68,
-        "p2shPrefix": 13,
-        "blindedPrefix": 6,
-        "bechHrp": "elements",
-        "blechHrp": "elementsl"
-      },
-      "parentAddressParams": {
-        "p2pkhPrefix": 0,
-        "p2shPrefix": 5,
-        "bechHrp": "bc"
-      },
+      "parent": "ecash:betanet",
+      "identityBlock": { "height": 0, "hash": "a7754ce0debc40baddbd8c47e79d19209685f22c63edaaf8b69cf54116374d7f" },
       "sidechainServer": { "api": "esplora", "url": "https://explorer.bitnames.info/api" },
-      "officialApps": ["https://elements-app.invalid"]
+      "officialApps": ["https://elements-app.invalid"],
+      "params": {
+        "genesisHash": "a7754ce0debc40baddbd8c47e79d19209685f22c63edaaf8b69cf54116374d7f",
+        "parentGenesisHash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
+        "policyAsset": "5836dcc06130dcf6a65b6ac493813fd65559955283e44cc3f07966294eccb2c8",
+        "addressParams": {
+          "p2pkhPrefix": 68,
+          "p2shPrefix": 13,
+          "blindedPrefix": 6,
+          "bechHrp": "elements",
+          "blechHrp": "elementsl"
+        },
+        "parentAddressParams": {
+          "p2pkhPrefix": 0,
+          "p2shPrefix": 5,
+          "bechHrp": "bc"
+        }
+      }
     }
   }
 }

@@ -20,7 +20,7 @@ const FOREIGN_ADDRESS = "elements1qepkhlwlq2qjggg89d5quqx8z59vz9mr2h6j4pc";
 
 /** What the stub Esplora server holds for the wallet's addresses (read on every request). */
 const ESPLORA = {
-  genesisHash: GENESIS,
+  identityBlock: { height: 0, hash: GENESIS },
   utxos: {
     [RECEIVE_0]: [
       { txid: "a0".repeat(32), vout: 0, value: 150000, asset: POLICY_ASSET, confirmed: true },
@@ -76,13 +76,13 @@ for (const browserName of BROWSERS) describe(browserName, () => {
   });
 
   test("a server on another chain gives that Slot a hard error and no balance", async () => {
-    ESPLORA.genesisHash = "00".repeat(32);
+    ESPLORA.identityBlock = { height: 0, hash: "00".repeat(32) };
     try {
       const shown = await readHome(session);
       assert.deepEqual(shown.balances, []);
       assert.match(shown.error, /another chain/);
     } finally {
-      ESPLORA.genesisHash = GENESIS;
+      ESPLORA.identityBlock = { height: 0, hash: GENESIS };
     }
   });
 

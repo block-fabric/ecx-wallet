@@ -24,7 +24,7 @@ fn blind_reason(pset: &Pset) -> String {
 #[test]
 fn a_plain_explicit_transfer_is_a_clear_view_with_each_output_its_destination_and_the_fee() {
     let view = clear(&transfer());
-    let asset = network().policy_asset.clone();
+    let asset = network().params.policy_asset.clone();
 
     assert!(view.dangerous_modes.is_empty(), "{:?}", view.dangerous_modes);
     assert_eq!(view.outputs.len(), 2, "the fee is its own row: {:?}", view.outputs);
@@ -210,7 +210,7 @@ fn unknown_fields_make_an_otherwise_clear_transfer_blind() {
 #[test]
 fn the_fee_shown_is_the_total_of_every_fee_output() {
     let view = clear(&with_two_fee_outputs());
-    assert_eq!((view.fee.asset.as_str(), view.fee.amount.as_str()), (network().policy_asset.as_str(), "1500"));
+    assert_eq!((view.fee.asset.as_str(), view.fee.amount.as_str()), (network().params.policy_asset.as_str(), "1500"));
     assert_eq!(view.outputs.len(), 2, "fee outputs are not rows: {:?}", view.outputs);
 }
 
