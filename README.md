@@ -26,7 +26,8 @@ The approval window is the `app` page at `#/approve/<id>`; it talks to the backg
 Vault: the app's onboarding (`#/create`, `#/import`) and unlock pages send `vault.*` messages; only
 the background decrypts. The Master Mnemonic is stored only encrypted (password → Argon2id in
 `vault.wasm` → AES-GCM via WebCrypto) in `storage.local`; while unlocked, the vault key sits in
-`storage.session` with a deadline (15 min auto-lock, also enforced on every use), so it survives
+`storage.session` with a deadline (15 min auto-lock, also enforced on every use; `vault.setAutoLock`
+only shortens it, clamped to 1-15 min), so it survives
 service-worker restarts and is gone after a browser restart. In the background,
 `await vault.starter(slot)` gives a Slot's Starter (throws if locked; counts as activity).
 
@@ -49,9 +50,10 @@ to the server.
 
 Signing (`signTransaction`): the Provider handler checks, in the spec's order, the envelope (unknown
 MAJOR → 4200, unknown fields ignored, expired → -32602), the Grant (Slot + method → 4100), then
-hands the payload to that Slot's Chain Module, whose `decode` refuses a wrong ELIP-101 genesis, any
-confidential input/output, or inputs without `witness_utxo`/`bip32_derivation` (all -32602), and
-otherwise returns Blind with its verifiable facts. Blind needs the Grant's Blind Signing opt-in
+hands the payload to that Slot's Chain Module, whose `check` refuses a wrong ELIP-101 genesis, any
+confidential input/output, or inputs without `witness_utxo`/`bip32_derivation` (all -32602) without
+the Starter, so before any unlock prompt; its `decode` then returns a Clear View or Blind with its
+verifiable facts. Blind needs the Grant's Blind Signing opt-in
 (a checkbox in the connect prompt, off by default; 4100 without it). One approval window per
 request: it asks to unlock first if the wallet is locked, then shows the request; reject → 4001.
 `sign` returns the same PSET with signatures on the inputs that re-derive to the Starter.
