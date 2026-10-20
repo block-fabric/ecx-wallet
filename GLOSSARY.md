@@ -24,6 +24,10 @@ _Avoid_: Seed phrase, recovery phrase, master seed
 The per-Slot mnemonic derived from the Master Mnemonic, from which one sidechain's keys are derived by that chain's own rules.
 _Avoid_: Sidechain seed, child mnemonic, sub-wallet
 
+**L1 Account Key**:
+The BIP84 account key (`m/84'/0'/0'`) the Vault derives from the Master Mnemonic and hands to the L1 Chain Module, from which every eCash address is derived; never a Starter, and never given to a Slot's module.
+_Avoid_: L1 root, L1 seed, mainchain key
+
 **View Key**:
 The private blinding key that reveals the hidden amounts of a user's confidential outputs on a sidechain.
 _Avoid_: Blinding key (ambiguous: also names the public half), viewing key
@@ -47,7 +51,7 @@ Moving coins from a sidechain back to eCash, paid out of its Treasury once miner
 _Avoid_: Peg-out
 
 **Chain Entry**:
-The description of one sidechain that ships with a Wallet Base release: its Slot, its networks, and its default Sidechain Server and Official Apps on each.
+The description of one chain, eCash itself or a sidechain, that ships with a Wallet Base release: its Slot and parent chain (neither for eCash, the root), its networks, and on each its identity block, default Sidechain Server and Official Apps.
 _Avoid_: Chain manifest, chain descriptor, network profile
 
 **Sidechain Server**:

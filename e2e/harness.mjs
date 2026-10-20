@@ -17,7 +17,7 @@ import * as esbuild from "esbuild";
 import puppeteer from "puppeteer-core";
 import { createStubServer } from "@ecx/stub-server";
 import { createEsploraStub } from "@ecx/stub-server/esplora";
-import { E2E_SIDECHAIN_SERVER } from "./scripts/build.mjs";
+import { E2E_L1_SERVER, E2E_SIDECHAIN_SERVER } from "./scripts/build.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(here, "..");
@@ -361,15 +361,18 @@ export async function serveSidechainServer(config) {
 
 /**
  * Starts the stub Esplora server where the e2e build's Slot 24 Chain Entry names betanet's server,
- * so one test file that uses it at a time. `config` (`genesisHash`, `utxos`) is read on every
+ * so one test file that uses it at a time. `config` (`identityBlock`, `utxos`) is read on every
  * request, so a test may change it. Returns the stub plus its `url`; `await close()`.
  */
-export async function serveEsplora(config) {
-  const url = new URL(E2E_SIDECHAIN_SERVER.url);
+export async function serveEsplora(config, server = E2E_SIDECHAIN_SERVER) {
+  const url = new URL(server.url);
   const stub = createEsploraStub(config);
   await stub.listen(Number(url.port), url.hostname);
-  return { ...stub, url: E2E_SIDECHAIN_SERVER.url };
+  return { ...stub, url: server.url };
 }
+
+/** `serveEsplora` where the e2e build's eCash Chain Entry names betanet's server (`E2E_L1_SERVER`). */
+export const serveL1Esplora = (config) => serveEsplora(config, E2E_L1_SERVER);
 
 /** The wallet's TypeScript (`wallet/`), bundled for node the way esbuild bundles it for the background. */
 export async function importWallet() {
@@ -406,10 +409,24 @@ export async function setUpWallet(session, { phrase = ABANDON, password = WALLET
   await page.type("[data-repeat-password]", password);
   await page.click("[data-submit]");
   await page.waitForSelector('[data-vault-state="unlocked"]');
-  // The home page now asks Slot 24's server for the balance; let that settle before closing, or
-  // Firefox logs the reply the closed page never received.
-  await page.waitForSelector("[data-balance], [data-no-balance], [data-balance-error]", { timeout: 20_000 });
+  await homeSettled(page);
   await page.close();
+}
+
+/**
+ * Waits until the unlocked home page's requests have settled: both account cards (eCash and Slot
+ * 24) shown, each with its balance or why there is none. Close the page only after: a reply to a
+ * closed page makes Firefox log, and each request derives a key, which counts as Vault activity.
+ */
+export async function homeSettled(page) {
+  await page.waitForFunction(
+    () => {
+      const cards = [...document.querySelectorAll("[data-account]")];
+      const settled = (card) => card.querySelector("[data-balance], [data-no-balance], [data-balance-error]") !== null;
+      return cards.length === 2 && cards.every(settled);
+    },
+    { timeout: 20_000 },
+  );
 }
 
 /** Opens the test app in a new tab and waits until its script is ready. */

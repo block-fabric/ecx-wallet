@@ -16,6 +16,7 @@ elements-miniscript = { version = "=0.4.0", default-features = false }
 bech32 = { version = "=0.11.0" }
 # Only here to switch both vendored libsecp256k1 copies to their `lowmemory` tables.
 secp256k1-zkp = { version = "=0.11.2", default-features = false, features = ["lowmemory"] }
+ecx-chain-entry = { path = "../chain-entry" }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = { version = "=1.0.154" }
 

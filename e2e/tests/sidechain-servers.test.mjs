@@ -28,6 +28,7 @@ const FOREIGN_ADDRESS = "elements1qepkhlwlq2qjggg89d5quqx8z59vz9mr2h6j4pc";
 
 const wallet = await importWallet();
 const elements = await wallet.loadChainModule(await readFile(path.join(DIST.chromium, "elements.wasm")));
+const l1 = await wallet.loadChainModule(await readFile(path.join(DIST.chromium, "l1.wasm")));
 
 /**
  * The pull path for Slot 24 with betanet's server set to `server`. `approve` answers each approval
@@ -51,6 +52,8 @@ function pullPathWith(server, { approve = true } = {}) {
     }),
     isUnlocked: async () => true,
     starter: async () => SLOT_24_STARTER,
+    l1Module: async () => l1,
+    l1AccountKey: async () => assert.fail("Slot 24's pull path asked for the L1 Account Key"),
     now: () => Date.now(),
     sidechainServer: (chainEntry, network) => wallet.sidechainServer(chainEntry, network),
   });
@@ -148,7 +151,7 @@ describe("Standard Sidechain API", () => {
 });
 
 describe("Esplora", () => {
-  const config = { genesisHash: GENESIS, utxos: {} };
+  const config = { identityBlock: { height: 0, hash: GENESIS }, utxos: {} };
   let stub;
   let url;
   before(async () => {
@@ -183,13 +186,13 @@ describe("Esplora", () => {
   });
 
   test("a server on another chain is a hard error, and nothing else is asked of it", async () => {
-    config.genesisHash = "00".repeat(32);
+    config.identityBlock = { height: 0, hash: "00".repeat(32) };
     const before = stub.requests().length;
     try {
       await assert.rejects(reported(), (e) => e instanceof wallet.SidechainServerError && /another chain/.test(e.message));
       assert.deepEqual(stub.requests().slice(before), ["/block-height/0"]);
     } finally {
-      config.genesisHash = GENESIS;
+      config.identityBlock = { height: 0, hash: GENESIS };
     }
   });
 

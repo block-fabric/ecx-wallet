@@ -105,7 +105,7 @@ pub(crate) fn classify(pset: &PartiallySignedTransaction, wallet: &Wallet) -> Cl
 
 /// An OP_RETURN whose first push is the parent (L1) chain's genesis: a native-withdrawal burn.
 fn is_withdrawal_burn(script: &Script) -> bool {
-    let parent = BlockHash::from_str(&network().parent_genesis_hash).expect("Chain Entry parent genesis is valid");
+    let parent = BlockHash::from_str(&network().params.parent_genesis_hash).expect("Chain Entry parent genesis is valid");
     let mut instructions = script.instructions();
     script.is_op_return()
         && instructions.next().is_some()

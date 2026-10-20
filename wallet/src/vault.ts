@@ -6,6 +6,7 @@
 //   when the browser closes) with a deadline; any use past the deadline locks first.
 // - Only the background calls this. Pages get status and send passwords; they never receive the
 //   key, the stored mnemonic or a Starter.
+import type { L1AccountKey, Starter } from "./chain-module";
 import type { KdfParams, VaultModule } from "./vault-module";
 
 /** Minimal async key-value storage (the extension backs it with `chrome.storage.*`). */
@@ -118,6 +119,17 @@ export function createVault(deps: VaultDeps) {
     return { key: raw, secrets };
   }
 
+  /** The secrets a key derivation needs; counts as activity. Throws if the wallet is locked. */
+  async function secretsInUse(): Promise<VaultSecrets> {
+    const open = await exclusive(async () => {
+      const open = await unlocked();
+      if (open !== undefined) await keepUnlocked(open.key);
+      return open;
+    });
+    if (open === undefined) throw new VaultError("The wallet is locked.");
+    return open.secrets;
+  }
+
   async function store(secrets: VaultSecrets, password: string): Promise<void> {
     if (password.length < MIN_PASSWORD_LENGTH) {
       throw new VaultError(`The password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
@@ -195,14 +207,15 @@ export function createVault(deps: VaultDeps) {
      * The Starter for `slot`, derived on demand and never stored. Counts as activity (extends the
      * auto-lock deadline). Throws if the wallet is locked.
      */
-    async starter(slot: number): Promise<string> {
-      const open = await exclusive(async () => {
-        const open = await unlocked();
-        if (open !== undefined) await keepUnlocked(open.key);
-        return open;
-      });
-      if (open === undefined) throw new VaultError("The wallet is locked.");
-      return (await deps.module()).starter(open.secrets.masterMnemonic, open.secrets.passphrase, slot);
+    async starter(slot: number): Promise<Starter> {
+      const { masterMnemonic, passphrase } = await secretsInUse();
+      return (await deps.module()).starter(masterMnemonic, passphrase, slot);
+    },
+
+    /** The L1 Account Key, derived on demand and never stored; as `starter`, it counts as activity. */
+    async l1AccountKey(): Promise<L1AccountKey> {
+      const { masterMnemonic, passphrase } = await secretsInUse();
+      return (await deps.module()).l1AccountKey(masterMnemonic, passphrase);
     },
   };
 }

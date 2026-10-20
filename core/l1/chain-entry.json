@@ -1,0 +1,18 @@
+{
+  "name": "eCash",
+  "networks": {
+    "betanet": {
+      "chain": "ecash:betanet",
+      "identityBlock": { "height": 967680, "hash": "00000000000000030101ba5cfea54b22becc79f95dc6040beb76e01dd9d04042" },
+      "sidechainServer": { "api": "esplora", "url": "https://esplora.beta.ecash.ninja" },
+      "officialApps": [],
+      "params": {
+        "addressParams": {
+          "p2pkhPrefix": 0,
+          "p2shPrefix": 5,
+          "bechHrp": "bc"
+        }
+      }
+    }
+  }
+}

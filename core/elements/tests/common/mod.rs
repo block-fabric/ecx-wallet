@@ -47,7 +47,7 @@ pub fn key(starter: &str, chain: u32, index: u32) -> Key {
 }
 
 pub fn policy_asset() -> AssetId {
-    AssetId::from_str(&network().policy_asset).unwrap()
+    AssetId::from_str(&network().params.policy_asset).unwrap()
 }
 
 /// The ELIP-101 global field (display hex → internal byte order).
@@ -58,7 +58,7 @@ pub fn set_genesis(pset: &mut Pset, display_hex: &str) {
 
 pub fn new_pset() -> Pset {
     let mut pset = Pset::new_v2();
-    set_genesis(&mut pset, &network().genesis_hash);
+    set_genesis(&mut pset, &network().params.genesis_hash);
     pset
 }
 
@@ -179,7 +179,7 @@ pub fn withdrawal_burn_script() -> Script {
 pub fn withdrawal_burn_script_to(l1_script: &[u8]) -> Script {
     use elements_miniscript::elements::opcodes::all::OP_RETURN;
     use elements_miniscript::elements::script::Builder;
-    let parent = BlockHash::from_str(&network().parent_genesis_hash).unwrap();
+    let parent = BlockHash::from_str(&network().params.parent_genesis_hash).unwrap();
     Builder::new()
         .push_opcode(OP_RETURN)
         .push_slice(parent.as_byte_array())
@@ -191,7 +191,7 @@ pub fn withdrawal_burn_script_to(l1_script: &[u8]) -> Script {
 /// `starter`'s address at `<chain>/<index>`, in the Chain Entry's encoding (`elements1…`).
 pub fn address(starter: &str, chain: u32, index: u32) -> String {
     use elements_miniscript::elements::{Address, AddressParams};
-    let p = &network().address_params;
+    let p = &network().params.address_params;
     let params: &'static AddressParams = Box::leak(Box::new(AddressParams {
         p2pkh_prefix: p.p2pkh_prefix,
         p2sh_prefix: p.p2sh_prefix,

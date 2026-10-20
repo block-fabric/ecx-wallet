@@ -46,7 +46,7 @@ const [session, app, stub] = await Promise.all([
   launchWallet("brave"),
   serveTestApp(),
   serveEsplora({
-    genesisHash: "a7754ce0debc40baddbd8c47e79d19209685f22c63edaaf8b69cf54116374d7f",
+    identityBlock: { height: 0, hash: "a7754ce0debc40baddbd8c47e79d19209685f22c63edaaf8b69cf54116374d7f" },
     utxos: {
       [SLOT_24_ADDRESS]: [
         { txid: "aa".repeat(32), vout: 0, value: 150000, asset: POLICY_ASSET, confirmed: true },

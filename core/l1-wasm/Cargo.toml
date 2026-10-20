@@ -1,0 +1,16 @@
+[package]
+name = "ecx-l1-wasm"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "Thin C-ABI bindings: the L1 Chain Module as l1.wasm."
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ecx-l1 = { path = "../l1" }
+ecx-wasm-abi = { path = "../abi" }
+serde = { version = "=1.0.229" }
+serde_json = { version = "=1.0.154" }

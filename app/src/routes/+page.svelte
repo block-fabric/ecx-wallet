@@ -1,10 +1,13 @@
 <script lang="ts">
   import {
+    l1Account,
+    l1Reported,
     listAccounts,
     lockVault,
     reportedState,
     unlockVault,
     vaultStatus,
+    type ChainReport,
     type SlotAccount,
     type SlotReport,
     type VaultStatus,
@@ -16,6 +19,9 @@
 
   let status = $state<VaultStatus | undefined>(undefined);
   let accounts = $state<SlotAccount[] | undefined>(undefined);
+  /** eCash's own receive address, and what its server reports. */
+  let l1Address = $state<{ chain: string; address: string } | undefined>(undefined);
+  let l1Report = $state<ChainReport | { error: string } | undefined>(undefined);
   /** Per Slot: what its Sidechain Server reports, or why it couldn't be read. */
   let reports = $state<Record<number, SlotReport | { error: string }>>({});
   let password = $state("");
@@ -32,8 +38,18 @@
   $effect(() => {
     if (vaultState !== "unlocked") {
       accounts = undefined;
+      l1Address = undefined;
+      l1Report = undefined;
       return;
     }
+    l1Account().then(
+      ({ addresses }) => (l1Address = addresses[0]),
+      (e) => (error = (e as Error).message),
+    );
+    l1Reported().then(
+      (r) => (l1Report = r),
+      (e) => (l1Report = { error: (e as Error).message }),
+    );
     listAccounts().then(
       (a) => {
         accounts = a;
@@ -61,6 +77,39 @@
     }
   }
 </script>
+
+{#snippet reported(report: ChainReport | { error: string } | undefined)}
+  {#if report === undefined}
+    <p class="loading small"><span class="spinner"></span>Asking the Sidechain Server for your balance…</p>
+  {:else if "error" in report}
+    <p class="error" data-balance-error>Balance unavailable: {report.error}</p>
+  {:else}
+    <ul class="balances">
+      {#each report.balances as balance (balance.asset)}
+        <li data-balance data-asset={balance.asset}>
+          <strong class="amount">{balance.amount}</strong>
+          {#if balance.asset === ""}
+            <span class="muted small">sats</span>
+          {:else}
+            <span class="muted small">asset <code title={balance.asset}>{shortAsset(balance.asset)}</code></span>
+          {/if}
+        </li>
+      {:else}
+        <li class="muted" data-no-balance>Nothing reported.</li>
+      {/each}
+    </ul>
+    <p class="reported" data-reported-by>
+      Reported by {report.server}. This wallet doesn't verify it.
+    </p>
+  {/if}
+{/snippet}
+
+{#snippet receiveAddress(address: string)}
+  <div class="receive">
+    <h2>Receive address</h2>
+    <code data-receive-address>{address}</code>
+  </div>
+{/snippet}
 
 {#snippet lockButton()}
   <button class="small-button" disabled={busy} onclick={() => act(lockVault)} data-lock>
@@ -103,6 +152,16 @@
   {:else if vaultState === "unlocked"}
     <TopBar title="ECX Wallet" actions={lockButton} />
     <p class="muted small status"><span class="dot"></span>Your wallet is unlocked. It locks itself after 15 minutes without use.</p>
+    {#if l1Address !== undefined}
+      <section class="card" data-account="l1">
+        <div class="account-head">
+          <h2>eCash</h2>
+          <span class="chip" data-account-chain>{l1Address.chain}</span>
+        </div>
+        {@render reported(l1Report)}
+        {@render receiveAddress(l1Address.address)}
+      </section>
+    {/if}
     {#each accounts ?? [] as account (account.slot)}
       {#each account.addresses.slice(0, 1) as { chain, address } (address)}
         {@const report = reports[account.slot]}
@@ -111,30 +170,11 @@
             <h2>Slot {account.slot}</h2>
             <span class="chip" data-account-chain>{chain}</span>
           </div>
-          {#if report === undefined}
-            <p class="loading small"><span class="spinner"></span>Asking the Sidechain Server for your balance…</p>
-          {:else if "error" in report}
-            <p class="error" data-balance-error>Balance unavailable: {report.error}</p>
-          {:else}
-            <ul class="balances">
-              {#each report.balances as balance (balance.asset)}
-                <li data-balance data-asset={balance.asset}>
-                  <strong class="amount">{balance.amount}</strong>
-                  <span class="muted small">asset <code title={balance.asset}>{shortAsset(balance.asset)}</code></span>
-                </li>
-              {:else}
-                <li class="muted" data-no-balance>Nothing reported.</li>
-              {/each}
-            </ul>
-            <p class="reported" data-reported-by>
-              Reported by {report.server}. This wallet doesn't verify it.
-            </p>
+          {@render reported(report)}
+          {#if report !== undefined && !("error" in report)}
             <a class="button primary block" href="#/send/{account.slot}" data-send-link><Icon name="send" /> Send</a>
           {/if}
-          <div class="receive">
-            <h2>Receive address</h2>
-            <code data-receive-address>{address}</code>
-          </div>
+          {@render receiveAddress(address)}
         </section>
       {/each}
     {/each}

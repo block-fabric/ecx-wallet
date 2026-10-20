@@ -4,6 +4,7 @@
 import type {
   ApprovalPrompt,
   AssetAmount,
+  ChainReport,
   ClearView,
   DangerousMode,
   Grant,
@@ -14,7 +15,7 @@ import type {
 } from "@ecx/wallet";
 
 // The shapes the background sends are the wallet package's own types.
-export type { ApprovalPrompt, AssetAmount, ClearView, DangerousMode, Grant, SendResult, SlotReport, VaultStatus };
+export type { ApprovalPrompt, AssetAmount, ChainReport, ClearView, DangerousMode, Grant, SendResult, SlotReport, VaultStatus };
 
 type Response<T> = { ok: true; result: T } | { ok: false; error: { code: number; message: string } };
 
@@ -65,6 +66,12 @@ export interface SlotAccount {
 
 /** Every Slot the wallet has a Chain Module for (needs the wallet unlocked). */
 export const listAccounts = () => send<SlotAccount[]>({ kind: "accounts.list" });
+
+/** eCash's own account: its receive address (needs the wallet unlocked). */
+export const l1Account = () => send<{ addresses: SlotAddress[] }>({ kind: "l1.account" });
+
+/** What eCash's server reports for the wallet's L1 addresses. */
+export const l1Reported = () => send<ChainReport>({ kind: "l1.reported" });
 
 /** Registers the Slot's addresses with its Sidechain Server and returns what the server reports. */
 export const reportedState = (slot: number) => send<SlotReport>({ kind: "accounts.reported", slot });

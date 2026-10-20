@@ -38,6 +38,8 @@ export type BackgroundMessage =
   | { kind: "grants.revoke"; origin: string }
   // Accounts (receive addresses per Slot): accepted only from the wallet's own pages.
   | { kind: "accounts.list" }
+  | { kind: "l1.account" }
+  | { kind: "l1.reported" }
   // Pull path (what the Slot's server reports for the addresses the wallet watches): wallet pages only.
   | { kind: "accounts.reported"; slot: number }
   // The wallet's own Send (pull path): wallet pages only.

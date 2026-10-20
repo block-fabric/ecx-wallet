@@ -12,6 +12,7 @@ test("every shipped .wasm imports nothing but memory", async () => {
   const wasm = (await readdir(DIST.chromium)).filter((f) => f.endsWith(".wasm"));
   assert.ok(wasm.includes("vault.wasm"), "vault.wasm is packaged");
   assert.ok(wasm.includes("elements.wasm"), "elements.wasm is packaged");
+  assert.ok(wasm.includes("l1.wasm"), "l1.wasm is packaged");
   for (const file of wasm) {
     const module = new WebAssembly.Module(await readFile(path.join(DIST.chromium, file)));
     const imports = WebAssembly.Module.imports(module).filter((i) => i.kind !== "memory");
@@ -53,8 +54,9 @@ test("the shipped Elements Chain Module declares its binding and bundles Slot 24
   const entry = elements.chainEntry();
   assert.equal(entry.slot, 24);
   assert.equal(entry.networks.betanet.chain, "ecash:betanet-s24");
-  assert.equal(entry.networks.betanet.genesisHash, "a7754ce0debc40baddbd8c47e79d19209685f22c63edaaf8b69cf54116374d7f");
-  assert.equal(entry.networks.betanet.policyAsset, "5836dcc06130dcf6a65b6ac493813fd65559955283e44cc3f07966294eccb2c8");
+  assert.equal(entry.networks.betanet.parent, "ecash:betanet");
+  assert.equal(entry.networks.betanet.params.genesisHash, "a7754ce0debc40baddbd8c47e79d19209685f22c63edaaf8b69cf54116374d7f");
+  assert.equal(entry.networks.betanet.params.policyAsset, "5836dcc06130dcf6a65b6ac493813fd65559955283e44cc3f07966294eccb2c8");
 });
 
 test("the shipped Elements Chain Module derives the Slot 24 receive and change addresses from the Starter", async () => {
