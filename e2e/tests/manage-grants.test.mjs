@@ -67,4 +67,37 @@ test("the Grants screen lists every Grant by origin with its scope and Blind Sig
   await Promise.all([page.close(), listedA.close(), listedB.close()]);
 });
 
+test("revoking a Grant on the Grants screen makes that origin's next request fail with 4100 until it connects again", async () => {
+  const scope = { slots: [24], methods: ["getAddresses"] };
+  const revoked = await connected("revoked.localhost", scope);
+  const kept = await connected("kept.localhost", scope);
+  const revokedOrigin = app.origin("revoked.localhost");
+
+  const { page } = await readGrants();
+  await page.click(`[data-grant][data-grant-origin="${revokedOrigin}"] [data-revoke]`);
+  await page.waitForFunction(
+    (origin) => !document.querySelector(`[data-grant][data-grant-origin="${origin}"]`),
+    {},
+    revokedOrigin,
+  );
+  const origins = (await readGrants().then(async ({ page, grants }) => (await page.close(), grants))).map((g) => g.origin);
+  assert.ok(!origins.includes(revokedOrigin), "the revoked Grant is gone from the list");
+  assert.ok(origins.includes(app.origin("kept.localhost")), "other Grants are untouched");
+
+  assert.equal((await getAddresses(revoked)).error?.code, 4100);
+  assert.notEqual((await getAddresses(kept)).error?.code, 4100);
+
+  // Connecting again prompts again, and restores access.
+  const reconnecting = revoked.evaluate((scope) => window.testApp.request("connect", scope), scope);
+  await (await session.waitForApprovalWindow()).click("[data-approve]");
+  assert.deepEqual(await reconnecting, { result: scope });
+  assert.notEqual((await getAddresses(revoked)).error?.code, 4100);
+  await Promise.all([page.close(), revoked.close(), kept.close()]);
+});
+
+// Brave only: Firefox has no API to read an extension's error console.
+test("none of the above raised extension runtime errors", { skip: browserName !== "brave" }, async () => {
+  assert.deepEqual((await session.extensionErrors()).runtimeErrors, []);
+});
+
 });

@@ -1,12 +1,27 @@
 <script lang="ts">
-  import { listGrants, type Grant } from "$lib/background";
+  import { listGrants, revokeGrant, type Grant } from "$lib/background";
 
   let grants = $state<Grant[] | undefined>(undefined);
 
-  listGrants().then(
-    (g) => (grants = g),
-    () => (grants = []),
-  );
+  let revoking = $state<string | undefined>(undefined);
+
+  function load() {
+    return listGrants().then(
+      (g) => (grants = g),
+      () => (grants = []),
+    );
+  }
+  load();
+
+  async function revoke(origin: string) {
+    revoking = origin;
+    try {
+      await revokeGrant(origin);
+    } finally {
+      await load();
+      revoking = undefined;
+    }
+  }
 </script>
 
 <main data-screen-ready={grants !== undefined ? "" : undefined}>
@@ -20,7 +35,7 @@
   {:else}
     <ul class="grants">
       {#each grants as grant (grant.origin)}
-        <li data-grant>
+        <li data-grant data-grant-origin={grant.origin}>
           <p class="origin"><strong data-origin>{grant.origin}</strong></p>
           <dl>
             <dt>Sidechains (Slots)</dt>
@@ -34,6 +49,9 @@
             <dt>Blind Signing</dt>
             <dd data-blind-signing>{grant.blindSigning ? "On" : "Off"}</dd>
           </dl>
+          <button data-revoke disabled={revoking !== undefined} onclick={() => revoke(grant.origin)}>
+            Revoke
+          </button>
         </li>
       {/each}
     </ul>
