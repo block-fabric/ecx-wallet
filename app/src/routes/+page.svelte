@@ -79,6 +79,13 @@
     loadDeposits(slot);
   }
 
+  /** Each asset's confirmed amount ("0" if it only has unconfirmed coins), and what's unconfirmed, if any. */
+  function assets(report: ChainReport): { asset: string; amount: string; unconfirmed?: string }[] {
+    const pending = new Map(report.unconfirmed.map((u) => [u.asset, u.amount]));
+    const confirmed = report.balances.map(({ asset, amount }) => ({ asset, amount, unconfirmed: pending.get(asset) }));
+    const onlyPending = report.unconfirmed.filter((u) => !report.balances.some((b) => b.asset === u.asset));
+    return [...confirmed, ...onlyPending.map(({ asset, amount }) => ({ asset, amount: "0", unconfirmed: amount }))];
+  }
   const readAt = (report: ChainReport) => new Date(report.readAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   /** Where a Deposit stands, in words. */
@@ -111,6 +118,14 @@
   }
 </script>
 
+{#snippet unit(asset: string)}
+  {#if asset === ""}
+    <span class="muted small">sats</span>
+  {:else}
+    <span class="muted small">asset <code title={asset}>{shortAsset(asset)}</code></span>
+  {/if}
+{/snippet}
+
 {#snippet reported(shown: ShownReport | undefined)}
   {@const report = shown?.report}
   {#if shown?.error !== undefined}
@@ -124,15 +139,16 @@
     {/if}
   {:else}
     <ul class="balances">
-      {#each report.balances as balance (balance.asset)}
-        <li data-balance data-asset={balance.asset}>
-          <strong class="amount">{balance.amount}</strong>
-          {#if balance.asset === ""}
-            <span class="muted small">sats</span>
-          {:else}
-            <span class="muted small">asset <code title={balance.asset}>{shortAsset(balance.asset)}</code></span>
-          {/if}
+      {#each assets(report) as { asset, amount, unconfirmed } (asset)}
+        <li data-balance data-asset={asset}>
+          <strong class="amount">{amount}</strong>
+          {@render unit(asset)}
         </li>
+        {#if unconfirmed !== undefined}
+          <li class="unconfirmed muted small" data-unconfirmed data-asset={asset}>
+            +{unconfirmed}{asset === "" ? " sats" : ""} unconfirmed
+          </li>
+        {/if}
       {:else}
         <li class="muted" data-no-balance>Nothing reported.</li>
       {/each}
@@ -343,6 +359,9 @@
   }
   .amount {
     font-size: 1.6rem;
+  }
+  .balances li.unconfirmed {
+    margin-top: -6px;
   }
   .receive {
     display: flex;

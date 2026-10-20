@@ -33,6 +33,8 @@ export interface ChainReport {
   /** Who reported it. */
   server: string;
   balances: AssetAmount[];
+  /** What's on its way in, unconfirmed: shown apart, never spent. */
+  unconfirmed: AssetAmount[];
   history: unknown[];
   /** When the server reported it, in milliseconds since the epoch. */
   readAt: number;
@@ -75,8 +77,8 @@ export function createPullPath(deps: PullPathDeps) {
 
   async function reported<K extends ChainKey>(target: ChainServer<K>): Promise<ChainReport> {
     const { chain, server } = target;
-    const { balances, history } = await server.state(await watch(target));
-    const report = { chain, server: server.url, balances, history, readAt: deps.now() };
+    const { balances, unconfirmed, history } = await server.state(await watch(target));
+    const report = { chain, server: server.url, balances, unconfirmed, history, readAt: deps.now() };
     await deps.cache?.set(cacheKey.balance(chain, server.url), report);
     return report;
   }

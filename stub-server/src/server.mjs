@@ -10,7 +10,7 @@ const MAX_BODY = 1 << 20;
 
 /**
  * @typedef {{ asset: string, amount: string }} AssetAmount
- * @typedef {{ balances: AssetAmount[], history: object[] }} ReportedState
+ * @typedef {{ balances: AssetAmount[], unconfirmed?: AssetAmount[], history: object[] }} ReportedState
  * @typedef {{ asset: string, amount: string, destination: string, payload: string, expiresIn?: number,
  *   hints?: { summary?: string, outputLabels?: Record<string, string> } }} TransferFixture
  * @typedef {{
@@ -113,16 +113,23 @@ export function createStubServer(config = {}) {
     return notFound();
   }
 
+  /** A watch's state: its addresses' summed; `unconfirmed` only if one of them has any. */
   function reportedState(watch) {
     const totals = new Map();
+    const pending = new Map();
+    let reportsPending = false;
     const history = [];
+    const add = (sums, { asset, amount }) => sums.set(asset, (sums.get(asset) ?? 0n) + BigInt(amount));
     for (const { address } of watch.addresses) {
       const state = config.state?.[address];
       if (state === undefined) continue;
-      for (const { asset, amount } of state.balances) totals.set(asset, (totals.get(asset) ?? 0n) + BigInt(amount));
+      for (const balance of state.balances) add(totals, balance);
+      if (state.unconfirmed !== undefined) reportsPending = true;
+      for (const amount of state.unconfirmed ?? []) add(pending, amount);
       history.push(...state.history);
     }
-    return { balances: [...totals].map(([asset, amount]) => ({ asset, amount: amount.toString() })), history };
+    const listed = (sums) => [...sums].map(([asset, amount]) => ({ asset, amount: amount.toString() }));
+    return { balances: listed(totals), ...(reportsPending ? { unconfirmed: listed(pending) } : {}), history };
   }
 
   const server = createServer(async (request, response) => {

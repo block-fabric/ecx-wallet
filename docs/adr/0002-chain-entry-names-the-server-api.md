@@ -13,7 +13,7 @@ The pull path was built for one protocol, the Standard Sidechain API (`/v1`): ev
 | Endpoint | Use |
 |---|---|
 | `GET /block-height/H` | Identity check: must equal the Chain Entry's `identityBlock` (`H` = 0 and the genesis, or a fork's first block: ADR 0003), else a hard error. Run on first contact and after every URL change; this stands in for `/v1`'s `info`. |
-| `GET /address/:a/utxo` | Reported state: confirmed outputs, summed per asset. |
+| `GET /address/:a/utxo` | Reported state: outputs summed per asset, confirmed and unconfirmed apart. |
 | `GET /fee-estimates` | Fee rate for building transfers (may be `{}`). |
 | `POST /tx` | Broadcasting a finalized transaction. |
 

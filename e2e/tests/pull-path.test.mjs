@@ -25,7 +25,7 @@ const ESPLORA = {
   utxos: {
     [RECEIVE_0]: [
       { txid: "a0".repeat(32), vout: 0, value: 150000, asset: POLICY_ASSET, confirmed: true },
-      // Unconfirmed: not counted.
+      // Unconfirmed: shown apart, not in the balance.
       { txid: "a1".repeat(32), vout: 0, value: 5000, asset: POLICY_ASSET, confirmed: false },
     ],
     [RECEIVE_1]: [{ txid: "a2".repeat(32), vout: 1, value: 7, asset: OTHER_ASSET, confirmed: true }],
@@ -66,6 +66,7 @@ async function readHome(session, account = "24") {
       label: text(within.querySelector("[data-reported-by]")),
       error: text(within.querySelector("[data-balance-error]")),
       balances: [...within.querySelectorAll("[data-balance]")].map((e) => ({ asset: e.getAttribute("data-asset"), text: text(e) })),
+      unconfirmed: [...within.querySelectorAll("[data-unconfirmed]")].map((e) => ({ asset: e.getAttribute("data-asset"), text: text(e) })),
       send: within.querySelector("[data-send-link]") !== null,
     };
   }, card);
@@ -87,13 +88,15 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     await l1Stub?.close();
   });
 
-  test("the home page shows each asset's confirmed balance over the receive and change addresses, labelled as reported by the server", async () => {
+  test("the home page shows each asset's confirmed balance over the receive and change addresses, and what's unconfirmed apart, labelled as reported by the server", async () => {
     const shown = await readHome(session);
     assert.equal(shown.error, undefined);
     assert.match(shown.label, new RegExp(`Reported by ${stub.url.replace(/[.]/g, "\\.")}`));
     assert.deepEqual(shown.balances.map((b) => b.asset), [POLICY_ASSET, OTHER_ASSET]);
     assert.match(shown.balances[0].text, /\b179000\b/, "150 000 received + 29 000 change, not the unconfirmed 5 000");
     assert.match(shown.balances[1].text, /\b7\b/);
+    assert.deepEqual(shown.unconfirmed.map((u) => u.asset), [POLICY_ASSET], "no line for an asset with nothing unconfirmed");
+    assert.match(shown.unconfirmed[0].text, /^\+5000 .*unconfirmed$/);
 
     const requests = stub.requests();
     assert.equal(requests[0], "/block-height/0", "the server's chain is checked first");
@@ -112,12 +115,13 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     }
   });
 
-  test("the eCash card shows the confirmed sats of the L1 receive and change addresses, labelled as reported by its server", async () => {
+  test("the eCash card shows the confirmed sats of the L1 receive and change addresses, and the unconfirmed ones apart, labelled as reported by its server", async () => {
     const shown = await readHome(session, "l1");
     assert.equal(shown.error, undefined);
     assert.match(shown.label, new RegExp(`Reported by ${l1Stub.url.replace(/[.]/g, "\\.")}`));
     assert.deepEqual(shown.balances.map((b) => b.asset), [""]);
     assert.match(shown.balances[0].text, /^102500 sats$/, "100 000 received + 2 500 change, not the unconfirmed 900");
+    assert.deepEqual(shown.unconfirmed, [{ asset: "", text: "+900 sats unconfirmed" }]);
     assert.equal(shown.send, false, "no Send on L1 yet");
 
     const requests = l1Stub.requests();
@@ -162,26 +166,31 @@ for (const browserName of BROWSERS) describe(browserName, () => {
   });
 
   test("the home page shows this session's last balance at once, says it's refreshing, then shows the new one", async () => {
-    await readHome(session, "l1"); // 102 500 sats, now remembered
+    await readHome(session, "l1"); // 102 500 sats and 900 unconfirmed, now remembered
     L1_ESPLORA.delayMs = 1500;
     L1_ESPLORA.utxos[L1_CHANGE_0][0].value = 7500;
+    L1_ESPLORA.utxos[L1_RECEIVE_0][1].value = 1200;
     try {
       const page = await session.openPage("index.html#/");
       const card = '[data-account="l1"]';
       await page.waitForSelector(`${card}[data-refreshing] [data-balance]`, { timeout: 10_000 });
       const stale = await page.$eval(card, (e) => ({
         balance: e.querySelector("[data-balance]").textContent.replace(/\s+/g, " ").trim(),
+        unconfirmed: e.querySelector("[data-unconfirmed]")?.textContent.replace(/\s+/g, " ").trim(),
         readAt: e.querySelector("[data-read-at]").textContent.replace(/\s+/g, " ").trim(),
       }));
       assert.equal(stale.balance, "102500 sats");
+      assert.equal(stale.unconfirmed, "+900 sats unconfirmed");
       assert.match(stale.readAt, /^Last read at .+; refreshing…$/);
       await page.waitForSelector(`${card}:not([data-refreshing]) [data-balance]`, { timeout: 20_000 });
       assert.equal(await page.$eval(`${card} [data-balance]`, (e) => e.textContent.replace(/\s+/g, " ").trim()), "107500 sats");
+      assert.equal(await page.$eval(`${card} [data-unconfirmed]`, (e) => e.textContent.replace(/\s+/g, " ").trim()), "+1200 sats unconfirmed");
       assert.equal(await page.$(`${card} [data-read-at]`), null);
       await page.close();
     } finally {
       L1_ESPLORA.delayMs = 0;
       L1_ESPLORA.utxos[L1_CHANGE_0][0].value = 2500;
+      L1_ESPLORA.utxos[L1_RECEIVE_0][1].value = 900;
     }
   });
 

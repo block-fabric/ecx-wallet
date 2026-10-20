@@ -60,19 +60,23 @@ function pullPathWith(server, { approve = true } = {}) {
   return { pullPath, prompts };
 }
 
+/** What the Standard Sidechain API stub reports per address (read on every request). */
+const STANDARD_STATE = {
+  [RECEIVE_0]: {
+    balances: [
+      { asset: POLICY_ASSET, amount: "150000" },
+      { asset: OTHER_ASSET, amount: "7" },
+    ],
+    unconfirmed: [{ asset: POLICY_ASSET, amount: "900" }],
+    history: [{ txid: "aa".repeat(32), amounts: [{ asset: POLICY_ASSET, amount: "150000" }] }],
+  },
+};
+
 describe("Standard Sidechain API", () => {
   let stub;
   before(async () => {
     stub = await serveSidechainServer({
-      state: {
-        [RECEIVE_0]: {
-          balances: [
-            { asset: POLICY_ASSET, amount: "150000" },
-            { asset: OTHER_ASSET, amount: "7" },
-          ],
-          history: [{ txid: "aa".repeat(32), amounts: [{ asset: POLICY_ASSET, amount: "150000" }] }],
-        },
-      },
+      state: STANDARD_STATE,
       // Each amount picks a fixture; a real server builds the transfer it's asked for.
       transfers: [
         { asset: POLICY_ASSET, amount: "120000", destination: FOREIGN_ADDRESS, payload: PSETS.clear.payload },
@@ -96,6 +100,7 @@ describe("Standard Sidechain API", () => {
       { asset: POLICY_ASSET, amount: "150000" },
       { asset: OTHER_ASSET, amount: "7" },
     ]);
+    assert.deepEqual(report.unconfirmed, [{ asset: POLICY_ASSET, amount: "900" }]);
     assert.equal(report.history.length, 1);
 
     const registration = stub.registrations().at(-1);
@@ -104,6 +109,28 @@ describe("Standard Sidechain API", () => {
     assert.equal(registration.addresses.length, wallet.WATCHED_RECEIVE_ADDRESSES);
     assert.deepEqual(registration.addresses.slice(0, 2).map((a) => a.address), [RECEIVE_0, RECEIVE_1]);
     assert.ok(!registration.addresses.some((a) => a.address === CHANGE_0), "the server derives change from the descriptor");
+  });
+
+  test("a server that leaves `unconfirmed` out gives the report nothing unconfirmed", async () => {
+    const state = STANDARD_STATE[RECEIVE_0];
+    const { unconfirmed } = state;
+    delete state.unconfirmed;
+    try {
+      assert.deepEqual((await pullPathWith(server()).pullPath.reportedState(24)).unconfirmed, []);
+    } finally {
+      state.unconfirmed = unconfirmed;
+    }
+  });
+
+  test("a malformed unconfirmed amount is refused like a malformed balance", async () => {
+    const state = STANDARD_STATE[RECEIVE_0];
+    const { unconfirmed } = state;
+    state.unconfirmed = [{ asset: POLICY_ASSET, amount: "-900" }];
+    try {
+      await assert.rejects(pullPathWith(server()).pullPath.reportedState(24), (e) => e instanceof wallet.SidechainServerError && /malformed state/.test(e.message));
+    } finally {
+      state.unconfirmed = unconfirmed;
+    }
   });
 
   test("Send: the server builds the transfer, the approval names the server, and the signed payload goes back", async () => {
@@ -162,7 +189,7 @@ describe("Esplora", () => {
 
   const reported = () => pullPathWith({ api: "esplora", url }).pullPath.reportedState(24);
 
-  test("the balance is the confirmed explicit outputs of the receive and change addresses, per asset", async () => {
+  test("the balance is the confirmed explicit outputs of the receive and change addresses, per asset, and the unconfirmed ones are summed apart", async () => {
     config.utxos = {
       [RECEIVE_0]: [
         { txid: "a0".repeat(32), vout: 0, value: 150000, asset: POLICY_ASSET, confirmed: true },
@@ -172,6 +199,7 @@ describe("Esplora", () => {
       [CHANGE_0]: [
         { txid: "a3".repeat(32), vout: 1, value: 29000, asset: POLICY_ASSET, confirmed: true },
         { txid: "a4".repeat(32), vout: 2, valuecommitment: `08${"11".repeat(32)}`, assetcommitment: `0a${"22".repeat(32)}`, confirmed: true },
+        { txid: "a5".repeat(32), vout: 0, valuecommitment: `09${"33".repeat(32)}`, assetcommitment: `0b${"44".repeat(32)}`, confirmed: false },
       ],
     };
     const report = await reported();
@@ -180,6 +208,7 @@ describe("Esplora", () => {
       { asset: POLICY_ASSET, amount: "179000" },
       { asset: OTHER_ASSET, amount: "7" },
     ]);
+    assert.deepEqual(report.unconfirmed, [{ asset: POLICY_ASSET, amount: "5000" }], "the confidential unconfirmed output isn't counted");
     assert.deepEqual(report.history, []);
     const queried = stub.requests().filter((p) => p.endsWith("/utxo")).length;
     assert.equal(queried, wallet.WATCHED_RECEIVE_ADDRESSES + wallet.WATCHED_CHANGE_ADDRESSES);

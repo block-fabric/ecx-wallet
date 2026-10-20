@@ -14,6 +14,8 @@
 
   /** The confirmed sats eCash's server reports: the only coins a Deposit spends. */
   const available = (report: ChainReport) => report.balances.find((b) => b.asset === "")?.amount ?? "0";
+  /** The unconfirmed sats it reports: shown so the user knows why they can't be spent yet. */
+  const unconfirmed = (report: ChainReport) => report.unconfirmed.find((u) => u.asset === "")?.amount;
   const readAt = (report: ChainReport) => new Date(report.readAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   // Only shown to help pick an amount: the Deposit scans the coins again itself, so the form
@@ -42,6 +44,9 @@
     <span class="muted small">Available on eCash (confirmed)</span>
     {#if shown.report}
       <strong class="amount" data-deposit-available>{available(shown.report)} sats</strong>
+      {#if unconfirmed(shown.report) !== undefined}
+        <span class="muted small" data-deposit-unconfirmed>+{unconfirmed(shown.report)} sats unconfirmed, usable once confirmed</span>
+      {/if}
       <p class="reported">Reported by {shown.report.server}. This wallet doesn't verify it.</p>
     {/if}
     {#if shown.refreshing}

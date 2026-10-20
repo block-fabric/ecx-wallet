@@ -148,6 +148,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       assert.match(await page.$eval("[data-deposit-scanning]", (e) => e.textContent.trim()), /^Last read at .+; scanning your eCash addresses again…$/);
       await page.waitForFunction(() => document.querySelector("[data-deposit-scanning]") === null, { timeout: 20_000 });
       assert.match(await page.$eval("[data-deposit-available]", (e) => e.textContent), /^250000 sats$/);
+      assert.equal(await page.$("[data-deposit-unconfirmed]"), null, "nothing unconfirmed, no line for it");
       await page.close();
     } finally {
       L1.delayMs = 0;
@@ -264,6 +265,21 @@ for (const browserName of BROWSERS) describe(browserName, () => {
         await page.close();
       });
     }
+
+    test("unconfirmed coins show apart on the Deposit screen, and a Deposit doesn't spend them", async () => {
+      L1.utxos[L1_RECEIVE_0].push({ txid: "c9".repeat(32), vout: 0, value: 80000, confirmed: false });
+      const page = await openWalletPage(session, "#/deposit/24");
+      await page.waitForSelector("[data-deposit-unconfirmed]", { timeout: 20_000 });
+      await page.waitForFunction(() => document.querySelector("[data-deposit-scanning]") === null, { timeout: 20_000 });
+      const text = (selector) => page.$eval(selector, (e) => e.textContent.replace(/\s+/g, " ").trim());
+      assert.equal(await text("[data-deposit-available]"), "250000 sats");
+      assert.equal(await text("[data-deposit-unconfirmed]"), "+80000 sats unconfirmed, usable once confirmed");
+      await page.type("[data-deposit-amount]", "300000"); // enough with the unconfirmed coin
+      await page.click("[data-deposit-submit]");
+      assert.match((await outcome(page)).error, /^Not enough confirmed eCash: .* the wallet has 250000\.$/);
+      assert.equal((await session.approvalWindows()).length, 0);
+      await page.close();
+    });
 
     test("a server that sends another transaction than the one asked for is refused, and nothing is kept", async () => {
       // A Treasury this session hasn't fetched yet (the earlier ones' transactions are kept).

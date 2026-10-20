@@ -54,9 +54,10 @@ the extension build turns those URLs into `host_permissions` and CSP `connect-sr
 - `esplora` (`esplora.ts`): checks `/block-height/H` against the Chain Entry's `identityBlock`
   (H = 0 and the genesis for Elements; eCash betanet, whose genesis is Bitcoin's, uses its fork
   block 967,680; docs/adr/0003). A mismatch is a hard error, as is a server that hasn't reached H.
-  It then sums the confirmed explicit outputs (`/address/:a/utxo`) of the first 20 receive and 20
-  change addresses per asset (eCash's outputs have no asset: they're its coin, `NATIVE_COIN`,
-  shown in sats). Send isn't available over Esplora yet (#28); eCash's one spend is a Deposit (below).
+  It then sums the explicit outputs (`/address/:a/utxo`) of the first 20 receive and 20 change
+  addresses per asset, confirmed and unconfirmed apart (eCash's outputs have no asset: they're its
+  coin, `NATIVE_COIN`, shown in sats). electrs already leaves out outputs its mempool spends, so a
+  Deposit's coin leaves the confirmed balance at once and its change shows as unconfirmed. Send isn't available over Esplora yet (#28); eCash's one spend is a Deposit (below).
 - `ecx-v0`, the Standard Sidechain API (`standard-sidechain-api.ts`, `stub-server/README.md`):
   registers the descriptor and first 20 receive addresses before every call. Its Send has the
   server build the transfer; the Signing Request goes through the same validation, Chain Module
@@ -65,8 +66,11 @@ the extension build turns those URLs into `host_permissions` and CSP `connect-sr
   After approval the wallet submits the signed PSET to the server. No bundled chain speaks it in
   v0; `e2e/tests/sidechain-servers.test.mjs` tests it in node.
 
-The home page (`l1.reported`, `accounts.reported`) shows the balance per asset, labelled "Reported
-by <server URL>"; the Send screen is `#/send/<slot>` (`send.start`), for Slots only.
+The home page (`l1.reported`, `accounts.reported`) shows the confirmed balance per asset, with a
+"+N unconfirmed" line under it when the server reports any, labelled "Reported by <server URL>".
+Unconfirmed coins are only shown: a Deposit spends confirmed ones only. The Standard Sidechain
+API reports them in an optional `unconfirmed` list. The Send screen is `#/send/<slot>`
+(`send.start`), for Slots only.
 
 Session cache (`wallet/src/cache.ts`): to answer faster, the background keeps three things in
 `storage.session` (memory only), read and written only while unlocked, and forgotten on every lock:

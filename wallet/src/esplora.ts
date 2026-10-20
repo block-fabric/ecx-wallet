@@ -233,15 +233,17 @@ export function esploraServer(config: EsploraServerConfig, fetchFn: Fetch): Side
   const { url } = client;
 
   /**
-   * The address's confirmed explicit outputs. Confidential ones (commitments, no `value`) aren't
-   * counted. Bitcoin's Esplora (eCash) has no assets: its outputs carry none, and count as the
-   * chain's coin.
+   * The address's explicit outputs, confirmed or not. Confidential ones (commitments, no `value`)
+   * aren't counted. Bitcoin's Esplora (eCash) has no assets: its outputs carry none, and count as
+   * the chain's coin. Esplora already leaves out outputs spent in its mempool.
    */
-  async function confirmedOutputs(address: string): Promise<AssetAmount[]> {
+  async function explicitOutputs(address: string): Promise<(AssetAmount & { confirmed: boolean })[]> {
     return (await client.addressUtxos(address)).flatMap(({ value, asset, confirmed }) =>
-      !confirmed || value === undefined ? [] : [{ asset: asset ?? NATIVE_COIN, amount: String(value) }],
+      value === undefined ? [] : [{ asset: asset ?? NATIVE_COIN, amount: String(value), confirmed }],
     );
   }
+
+  const listed = (totals: Map<string, bigint>) => [...totals].map(([asset, amount]) => ({ asset, amount: amount.toString() }));
 
   const notYet = () => new SidechainServerError(url, `Sending on ${config.chainName} isn't available yet.`);
 
@@ -250,12 +252,16 @@ export function esploraServer(config: EsploraServerConfig, fetchFn: Fetch): Side
     async state({ receive, change }) {
       await client.checkChain();
       const addresses = [...receive, ...change].map((a) => a.address);
-      const totals = new Map<string, bigint>();
+      const confirmed = new Map<string, bigint>();
+      const unconfirmed = new Map<string, bigint>();
       for (let i = 0; i < addresses.length; i += QUERIES_AT_ONCE) {
-        const outputs = await Promise.all(addresses.slice(i, i + QUERIES_AT_ONCE).map(confirmedOutputs));
-        for (const { asset, amount } of outputs.flat()) totals.set(asset, (totals.get(asset) ?? 0n) + BigInt(amount));
+        const outputs = await Promise.all(addresses.slice(i, i + QUERIES_AT_ONCE).map(explicitOutputs));
+        for (const { asset, amount, confirmed: isConfirmed } of outputs.flat()) {
+          const totals = isConfirmed ? confirmed : unconfirmed;
+          totals.set(asset, (totals.get(asset) ?? 0n) + BigInt(amount));
+        }
       }
-      return { balances: [...totals].map(([asset, amount]) => ({ asset, amount: amount.toString() })), history: [] };
+      return { balances: listed(confirmed), unconfirmed: listed(unconfirmed), history: [] };
     },
     // Building and broadcasting over Esplora come with the Send issue (#28).
     buildTransfer: async () => {
