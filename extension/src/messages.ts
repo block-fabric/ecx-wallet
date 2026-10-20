@@ -34,6 +34,8 @@ export type BackgroundMessage =
   | { kind: "approval.resolve"; id: string; approved: boolean }
   | { kind: "grants.list" }
   | { kind: "grants.revoke"; origin: string }
+  // Accounts (receive addresses per Slot): accepted only from the wallet's own pages.
+  | { kind: "accounts.list" }
   // Vault: accepted only from the wallet's own pages.
   | { kind: "vault.status" }
   | { kind: "vault.generate" }

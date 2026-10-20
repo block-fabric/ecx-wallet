@@ -10,8 +10,8 @@ pnpm workspace, one directory per module from the spec:
 
 | Dir | What it is |
 |---|---|
-| `core/` | Rust signing core: a Cargo workspace, one import-free `.wasm` per module (today `vault.wasm`). See `core/README.md`. |
-| `wallet/` | Target-agnostic TypeScript: Grants, the Provider request handler (`createProviderHandler`), Vault orchestration (`createVault`: encryption at rest, unlock state, auto-lock) and the hand-written WASM glue (`CoreModule`, `loadVaultModule`). Later: Signing Request validation, Chain Module loading. |
+| `core/` | Rust signing core: a Cargo workspace, one import-free `.wasm` per module (`vault.wasm`, `elements.wasm`). See `core/README.md`. |
+| `wallet/` | Target-agnostic TypeScript: Grants, the Provider request handler (`createProviderHandler`), Vault orchestration (`createVault`: encryption at rest, unlock state, auto-lock), per-Slot accounts (`createChainModules`, `createAccounts`) and the hand-written WASM glue (`CoreModule`, `loadVaultModule`, `loadChainModule`). Later: Signing Request validation. |
 | `app/` | SvelteKit UI (adapter-static, hash router, so SSR is off). Built as one `index.html` shell; screens are hash routes, e.g. `index.html#/approve/<id>`, `index.html#/grants`. |
 | `extension/` | MV3 shell: hand-written `manifests/chromium.json` and `manifests/firefox.json`; `src/background.ts`, `src/content.ts`, `src/inpage.ts` bundled with esbuild (not SvelteKit). |
 | `client/` | Library Sidechain Apps use to discover the Provider (`discoverProviders()`). |
@@ -28,6 +28,12 @@ the background decrypts. The Master Mnemonic is stored only encrypted (password 
 `storage.session` with a deadline (15 min auto-lock, also enforced on every use), so it survives
 service-worker restarts and is gone after a browser restart. In the background,
 `await vault.starter(slot)` gives a Slot's Starter (throws if locked; counts as activity).
+
+Accounts: `accounts.receiveAddresses(slot)` hands that Slot's Starter (and nothing else) to that
+Slot's Chain Module, each in its own lazily instantiated WASM instance. The home page shows them
+when unlocked (`accounts.list` message); the Provider's `getAddresses({ slot })` returns
+`[{ chain, address }]` to an origin whose Grant covers the method and the Slot (4100 otherwise, or
+while locked).
 
 ## Build and test
 

@@ -4,6 +4,15 @@ export { createProviderHandler, type ConnectPrompt, type ProviderDeps } from "./
 export { CoreModule, CoreModuleError, type CoreArg } from "./wasm";
 export { loadVaultModule, type KdfParams, type VaultModule } from "./vault-module";
 export {
+  CHAIN_MODULE_FILES,
+  SUPPORTED_SLOTS,
+  createAccounts,
+  createChainModules,
+  type Accounts,
+  type AccountsDeps,
+  type SlotAddress,
+} from "./accounts";
+export {
   loadChainModule,
   type Account,
   type Binding,

@@ -4,7 +4,10 @@
 // - every listener is registered synchronously at top level;
 // - no top-level await; WASM is fetched and instantiated lazily inside handlers.
 import {
+  createAccounts,
+  createChainModules,
   createProviderHandler,
+  SUPPORTED_SLOTS,
   createVault,
   ErrorCode,
   loadVaultModule,
@@ -30,11 +33,13 @@ function keyValueStore(area: chrome.storage.StorageArea): KeyValueStore {
   };
 }
 
+/** A shipped .wasm's bytes, from the extension package. */
+const fetchWasm = (file: string) => fetch(chrome.runtime.getURL(file)).then((response) => response.arrayBuffer());
+
 let vaultModule: Promise<VaultModule> | undefined;
 /** vault.wasm, instantiated on first use (and again after each worker restart). */
 function loadVault(): Promise<VaultModule> {
-  vaultModule ??= fetch(chrome.runtime.getURL("vault.wasm"))
-    .then((response) => response.arrayBuffer())
+  vaultModule ??= fetchWasm("vault.wasm")
     .then(loadVaultModule)
     .catch((error) => {
       vaultModule = undefined;
@@ -121,7 +126,17 @@ chrome.windows.onRemoved.addListener((windowId) => {
   for (const pending of approvals.values()) if (pending.windowId === windowId) pending.settle(false);
 });
 
-const handleProviderRequest = createProviderHandler({ grants, askToConnect });
+// Each Slot's Chain Module runs in its own WASM instance (instantiated on first use) and gets
+// only that Slot's Starter, per call.
+const accounts = createAccounts({ starter: (slot) => vault.starter(slot), chainModule: createChainModules(fetchWasm) });
+
+const handleProviderRequest = createProviderHandler({
+  grants,
+  askToConnect,
+  supportedSlots: SUPPORTED_SLOTS,
+  isUnlocked: async () => (await vault.status()).unlocked,
+  receiveAddresses: (slot) => accounts.receiveAddresses(slot),
+});
 
 /** The requester's web origin as the browser reports it for a content-script message. */
 function requesterOrigin(sender: chrome.runtime.MessageSender): string | undefined {
@@ -156,6 +171,12 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
       if (!fromWalletPage(sender)) return null;
       if (typeof message.origin === "string") await grants.remove(message.origin);
       return null;
+    case "accounts.list":
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      // One entry per Slot with a Chain Module; addresses are public, so the page may show them.
+      return Promise.all(
+        SUPPORTED_SLOTS.map(async (slot) => ({ slot, addresses: await accounts.receiveAddresses(slot) })),
+      );
     case "vault.status":
     case "vault.generate":
     case "vault.create":

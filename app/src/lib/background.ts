@@ -49,6 +49,15 @@ export function checkNewPassword(password: string, repeat: string): string {
   return "";
 }
 
+/** One Slot's account: its receive address(es) in the chain's own encoding. */
+export interface SlotAccount {
+  slot: number;
+  addresses: { chain: string; address: string }[];
+}
+
+/** Every Slot the wallet has a Chain Module for (needs the wallet unlocked). */
+export const listAccounts = () => send<SlotAccount[]>({ kind: "accounts.list" });
+
 /** A stored Grant as the Grants screen shows it. */
 export interface Grant {
   origin: string;

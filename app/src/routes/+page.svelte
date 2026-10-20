@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { lockVault, unlockVault, vaultStatus, type VaultStatus } from "$lib/background";
+  import { listAccounts, lockVault, unlockVault, vaultStatus, type SlotAccount, type VaultStatus } from "$lib/background";
 
   let status = $state<VaultStatus | undefined>(undefined);
+  let accounts = $state<SlotAccount[] | undefined>(undefined);
   let password = $state("");
   let error = $state("");
   let busy = $state(false);
@@ -11,6 +12,18 @@
   );
 
   vaultStatus().then((s) => (status = s));
+
+  // The account screen: derived in the background whenever the wallet is (or becomes) unlocked.
+  $effect(() => {
+    if (vaultState !== "unlocked") {
+      accounts = undefined;
+      return;
+    }
+    listAccounts().then(
+      (a) => (accounts = a),
+      (e) => (error = (e as Error).message),
+    );
+  });
 
   async function act(action: () => Promise<VaultStatus>) {
     busy = true;
@@ -53,6 +66,15 @@
     </form>
   {:else if vaultState === "unlocked"}
     <p>Your wallet is unlocked. It locks itself after 15 minutes without use.</p>
+    {#each accounts ?? [] as account (account.slot)}
+      {#each account.addresses.slice(0, 1) as { chain, address } (address)}
+        <section class="account" data-account={account.slot}>
+          <h2>Slot {account.slot} <small data-account-chain>{chain}</small></h2>
+          <p>Receive address</p>
+          <code data-receive-address>{address}</code>
+        </section>
+      {/each}
+    {/each}
     <button disabled={busy} onclick={() => act(lockVault)} data-lock>Lock</button>
   {/if}
 
@@ -79,6 +101,11 @@
   label {
     display: block;
     margin-bottom: 0.5rem;
+  }
+  .account code {
+    display: block;
+    word-break: break-all;
+    margin-bottom: 1rem;
   }
   .error {
     color: #b00020;
