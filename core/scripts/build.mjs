@@ -20,7 +20,10 @@ const dist = path.join(core, "dist");
 const TARGET = "wasm32-unknown-unknown";
 
 /** One entry per module: the C-ABI crate and the file it ships as. */
-export const MODULES = [{ crate: "ecx-vault-wasm", file: "vault.wasm" }];
+export const MODULES = [
+  { crate: "ecx-vault-wasm", file: "vault.wasm" },
+  { crate: "ecx-elements-wasm", file: "elements.wasm" },
+];
 
 const run = (cmd, args, env = {}) =>
   execFileSync(cmd, args, { cwd: core, stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, ...env } })

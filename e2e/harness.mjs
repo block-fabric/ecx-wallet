@@ -271,6 +271,22 @@ export async function openWalletPage(session, route) {
   return page;
 }
 
+/** A Master Mnemonic whose Slot 24 Starter and address are fixed test vectors (see the core crates' tests). */
+export const ABANDON = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+export const WALLET_PASSWORD = "correct horse battery";
+
+/** Imports `phrase` (no passphrase) under `password` and waits until the wallet is unlocked. */
+export async function setUpWallet(session, { phrase = ABANDON, password = WALLET_PASSWORD } = {}) {
+  const page = await session.openPage("index.html#/import");
+  await page.waitForSelector("[data-wallet-ready]", { timeout: 10_000 });
+  await page.type("[data-import-phrase]", phrase);
+  await page.type("[data-new-password]", password);
+  await page.type("[data-repeat-password]", password);
+  await page.click("[data-submit]");
+  await page.waitForSelector('[data-vault-state="unlocked"]');
+  await page.close();
+}
+
 /** Opens the test app in a new tab and waits until its script is ready. */
 export async function openTestApp(session, app, host) {
   const page = await session.browser.newPage();

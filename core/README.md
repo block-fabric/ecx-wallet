@@ -8,10 +8,13 @@ pnpm):
 | `vault/` (`ecx-vault`) | The Vault: BIP39 create (from caller entropy) and import checks, Argon2id password stretching, Starter derivation (BitWindow's `DeriveStarter`). Pure Rust, no I/O, no RNG. Seam 2 tests in `vault/tests/`. |
 | `abi/` (`ecx-wasm-abi`) | The C ABI every module's `.wasm` exports: `alloc`/`dealloc`, a result buffer (`out_ptr`/`out_len`/`out_clear`), status 0 = ok, 1 = UTF-8 error. |
 | `vault-wasm/` (`ecx-vault-wasm`) | Thin `extern "C"` wrappers: ships as `vault.wasm`. |
+| `elements/` (`ecx-elements`) | The Elements Chain Module (Slot 24, explicit-only): `declare()`, `derive_account(starter, n)` (LWK `elwpkh` at `m/84'/1'/0'`, addresses in `elements1…`). Bundles Slot 24's Chain Entry, `elements/chain-entry.json`: the one home of every betanet value (genesis, policy asset, address params, Sidechain Server URL and Official App placeholders). Seam 2 tests in `elements/tests/`. |
+| `elements-wasm/` (`ecx-elements-wasm`) | Thin `extern "C"` wrappers returning JSON: ships as `elements.wasm` (`declare`, `chain_entry`, `derive_account`). |
+| `vendor/lwk_common/` | crates.io `lwk_common` 0.19.0 with one line changed (getrandom `js` → `custom`; marked `ECX PATCH`), wired in by `[patch.crates-io]`. |
 
 No wasm-bindgen: each `.wasm` imports **nothing** (it exports its own memory). The TypeScript side is
-hand-written: `wallet/src/wasm.ts` (generic ABI glue, `CoreModule`) and one typed wrapper per module
-(`wallet/src/vault-module.ts`). Randomness always comes in as bytes from the host.
+hand-written: `wallet/src/wasm.ts` (generic ABI glue, `CoreModule`) and one typed wrapper per kind
+of module (`wallet/src/vault-module.ts`, `wallet/src/chain-module.ts` for every Chain Module). Randomness always comes in as bytes from the host.
 
 ## Build and test
 
@@ -40,5 +43,7 @@ sha256. Dependencies are pinned exactly; libsecp256k1 uses its `lowmemory` table
 3. A typed wrapper in `wallet/src/` over `CoreModule` (see `vault-module.ts`); the background
    fetches the `.wasm` lazily via `chrome.runtime.getURL` (see `loadVault` in
    `extension/src/background.ts`). The extension build stages every `core/dist/*.wasm` itself.
-4. If it pulls in LWK: `lwk_common` forces getrandom's `js` backend, which adds wasm-bindgen
-   imports; vendor it with that feature switched to `custom` and register a failing RNG.
+   A Chain Module also gets a line in `CHAIN_MODULE_FILES` (`wallet/src/accounts.ts`) and
+   implements the `declare` / `chain_entry` / `derive_account` exports `chain-module.ts` expects.
+4. If it pulls in LWK: depend on the already-vendored `lwk_common` (see above) and register a
+   failing getrandom backend, as `elements/src/lib.rs` does.

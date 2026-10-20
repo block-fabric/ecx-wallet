@@ -2,12 +2,17 @@
 # No wasm-bindgen anywhere: each module's `.wasm` imports nothing (see README.md).
 [workspace]
 resolver = "2"
-members = ["abi", "vault", "vault-wasm"]
+members = ["abi", "vault", "vault-wasm", "elements", "elements-wasm"]
 
 [workspace.package]
 edition = "2021"
 publish = false
 license = "MIT"
+
+# crates.io lwk_common 0.19.0 with one line changed: getrandom's forced `js` backend becomes
+# `custom`, so Chain Module .wasm files import nothing (see core/README.md).
+[patch.crates-io]
+lwk_common = { path = "vendor/lwk_common" }
 
 [profile.release]
 opt-level = "z"
