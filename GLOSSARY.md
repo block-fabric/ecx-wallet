@@ -34,6 +34,10 @@ _Avoid_: Blinding key (ambiguous: also names the public half), viewing key
 The BIP300 number (1–255) that identifies a sidechain on eCash.
 _Avoid_: Sidechain number, sidechain id
 
+**Chain Entry**:
+The description of one sidechain that ships with a Wallet Base release: its Slot, its networks, and its default Sidechain Server and Official Apps on each.
+_Avoid_: Chain manifest, chain descriptor, network profile
+
 **Sidechain Server**:
 A server run by a sidechain's maintainers that knows that chain's rules and state and produces unsigned payloads for the Wallet Base to sign.
 _Avoid_: Adapter, backend, sidechain plugin
@@ -41,6 +45,10 @@ _Avoid_: Adapter, backend, sidechain plugin
 **Sidechain App**:
 A sidechain's own web UI that asks the Wallet Base to sign for that chain's specific features.
 _Avoid_: dApp, frontend, sidechain website
+
+**Official App**:
+A Sidechain App whose web origin its sidechain's Chain Entry lists as belonging to that chain's maintainers.
+_Avoid_: Verified app, trusted app
 
 **Provider**:
 The object the Wallet Base exposes to Sidechain Apps, through which they connect, ask for Grants, and send Signing Requests.
