@@ -4,7 +4,7 @@
   let { password = $bindable(""), repeat = $bindable("") }: { password: string; repeat: string } = $props();
 </script>
 
-<p>Set a password. It encrypts your recovery phrase on this device and unlocks the wallet.</p>
+<p>Set a password. It encrypts your Master Mnemonic on this device and unlocks the wallet.</p>
 <label>
   Password (at least {MIN_PASSWORD_LENGTH} characters)
   <input type="password" autocomplete="new-password" bind:value={password} data-new-password />

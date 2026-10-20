@@ -47,7 +47,7 @@
     error = "";
     const wrong = positions.find((n) => (typed[n] ?? "").trim().toLowerCase() !== words[n - 1]);
     if (wrong !== undefined) {
-      error = `Word #${wrong} doesn't match your recovery phrase.`;
+      error = `Word #${wrong} doesn't match your Master Mnemonic.`;
       return;
     }
     error = checkNewPassword(password, repeat);
@@ -73,7 +73,7 @@
     <a href="#/">Back</a>
   {:else if step === "show"}
     <p>
-      This is your recovery phrase. Write it down, in order, and keep it somewhere safe and offline.
+      This is your Master Mnemonic ({words.length} words). Write it down, in order, and keep it somewhere safe and offline.
       It will not be shown again. Anyone who has it controls your funds.
     </p>
     <ol class="phrase" data-phrase>
@@ -84,7 +84,7 @@
     <button onclick={phraseSaved} data-phrase-saved>I've written it down</button>
   {:else if step === "confirm"}
     <form onsubmit={submit}>
-      <p>To check your backup, type these words from your recovery phrase.</p>
+      <p>To check your backup, type these words from your Master Mnemonic.</p>
       {#each positions as n (n)}
         <label>
           Word #{n}

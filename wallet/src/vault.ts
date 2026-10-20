@@ -151,7 +151,7 @@ export function createVault(deps: VaultDeps) {
       try {
         canonical = (await deps.module()).canonicalMnemonic(masterMnemonic);
       } catch {
-        throw new VaultError("That is not a valid recovery phrase.");
+        throw new VaultError("That is not a valid Master Mnemonic (12 or 24 BIP39 words).");
       }
       await store({ masterMnemonic: canonical, passphrase }, password);
     },

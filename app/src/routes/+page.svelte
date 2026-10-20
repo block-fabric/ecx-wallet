@@ -62,13 +62,13 @@
   <h1>ECX Wallet</h1>
 
   {#if vaultState === "onboarding"}
-    <p>Set up your wallet. One recovery phrase controls your funds on eCash and its sidechains.</p>
+    <p>Set up your wallet. One Master Mnemonic (a 12- or 24-word phrase) controls your funds on eCash and its sidechains.</p>
     <p>
-      The wallet stores your recovery phrase only encrypted with your password, and never unencrypted.
+      The wallet stores your Master Mnemonic only encrypted with your password, and never unencrypted.
     </p>
     <nav class="actions">
       <a href="#/create" data-start-create>Create a new wallet</a>
-      <a href="#/import" data-start-import>Import a recovery phrase</a>
+      <a href="#/import" data-start-import>Import a Master Mnemonic</a>
     </nav>
   {:else if vaultState === "locked"}
     <form

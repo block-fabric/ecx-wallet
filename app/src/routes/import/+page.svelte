@@ -39,7 +39,7 @@
   {:else if exists === false}
     <form onsubmit={submit}>
       <label>
-        Recovery phrase (12 or 24 words)
+        Master Mnemonic (12 or 24 words)
         <textarea
           rows="3"
           autocomplete="off"
@@ -50,7 +50,7 @@
         ></textarea>
       </label>
       <label>
-        Passphrase (optional; only if you added one to this phrase)
+        Passphrase (optional; only if you added one to this Master Mnemonic)
         <input type="password" autocomplete="off" bind:value={passphrase} data-import-passphrase />
       </label>
       <PasswordFields bind:password bind:repeat />

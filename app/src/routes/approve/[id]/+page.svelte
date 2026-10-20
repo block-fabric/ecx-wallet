@@ -96,8 +96,8 @@
   </main>
 {:else if prompt.kind === "connect"}
   <main data-approval-ready>
-    <h1>Connection request</h1>
-    <p>This site wants to connect to your wallet:</p>
+    <h1>Grant request</h1>
+    <p>This site asks for a Grant to use your wallet:</p>
     <p class="origin"><strong data-origin>{prompt.origin}</strong></p>
 
     <h2>Sidechains (Slots)</h2>
