@@ -10,11 +10,33 @@ A browser wallet for eCash (ECX) and its drivechains, built as one shared base t
 The shared browser wallet every user runs: it holds keys, signs, presents the UI, and handles the eCash mainchain.
 _Avoid_: Core wallet, host wallet
 
+### Keys
+
+**Master Mnemonic**:
+The single BIP39 phrase a user backs up; the root of their L1 keys and of every Starter.
+_Avoid_: Seed phrase, recovery phrase, master seed
+
+**Starter**:
+The per-Slot mnemonic derived from the Master Mnemonic, from which one sidechain's keys are derived by that chain's own rules.
+_Avoid_: Sidechain seed, child mnemonic, sub-wallet
+
 ### Sidechains
+
+**Slot**:
+The BIP300 number (1–255) that identifies a sidechain on eCash.
+_Avoid_: Sidechain number, sidechain id
 
 **Sidechain Server**:
 A server run by a sidechain's maintainers that knows that chain's rules and state and produces unsigned payloads for the Wallet Base to sign.
 _Avoid_: Adapter, backend, sidechain plugin
+
+**Sidechain App**:
+A sidechain's own web UI that asks the Wallet Base to sign for that chain's specific features.
+_Avoid_: dApp, frontend, sidechain website
+
+**Grant**:
+A user's stored approval letting one Sidechain App, identified by its web origin, request certain methods on certain Slots.
+_Avoid_: Permission, connection, session
 
 ### Signing
 
