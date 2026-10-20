@@ -1,0 +1,23 @@
+[package]
+name = "ecx-elements"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "The Elements Chain Module (Slot 24, explicit-only). Pure Rust, no I/O, no ambient randomness."
+
+[dependencies]
+# Exact pins (spec #18, Build): LWK's signer/common on rust-elements, without lwk_wollet.
+# lwk_common is patched (core/vendor/lwk_common) so it doesn't force getrandom's `js` backend.
+lwk_signer = { version = "=0.19.0", default-features = false }
+lwk_common = { version = "=0.19.0", default-features = false }
+elements-miniscript = { version = "=0.4.0", default-features = false }
+# Only to build AddressParams' HRPs from the Chain Entry (elements doesn't re-export it).
+bech32 = { version = "=0.11.0" }
+# Only here to switch both vendored libsecp256k1 copies to their `lowmemory` tables.
+secp256k1-zkp = { version = "=0.11.2", default-features = false, features = ["lowmemory"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = { version = "=1.0.154" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "=0.2.17", default-features = false, features = ["custom"] }

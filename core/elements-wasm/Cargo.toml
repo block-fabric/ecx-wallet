@@ -1,0 +1,14 @@
+[package]
+name = "ecx-elements-wasm"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "Thin C-ABI bindings: the Elements Chain Module as elements.wasm."
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ecx-elements = { path = "../elements" }
+ecx-wasm-abi = { path = "../abi" }
