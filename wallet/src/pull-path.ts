@@ -2,6 +2,7 @@
 // its Chain Entry names for the network the Chain Module serves. The wallet derives and registers
 // the addresses (the server never hands any out), shows the state the server reports, and sends
 // by having the server build a Signing Request that then takes the same review as any other.
+import { slotChainModule } from "./accounts";
 import type { AssetAmount, ChainModule } from "./chain-module";
 import { ErrorCode, ProviderRpcError } from "./errors";
 import type { SidechainServer, TransferOrder } from "./sidechain-server";
@@ -14,6 +15,15 @@ export const WATCHED_RECEIVE_ADDRESSES = 20;
 export interface PullPathDeps extends SigningDeps {
   /** A client for the Sidechain Server at `url`. */
   sidechainServer(url: string): SidechainServer;
+}
+
+/** A Slot with its Chain Module and the Sidechain Server it talks to. */
+interface SlotServer {
+  slot: number;
+  module: ChainModule;
+  /** CAIP-2 chain the module serves. */
+  chain: string;
+  server: SidechainServer;
 }
 
 /** A Slot's balance as its Sidechain Server reports it. */
@@ -41,18 +51,15 @@ const BLIND_REFUSED =
 
 export function createPullPath(deps: PullPathDeps) {
   /** The Slot's Chain Module and its Sidechain Server (the Chain Entry's default for its network). */
-  async function connection(slot: number) {
-    const pending = deps.chainModule(slot);
-    if (pending === undefined) throw new Error(`No Chain Module for Slot ${slot}.`);
-    const module = await pending;
-    const { chain } = module.declare().binding;
+  async function slotServer(slot: number): Promise<SlotServer> {
+    const { module, chain } = await slotChainModule(deps.chainModule, slot);
     const network = Object.values(module.chainEntry().networks).find((n) => n.chain === chain);
     if (network === undefined) throw new Error(`Slot ${slot}'s Chain Entry has no network for ${chain}.`);
-    return { module, chain, server: deps.sidechainServer(network.sidechainServer) };
+    return { slot, module, chain, server: deps.sidechainServer(network.sidechainServer) };
   }
 
   /** Registers the Slot's watch data with its server; returns the server's id for it. */
-  async function register(slot: number, module: ChainModule, chain: string, server: SidechainServer): Promise<string> {
+  async function register({ slot, module, chain, server }: SlotServer): Promise<string> {
     const account = module.deriveAccount(await deps.starter(slot), { receive: WATCHED_RECEIVE_ADDRESSES });
     return server.register({ chain, descriptor: account.descriptor, addresses: account.receive });
   }
@@ -60,9 +67,9 @@ export function createPullPath(deps: PullPathDeps) {
   return {
     /** Registers the Slot's addresses and returns what its server reports for them. */
     async reportedState(slot: number): Promise<SlotReport> {
-      const { module, chain, server } = await connection(slot);
-      const watchId = await register(slot, module, chain, server);
-      const { balances, history } = await server.state(watchId);
+      const target = await slotServer(slot);
+      const { chain, server } = target;
+      const { balances, history } = await server.state(await register(target));
       return { slot, chain, server: server.url, balances, history };
     },
 
@@ -75,8 +82,9 @@ export function createPullPath(deps: PullPathDeps) {
     async send(slot: number, order: TransferOrder): Promise<SendResult> {
       if (!/^[1-9][0-9]*$/.test(order.amount)) throw new ProviderRpcError(ErrorCode.InvalidParams, "The amount must be a whole number of base units.");
       if (order.destination.trim() === "") throw new ProviderRpcError(ErrorCode.InvalidParams, "Enter a destination address.");
-      const { module: slotModule, chain, server } = await connection(slot);
-      const watchId = await register(slot, slotModule, chain, server);
+      const target = await slotServer(slot);
+      const { server } = target;
+      const watchId = await register(target);
       const built = await server.buildTransfer(watchId, { ...order, destination: order.destination.trim() });
 
       const request = parseSigningRequest(built, Math.floor(deps.now() / 1000));

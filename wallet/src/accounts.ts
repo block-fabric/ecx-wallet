@@ -34,6 +34,17 @@ export interface SlotAddress {
   address: string;
 }
 
+/** The Slot's Chain Module and the chain it serves; throws if the wallet has none for the Slot. */
+export async function slotChainModule(
+  chainModule: (slot: number) => Promise<ChainModule> | undefined,
+  slot: number,
+): Promise<{ module: ChainModule; chain: string }> {
+  const pending = chainModule(slot);
+  if (pending === undefined) throw new Error(`No Chain Module for Slot ${slot}.`);
+  const module = await pending;
+  return { module, chain: module.declare().binding.chain };
+}
+
 export interface AccountsDeps {
   /** The Slot's Starter; throws while the wallet is locked. */
   starter(slot: number): Promise<string>;
@@ -44,10 +55,7 @@ export function createAccounts({ starter, chainModule }: AccountsDeps) {
   return {
     /** The Slot's receive address(es), derived by its Chain Module from its Starter alone. */
     async receiveAddresses(slot: number): Promise<SlotAddress[]> {
-      const pending = chainModule(slot);
-      if (pending === undefined) throw new Error(`No Chain Module for Slot ${slot}.`);
-      const module = await pending;
-      const { chain } = module.declare().binding;
+      const { module, chain } = await slotChainModule(chainModule, slot);
       const account = module.deriveAccount(await starter(slot), { receive: 1 });
       return account.receive.map(({ address }) => ({ chain, address }));
     },
