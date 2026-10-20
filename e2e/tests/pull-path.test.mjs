@@ -9,7 +9,7 @@
 // in sidechain-servers.test.
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { BROWSERS, launchWallet, openWalletPage, serveEsplora, serveL1Esplora, setUpWallet } from "../harness.mjs";
+import { BROWSERS, launchWallet, openWalletPage, relock, serveEsplora, serveL1Esplora, setUpWallet, WALLET_PASSWORD } from "../harness.mjs";
 
 const GENESIS = "a7754ce0debc40baddbd8c47e79d19209685f22c63edaaf8b69cf54116374d7f";
 const RECEIVE_0 = "elements1qew44aehkjstjm56ng2rjrz57vwxh5g9su6dlpm";
@@ -53,12 +53,12 @@ const L1_ESPLORA = {
   },
 };
 
-/** One account card's reported balances (or why there are none), as a user reads them. */
+/** One account card's fresh reported balances (or why there are none), as a user reads them. */
 async function readHome(session, account = "24") {
   const page = await session.openPage("index.html#/");
   await page.waitForSelector("[data-wallet-ready]", { timeout: 10_000 });
   const card = `[data-account="${account}"]`;
-  await page.waitForSelector(`${card} :is([data-balance], [data-no-balance], [data-balance-error])`, { timeout: 20_000 });
+  await page.waitForSelector(`${card}:not([data-refreshing]) :is([data-balance], [data-no-balance], [data-balance-error])`, { timeout: 20_000 });
   const shown = await page.evaluate((card) => {
     const text = (e) => e?.textContent.replace(/\s+/g, " ").trim();
     const within = document.querySelector(card);
@@ -102,6 +102,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
 
   test("a server on another chain gives that Slot a hard error and no balance", async () => {
     ESPLORA.identityBlock = { height: 0, hash: "00".repeat(32) };
+    await relock(session); // the wallet checks a server's chain once per session
     try {
       const shown = await readHome(session);
       assert.deepEqual(shown.balances, []);
@@ -126,6 +127,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
 
   test("an eCash server on Bitcoin's chain is a hard error for the eCash card only", async () => {
     L1_ESPLORA.identityBlock = { ...L1_FORK_BLOCK, hash: BITCOIN_AT_FORK };
+    await relock(session);
     try {
       const shown = await readHome(session, "l1");
       assert.deepEqual(shown.balances, []);
@@ -138,6 +140,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
 
   test("an eCash server that hasn't reached the fork block says so", async () => {
     L1_ESPLORA.identityBlock = { height: 0, hash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f" };
+    await relock(session);
     try {
       const shown = await readHome(session, "l1");
       assert.deepEqual(shown.balances, []);
@@ -145,6 +148,53 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     } finally {
       L1_ESPLORA.identityBlock = L1_FORK_BLOCK;
     }
+  });
+
+  test("a server's chain is checked once per session, and again after a lock", async () => {
+    await relock(session);
+    const checks = () => l1Stub.requests().filter((r) => r === "/block-height/967680").length;
+    const before = checks();
+    await readHome(session, "l1");
+    await readHome(session, "l1");
+    assert.equal(checks(), before, "relock's unlock already checked it");
+    await relock(session);
+    assert.equal(checks(), before + 1, "checked again after the lock");
+  });
+
+  test("the home page shows this session's last balance at once, says it's refreshing, then shows the new one", async () => {
+    await readHome(session, "l1"); // 102 500 sats, now remembered
+    L1_ESPLORA.delayMs = 1500;
+    L1_ESPLORA.utxos[L1_CHANGE_0][0].value = 7500;
+    try {
+      const page = await session.openPage("index.html#/");
+      const card = '[data-account="l1"]';
+      await page.waitForSelector(`${card}[data-refreshing] [data-balance]`, { timeout: 10_000 });
+      const stale = await page.$eval(card, (e) => ({
+        balance: e.querySelector("[data-balance]").textContent.replace(/\s+/g, " ").trim(),
+        readAt: e.querySelector("[data-read-at]").textContent.replace(/\s+/g, " ").trim(),
+      }));
+      assert.equal(stale.balance, "102500 sats");
+      assert.match(stale.readAt, /^Last read at .+; refreshing…$/);
+      await page.waitForSelector(`${card}:not([data-refreshing]) [data-balance]`, { timeout: 20_000 });
+      assert.equal(await page.$eval(`${card} [data-balance]`, (e) => e.textContent.replace(/\s+/g, " ").trim()), "107500 sats");
+      assert.equal(await page.$(`${card} [data-read-at]`), null);
+      await page.close();
+    } finally {
+      L1_ESPLORA.delayMs = 0;
+      L1_ESPLORA.utxos[L1_CHANGE_0][0].value = 2500;
+    }
+  });
+
+  test("a lock forgets the last balances", async () => {
+    await readHome(session, "l1");
+    // A screen that reads no balance itself, so nothing refills the cache behind the test's back.
+    const page = await openWalletPage(session, "#/grants");
+    const ask = (message) => page.evaluate((m) => chrome.runtime.sendMessage(m), message);
+    assert.ok((await ask({ kind: "l1.cached" })).result, "remembered while unlocked");
+    await ask({ kind: "vault.lock" });
+    await ask({ kind: "vault.unlock", password: WALLET_PASSWORD });
+    assert.equal((await ask({ kind: "l1.cached" })).result, null, "forgotten by the lock");
+    await page.close();
   });
 
   test("Send says sending isn't available yet, and asks the user for no approval", async () => {

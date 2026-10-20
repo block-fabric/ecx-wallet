@@ -253,6 +253,8 @@ export interface DepositOrder {
 export interface L1Module extends ChainModule<L1AccountKey> {
   /** The Slot's Treasury script on this network, hex. */
   treasuryScript(slot: number): string;
+  /** A raw transaction's (hex) txid. Throws CoreModuleError if it isn't one. */
+  txid(tx: string): string;
   /** An unsigned M5 (base64 PSBT). Throws ChainModuleRefusal (e.g. `insufficientFunds`). */
   buildDeposit(order: DepositOrder, key: L1AccountKey): string;
   /** A signed PSBT → the raw transaction (hex) and its txid. Throws ChainModuleRefusal. */
@@ -301,6 +303,7 @@ export async function loadL1Module(bytes: BufferSource): Promise<L1Module> {
   return {
     ...module,
     treasuryScript: (slot) => m.callText("treasury_script", slot),
+    txid: (tx) => m.callText("txid", tx),
     buildDeposit: (order, key) => refusals(() => json<{ psbt: string }>("build_deposit", JSON.stringify(order), key).psbt),
     finalize: (payload) => refusals(() => json<{ tx: string; txid: string }>("finalize", payload)),
   };

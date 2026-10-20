@@ -27,7 +27,7 @@ mod sign;
 
 pub use chain_entry::{chain_entry, ChainEntry, NetworkEntry, OpDrivechain, ServerApi, SidechainServerEntry};
 pub use decode::{decode, ClearInput, ClearOutput, ClearView, DangerousMode, Decoded, Destination, VerifiableFacts};
-pub use deposit::{build_deposit, treasury_script, Built, Coin, DepositOrder, PrevOut};
+pub use deposit::{build_deposit, treasury_script, txid, Built, Coin, DepositOrder, PrevOut};
 pub use psbt::{check, AssetAmount, OwnedInput, Refusal, RefusalCode};
 pub use sign::{finalize, sign, Finalized};
 

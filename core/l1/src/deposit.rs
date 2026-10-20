@@ -81,6 +81,11 @@ pub fn treasury_script(slot: u32) -> Result<String, String> {
     Ok(hex(treasury_script_of(slot).as_bytes()))
 }
 
+/// A raw transaction's txid: what the wallet checks before it keeps a transaction for the session.
+pub fn txid(tx: &str) -> Result<String, String> {
+    deserialize_hex::<Transaction>(tx).map(|tx| tx.compute_txid().to_string()).map_err(|e| format!("not a transaction: {e}"))
+}
+
 struct Spendable {
     outpoint: OutPoint,
     tx: Transaction,

@@ -1,26 +1,24 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { l1Reported, startDeposit, type ChainReport } from "$lib/background";
+  import { l1Cached, l1Reported, showReport, startDeposit, type ChainReport, type ShownReport } from "$lib/background";
   import Icon from "$lib/Icon.svelte";
   import TopBar from "$lib/TopBar.svelte";
 
   const slot = Number(page.params.slot);
-  /** What eCash's server reports, or why it couldn't be read; undefined while scanning. */
-  let report = $state<ChainReport | { error: string } | undefined>(undefined);
+  /** What eCash's server reports (this session's last report while scanning), or why it couldn't be read. */
+  let shown = $state<ShownReport>({ refreshing: true });
   let amount = $state("");
   let busy = $state(false);
   let done = $state<{ txid: string; server: string } | undefined>(undefined);
   let error = $state("");
 
   /** The confirmed sats eCash's server reports: the only coins a Deposit spends. */
-  const available = $derived(report !== undefined && !("error" in report) ? (report.balances.find((b) => b.asset === "")?.amount ?? "0") : undefined);
+  const available = (report: ChainReport) => report.balances.find((b) => b.asset === "")?.amount ?? "0";
+  const readAt = (report: ChainReport) => new Date(report.readAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   // Only shown to help pick an amount: the Deposit scans the coins again itself, so the form
   // doesn't wait for this (the server can take tens of seconds over 40 addresses).
-  l1Reported().then(
-    (r) => (report = r),
-    (e) => (report = { error: (e as Error).message }),
-  );
+  showReport(l1Cached, l1Reported, (s) => (shown = s));
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
@@ -42,15 +40,21 @@
 
   <div class="card">
     <span class="muted small">Available on eCash (confirmed)</span>
-    {#if report === undefined}
+    {#if shown.report}
+      <strong class="amount" data-deposit-available>{available(shown.report)} sats</strong>
+      <p class="reported">Reported by {shown.report.server}. This wallet doesn't verify it.</p>
+    {/if}
+    {#if shown.refreshing}
       <p class="loading small" data-deposit-scanning>
-        <span class="spinner"></span>Scanning your eCash addresses for confirmed coins…
+        <span class="spinner"></span>
+        {shown.report
+          ? `Last read at ${readAt(shown.report)}; scanning your eCash addresses again…`
+          : "Scanning your eCash addresses for confirmed coins…"}
       </p>
-    {:else if "error" in report}
-      <p class="error small" data-balance-error>Balance unavailable: {report.error}</p>
-    {:else}
-      <strong class="amount" data-deposit-available>{available} sats</strong>
-      <p class="reported">Reported by {report.server}. This wallet doesn't verify it.</p>
+    {:else if shown.error !== undefined}
+      <p class="error small" data-balance-error>
+        {shown.report ? `Couldn't refresh (showing ${readAt(shown.report)}'s)` : "Balance unavailable"}: {shown.error}
+      </p>
     {/if}
   </div>
 

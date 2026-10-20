@@ -84,6 +84,7 @@ export {
   type SendResult,
   type SlotReport,
 } from "./pull-path";
+export { CACHE_PREFIX, cacheKey, type SessionCache } from "./cache";
 export { esploraClient, type EsploraClient, type EsploraTx, type EsploraTxStatus, type EsploraUtxo } from "./esplora";
 export { findTreasury, TreasuryError, type Treasury } from "./treasury";
 export {

@@ -74,6 +74,39 @@ export const l1Account = () => send<{ addresses: SlotAddress[] }>({ kind: "l1.ac
 /** What eCash's server reports for the wallet's L1 addresses. */
 export const l1Reported = () => send<ChainReport>({ kind: "l1.reported" });
 
+/** eCash's last report this session (null if none), to show while `l1Reported` refreshes it. */
+export const l1Cached = () => send<ChainReport | null>({ kind: "l1.cached" });
+
+/** The Slot's last report this session (null if none), to show while `reportedState` refreshes it. */
+export const cachedState = (slot: number) => send<SlotReport | null>({ kind: "accounts.cached", slot });
+
+/**
+ * A card's balance: the last report shown at once (if this session has one) while a fresh one is
+ * read; `error` if that failed (the last report, if any, stays, labelled with when it was read).
+ */
+export interface ShownReport<R extends ChainReport = ChainReport> {
+  report?: R;
+  refreshing: boolean;
+  error?: string;
+}
+
+/** Reads `cached` then `fresh`, calling `show` with each state in turn. */
+export function showReport<R extends ChainReport>(cached: () => Promise<R | null>, fresh: () => Promise<R>, show: (shown: ShownReport<R>) => void) {
+  let current: ShownReport<R> = { refreshing: true };
+  const update = (next: ShownReport<R>) => show((current = next));
+  update(current);
+  cached().then(
+    (report) => {
+      if (report && current.refreshing && current.report === undefined) update({ ...current, report });
+    },
+    () => {},
+  );
+  fresh().then(
+    (report) => update({ report, refreshing: false }),
+    (e) => update({ report: current.report, refreshing: false, error: (e as Error).message }),
+  );
+}
+
 /** Registers the Slot's addresses with its Sidechain Server and returns what the server reports. */
 export const reportedState = (slot: number) => send<SlotReport>({ kind: "accounts.reported", slot });
 

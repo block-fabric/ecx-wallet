@@ -9,6 +9,7 @@
 // Afterwards the deposit waits: 100 L1 confirmations, then for someone running the Slot's node to
 // import it (crediting isn't automatic on Elements), then it shows on the Slot's server.
 import { createKeyRouting, type ChainModules, type Keys } from "./accounts";
+import { cacheKey, type SessionCache } from "./cache";
 import { ChainModuleRefusal, NATIVE_COIN, type ChainEntry, type ClearView, type DepositCredit, type L1AccountKey, type L1Module, type NetworkEntry } from "./chain-module";
 import { ErrorCode, ProviderRpcError } from "./errors";
 import { QUERIES_AT_ONCE, type EsploraClient } from "./esplora";
@@ -81,6 +82,8 @@ export interface DepositDeps extends Keys, ChainModules {
   openSigningApproval(context: { origin: string; chain: string }): SigningApproval;
   isUnlocked(): Promise<boolean>;
   store: DepositStore;
+  /** Where raw transactions are kept for the session (each checked against its txid first). */
+  cache?: SessionCache;
   /** Milliseconds since the epoch. */
   now(): number;
 }
@@ -119,6 +122,23 @@ export function createDeposits(deps: DepositDeps) {
     return deps.esplora(target.entry, target.network);
   }
 
+  /** A raw transaction, from the session's cache or else the server; kept only once it hashes to `txid`. */
+  async function txHex(server: EsploraClient, module: L1Module, txid: string): Promise<string> {
+    const key = cacheKey.tx(txid);
+    const cached = await deps.cache?.get<string>(key);
+    if (cached !== undefined) return cached;
+    const tx = await server.txHex(txid);
+    let actual: string | undefined;
+    try {
+      actual = module.txid(tx);
+    } catch {
+      // Not a transaction: refused below.
+    }
+    if (actual !== txid) throw new SidechainServerError(server.url, `The Sidechain Server at ${server.url} sent another transaction than ${txid}.`);
+    await deps.cache?.set(key, tx);
+    return tx;
+  }
+
   /** The account's confirmed coins, each with its whole transaction, and its first unused change index. */
   async function coins(l1: EsploraClient, module: L1Module, key: L1AccountKey) {
     const account = module.deriveAccount(key, { receive: WATCHED_RECEIVE_ADDRESSES, change: WATCHED_CHANGE_ADDRESSES });
@@ -137,7 +157,7 @@ export function createDeposits(deps: DepositDeps) {
       );
     }
     const txs = new Map<string, Promise<string>>();
-    const tx = (txid: string) => txs.get(txid) ?? txs.set(txid, l1.txHex(txid)).get(txid)!;
+    const tx = (txid: string) => txs.get(txid) ?? txs.set(txid, txHex(l1, module, txid)).get(txid)!;
     const coins = await Promise.all(found.flat().map(async (coin) => ({ tx: await tx(coin.txid), vout: coin.vout, chain: coin.chain, index: coin.index })));
 
     let changeIndex: number | undefined;
@@ -199,7 +219,7 @@ export function createDeposits(deps: DepositDeps) {
         destination: destination.destination,
         feeRate: rate,
         coins: available,
-        treasury: treasury === undefined ? null : { tx: await server.txHex(treasury.txid), vout: treasury.vout },
+        treasury: treasury === undefined ? null : { tx: await txHex(server, l1.module, treasury.txid), vout: treasury.vout },
         changeIndex,
       };
       const psbt = await refusing(async () => l1.module.buildDeposit(order, key));

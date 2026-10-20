@@ -148,6 +148,13 @@ fn finalize_refuses_an_unsigned_or_tampered_psbt() {
 }
 
 #[test]
+fn txid_hashes_a_raw_transaction() {
+    let tx = paying(1, &[(&receive_0(), 1_000)]);
+    assert_eq!(ecx_l1::txid(&tx_hex(&tx)).unwrap(), tx.compute_txid().to_string());
+    assert!(ecx_l1::txid("00").is_err());
+}
+
+#[test]
 fn coins_are_chosen_largest_first_and_only_as_many_as_needed() {
     let psbt = Psbt::from_str(&built(&order(50_000, vec![coin(1, 20_000), coin(2, 90_000), coin(3, 40_000)], None))).unwrap();
     assert_eq!(psbt.unsigned_tx.input.len(), 1);

@@ -68,6 +68,16 @@ the extension build turns those URLs into `host_permissions` and CSP `connect-sr
 The home page (`l1.reported`, `accounts.reported`) shows the balance per asset, labelled "Reported
 by <server URL>"; the Send screen is `#/send/<slot>` (`send.start`), for Slots only.
 
+Session cache (`wallet/src/cache.ts`): to answer faster, the background keeps three things in
+`storage.session` (memory only), read and written only while unlocked, and forgotten on every lock:
+a server's passed identity check (once per URL, as ADR 0002 has it; a failure is never kept), the
+last balance each chain's server reported (`l1.cached`, `accounts.cached`: shown at once, marked
+"Last read at …; refreshing…" and `data-refreshing` on the card, until the fresh one arrives), and
+raw transactions, kept only once the L1 module hashes them to their txid. Nothing else a Deposit is
+built from is cached: its coins, Treasury, fee rate and confirmations are always read fresh. Esplora
+lookups run 20 at once (`QUERIES_AT_ONCE`). Tests that change a server's chain lock and unlock first
+(`relock(session)` in the harness).
+
 Deposit (`wallet/src/deposit.ts`, #31; docs/adr/0004): "Deposit from eCash" on a Slot card opens
 `#/deposit/<slot>` (`deposit.start`). The Slot's Chain Module says what the Deposit is credited to
 (`depositDestination`: Elements' first receive address as UTF-8, minimum 3,000 sats, credit exactly

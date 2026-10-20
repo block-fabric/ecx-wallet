@@ -4,6 +4,7 @@
 //
 // `esploraClient` is the API itself, endpoint by endpoint, each answer checked for shape (Deposit
 // uses it directly on eCash's server); `esploraServer` is the pull path's view of it.
+import { cacheKey, type SessionCache } from "./cache";
 import { NATIVE_COIN, type AssetAmount, type IdentityBlock } from "./chain-module";
 import { serverFetch, SidechainServerError, type Fetch, type SidechainServer } from "./sidechain-server";
 
@@ -19,6 +20,8 @@ export interface EsploraServerConfig {
   identityBlock: IdentityBlock;
   /** The chain's display name, for messages. */
   chainName: string;
+  /** Where a passed identity check is remembered for the session. */
+  cache?: SessionCache;
 }
 
 /** An unspent output, as Esplora lists it for an address or a script. */
@@ -53,7 +56,7 @@ const HEX = /^[0-9a-f]*$/;
 const HASH = /^[0-9a-f]{64}$/;
 const isCount = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) >= 0;
 
-export function esploraClient({ url: baseUrl, identityBlock, chainName }: EsploraServerConfig, fetchFn: Fetch) {
+export function esploraClient({ url: baseUrl, identityBlock, chainName, cache }: EsploraServerConfig, fetchFn: Fetch) {
   const url = baseUrl.replace(/\/+$/, "");
   const malformed = (what: string) => new SidechainServerError(url, `The Sidechain Server at ${url} sent a malformed ${what}.`);
 
@@ -120,9 +123,12 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName }: Esplor
     /**
      * The identity check: Esplora has no `info`, but the block at the identity height proves which
      * chain it's on. For a fork (eCash), that's the first block after it: a server for the chain it
-     * forked from, or for a later fork of it, has another block there.
+     * forked from, or for a later fork of it, has another block there. A pass is remembered for
+     * the session (ADR 0002: on first contact and after every URL change); a failure never is.
      */
     async checkChain(): Promise<void> {
+      const passed = cacheKey.identity(url, identityBlock);
+      if ((await cache?.get<boolean>(passed)) === true) return;
       const { height, hash: expected } = identityBlock;
       const hash = await this.blockHash(height);
       if (hash === undefined) {
@@ -135,6 +141,7 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName }: Esplor
         const which = height === 0 ? "genesis block" : `block ${height}`;
         throw new SidechainServerError(url, `The Sidechain Server at ${url} is on another chain: its ${which} is ${hash}, not ${chainName}'s ${expected}.`);
       }
+      await cache?.set(passed, true);
     },
 
     async tipHeight(): Promise<number> {

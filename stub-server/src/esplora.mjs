@@ -13,7 +13,7 @@ import { parseTx, scripthash } from "./bitcoin-tx.mjs";
  * @typedef {{ identityBlock: { height: number, hash: string }, blocks?: Record<number, string>,
  *   tipHeight?: number, utxos?: Record<string, UtxoFixture[]>, addressTxCounts?: Record<string, number>,
  *   txs?: TxFixture[], feeEstimates?: Record<string, number>, refuseBroadcast?: string,
- *   delayMs?: number }} EsploraStubConfig
+ *   delayMs?: number, txHexOverrides?: Record<string, string> }} EsploraStubConfig
  */
 
 /**
@@ -26,7 +26,7 @@ import { parseTx, scripthash } from "./bitcoin-tx.mjs";
  * - from the raw transactions in `config.txs` (confirmed or in the mempool), as an indexer would:
  *   `GET /scripthash/{sha256}/utxo` (outputs no listed transaction spends), `GET /tx/{txid}`
  *   (with each input's `prevout`, when its transaction is listed), `/tx/{txid}/hex` and
- *   `/tx/{txid}/status`;
+ *   `/tx/{txid}/status` (`config.txHexOverrides[txid]` answers `/hex` instead, as a lying server would);
  * - `GET /fee-estimates`: `config.feeEstimates` (404 if absent);
  * - `POST /tx`: parses the transaction, adds it to `config.txs` unconfirmed and answers its txid,
  *   or refuses with `config.refuseBroadcast`.
@@ -127,7 +127,7 @@ export function createEsploraStub(config) {
       const txs = indexed();
       const found = txs.get(tx[1]);
       if (found === undefined) return [404, "Transaction not found"];
-      if (tx[2] === "/hex") return [200, found.fixture.hex];
+      if (tx[2] === "/hex") return [200, config.txHexOverrides?.[tx[1]] ?? found.fixture.hex];
       if (tx[2] === "/status") return [200, status(found.fixture)];
       return [200, txJson(found, txs)];
     }

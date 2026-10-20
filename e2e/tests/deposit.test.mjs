@@ -52,6 +52,7 @@ const l1Config = (txs) => ({
   addressTxCounts: {},
   refuseBroadcast: undefined,
   delayMs: 0,
+  txHexOverrides: {},
 });
 const ESPLORA = { identityBlock: { height: 0, hash: GENESIS }, utxos: {} };
 
@@ -137,15 +138,16 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     await l1Stub?.close();
   });
 
-  test("the Deposit screen takes an amount at once, and says it's still scanning for the balance", async () => {
+  test("the Deposit screen takes an amount at once, shows the last balance, and says it's still scanning", async () => {
     L1.delayMs = 1500;
     try {
       const page = await openWalletPage(session, "#/deposit/24");
-      assert.ok(await page.$("[data-deposit-scanning]"), "the scan is shown as in progress");
-      assert.ok(await page.$("[data-deposit-amount]"), "the form doesn't wait for it");
-      await page.waitForSelector("[data-deposit-available]", { timeout: 20_000 });
+      assert.ok(await page.$("[data-deposit-amount]"), "the form doesn't wait for the scan");
+      await page.waitForSelector("[data-deposit-scanning]", { timeout: 5_000 });
+      await page.waitForSelector("[data-deposit-available]", { timeout: 5_000 }); // this session's last, from the home page
+      assert.match(await page.$eval("[data-deposit-scanning]", (e) => e.textContent.trim()), /^Last read at .+; scanning your eCash addresses again…$/);
+      await page.waitForFunction(() => document.querySelector("[data-deposit-scanning]") === null, { timeout: 20_000 });
       assert.match(await page.$eval("[data-deposit-available]", (e) => e.textContent), /^250000 sats$/);
-      assert.equal(await page.$("[data-deposit-scanning]"), null);
       await page.close();
     } finally {
       L1.delayMs = 0;
@@ -240,6 +242,8 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       await approval.click("[data-reject]");
       assert.equal((await outcome(page)).error, "The user rejected the request.");
       await page.close();
+      const fetched = l1Stub.requests().filter((r) => r === `/tx/${FUNDING.txid}/hex`).length;
+      assert.equal(fetched, 1, "the coin's transaction was fetched for the first Deposit only, then kept");
     });
   });
 
@@ -260,6 +264,23 @@ for (const browserName of BROWSERS) describe(browserName, () => {
         await page.close();
       });
     }
+
+    test("a server that sends another transaction than the one asked for is refused, and nothing is kept", async () => {
+      // A Treasury this session hasn't fetched yet (the earlier ones' transactions are kept).
+      const unseen = tx("f6", [{ value: 100000, script: TREASURY }, { value: 0, script: ADDRESS_OUTPUT }]);
+      L1.txs = [FUNDING, unseen];
+      L1.txHexOverrides = { [unseen.txid]: OTHER_TREASURY_TX.hex };
+      const page = await startDeposit(session, "5000");
+      assert.equal((await outcome(page)).error, `The Sidechain Server at http://127.0.0.1:24000 sent another transaction than ${unseen.txid}.`);
+      // Answering truthfully now, it gets the real one: the lie wasn't kept.
+      L1.txHexOverrides = {};
+      const retry = await startDeposit(session, "5000");
+      await (await session.approvalWindows().then(() => session.waitForApprovalWindow({ timeout: 20_000 }))).click("[data-reject]");
+      assert.equal((await outcome(retry)).error, "The user rejected the request.");
+      await retry.close();
+      assert.equal((await session.approvalWindows()).length, 0);
+      await page.close();
+    });
 
     test("a first Deposit (no Treasury, the activation pinned) warns that the funds can be lost; rejecting sends nothing", async () => {
       L1.txs = [FUNDING];

@@ -44,6 +44,12 @@ pub extern "C" fn treasury_script(slot: u32) -> i32 {
     ret_text(ecx_l1::treasury_script(slot))
 }
 
+/// Raw transaction (hex) → its txid.
+#[no_mangle]
+pub unsafe extern "C" fn txid(tx: *const u8, tx_len: usize) -> i32 {
+    ret_text(text(tx, tx_len).and_then(ecx_l1::txid))
+}
+
 /// Deposit order (JSON) + L1 Account Key → `{ psbt }` (an unsigned M5) as JSON, or a refusal.
 #[no_mangle]
 pub unsafe extern "C" fn build_deposit(order: *const u8, order_len: usize, key: *const u8, key_len: usize) -> i32 {

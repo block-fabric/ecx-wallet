@@ -1,18 +1,21 @@
 <script lang="ts">
   import {
+    cachedState,
     dismissDeposit,
     l1Account,
+    l1Cached,
     l1Reported,
     listAccounts,
     listDeposits,
     lockVault,
     reportedState,
+    showReport,
     unlockVault,
     vaultStatus,
     type ChainReport,
     type DepositStatus,
+    type ShownReport,
     type SlotAccount,
-    type SlotReport,
     type VaultStatus,
   } from "$lib/background";
   import { shortAsset } from "$lib/asset";
@@ -24,9 +27,9 @@
   let accounts = $state<SlotAccount[] | undefined>(undefined);
   /** eCash's own receive address, and what its server reports. */
   let l1Address = $state<{ chain: string; address: string } | undefined>(undefined);
-  let l1Report = $state<ChainReport | { error: string } | undefined>(undefined);
-  /** Per Slot: what its Sidechain Server reports, or why it couldn't be read. */
-  let reports = $state<Record<number, SlotReport | { error: string }>>({});
+  let l1Report = $state<ShownReport | undefined>(undefined);
+  /** Per Slot: what its Sidechain Server reports (the last report while refreshing), or why it couldn't be read. */
+  let reports = $state<Record<number, ShownReport>>({});
   /** Per Slot: its pending Deposits, or why their status couldn't be read. */
   let deposits = $state<Record<number, DepositStatus[] | { error: string }>>({});
   let password = $state("");
@@ -51,18 +54,12 @@
       ({ addresses }) => (l1Address = addresses[0]),
       (e) => (error = (e as Error).message),
     );
-    l1Reported().then(
-      (r) => (l1Report = r),
-      (e) => (l1Report = { error: (e as Error).message }),
-    );
+    showReport(l1Cached, l1Reported, (shown) => (l1Report = shown));
     listAccounts().then(
       (a) => {
         accounts = a;
         for (const { slot } of a) {
-          reportedState(slot).then(
-            (r) => (reports[slot] = r),
-            (e) => (reports[slot] = { error: (e as Error).message }),
-          );
+          showReport(() => cachedState(slot), () => reportedState(slot), (shown) => (reports[slot] = shown));
           loadDeposits(slot);
         }
       },
@@ -81,6 +78,8 @@
     await dismissDeposit(txid).catch((e) => (error = (e as Error).message));
     loadDeposits(slot);
   }
+
+  const readAt = (report: ChainReport) => new Date(report.readAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   /** Where a Deposit stands, in words. */
   function depositState(d: DepositStatus): string {
@@ -112,11 +111,17 @@
   }
 </script>
 
-{#snippet reported(report: ChainReport | { error: string } | undefined)}
+{#snippet reported(shown: ShownReport | undefined)}
+  {@const report = shown?.report}
+  {#if shown?.error !== undefined}
+    <p class="error" data-balance-error>
+      {report ? "Couldn't refresh the balance" : "Balance unavailable"}: {shown.error}
+    </p>
+  {/if}
   {#if report === undefined}
-    <p class="loading small"><span class="spinner"></span>Asking the Sidechain Server for your balance…</p>
-  {:else if "error" in report}
-    <p class="error" data-balance-error>Balance unavailable: {report.error}</p>
+    {#if shown?.error === undefined}
+      <p class="loading small"><span class="spinner"></span>Asking the Sidechain Server for your balance…</p>
+    {/if}
   {:else}
     <ul class="balances">
       {#each report.balances as balance (balance.asset)}
@@ -135,6 +140,12 @@
     <p class="reported" data-reported-by>
       Reported by {report.server}. This wallet doesn't verify it.
     </p>
+    {#if shown?.refreshing || shown?.error !== undefined}
+      <p class="muted small" data-read-at>
+        {#if shown?.refreshing}<span class="spinner"></span>{/if}
+        Last read at {readAt(report)}{shown?.refreshing ? "; refreshing…" : "."}
+      </p>
+    {/if}
   {/if}
 {/snippet}
 
@@ -224,7 +235,7 @@
     <TopBar title="ECX Wallet" actions={lockButton} />
     <p class="muted small status"><span class="dot"></span>Your wallet is unlocked. It locks itself after 15 minutes without use.</p>
     {#if l1Address !== undefined}
-      <section class="card" data-account="l1">
+      <section class="card" data-account="l1" data-refreshing={l1Report?.refreshing !== false ? "" : undefined}>
         <div class="account-head">
           <h2>eCash</h2>
           <span class="chip" data-account-chain>{l1Address.chain}</span>
@@ -236,14 +247,19 @@
     {#each accounts ?? [] as account (account.slot)}
       {#each account.addresses.slice(0, 1) as { chain, address } (address)}
         {@const report = reports[account.slot]}
-        <section class="card" data-account={account.slot} data-deposits-ready={deposits[account.slot] !== undefined ? "" : undefined}>
+        <section
+          class="card"
+          data-account={account.slot}
+          data-refreshing={report?.refreshing !== false ? "" : undefined}
+          data-deposits-ready={deposits[account.slot] !== undefined ? "" : undefined}
+        >
           <div class="account-head">
             <h2>Slot {account.slot}</h2>
             <span class="chip" data-account-chain>{chain}</span>
           </div>
           {@render reported(report)}
           {@render pendingDeposits(account.slot)}
-          {#if report !== undefined && !("error" in report)}
+          {#if report?.report !== undefined && report.error === undefined}
             <a class="button primary block" href="#/send/{account.slot}" data-send-link><Icon name="send" /> Send</a>
           {/if}
           <a class="button block" href="#/deposit/{account.slot}" data-deposit-link><Icon name="deposit" /> Deposit from eCash</a>

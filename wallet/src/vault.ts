@@ -26,7 +26,7 @@ export interface VaultDeps {
   random(length: number): Uint8Array;
   now(): number;
   /** Called with the new auto-lock deadline (ms since epoch) whenever it moves, or null on lock. */
-  onDeadline?(deadline: number | null): void;
+  onDeadline?(deadline: number | null): void | Promise<void>;
 }
 
 export interface VaultStatus {
@@ -87,7 +87,7 @@ export function createVault(deps: VaultDeps) {
   async function lock(): Promise<void> {
     await session.remove(SESSION_KEY);
     await session.remove(SESSION_DEADLINE);
-    deps.onDeadline?.(null);
+    await deps.onDeadline?.(null);
   }
 
   /** Starts or extends the unlocked period with `key` (raw AES key bytes). */
@@ -95,7 +95,7 @@ export function createVault(deps: VaultDeps) {
     const deadline = deps.now() + (await autoLockMs());
     await session.set(SESSION_KEY, toBase64(key));
     await session.set(SESSION_DEADLINE, deadline);
-    deps.onDeadline?.(deadline);
+    await deps.onDeadline?.(deadline);
   }
 
   /** The vault's secrets, if it is unlocked now; locks it if the deadline has passed. */

@@ -40,6 +40,9 @@ export type BackgroundMessage =
   | { kind: "accounts.list" }
   | { kind: "l1.account" }
   | { kind: "l1.reported" }
+  // The last reports this session, to show while the above refresh them: wallet pages only.
+  | { kind: "l1.cached" }
+  | { kind: "accounts.cached"; slot: number }
   // Pull path (what the Slot's server reports for the addresses the wallet watches): wallet pages only.
   | { kind: "accounts.reported"; slot: number }
   // The wallet's own Send (pull path): wallet pages only.
