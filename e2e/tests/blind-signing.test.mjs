@@ -61,7 +61,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
 
   /** `answering`'s answer; fails (closing it) if an approval window opens first. */
   async function answeredWithoutWindow(answering) {
-    const window = session.waitForApprovalWindow({ timeout: 5_000 }).then(
+    const window = session.waitForApprovalWindow({ timeout: 3_000 }).then(
       async (approval) => {
         await approval.close();
         return "an approval window opened";
