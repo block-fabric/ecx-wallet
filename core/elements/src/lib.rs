@@ -4,6 +4,7 @@
 //! - [`declare`] reports the binding the module serves;
 //! - [`derive_account`] turns the Slot 24 Starter into addresses and watch data.
 //!
+//! - [`check`] refuses, without the Starter, what the wallet must never sign;
 //! - [`decode`] refuses what the wallet must never sign, and otherwise returns a Clear View (if the
 //!   Decoder fully understands the request) or Blind with the facts it can prove;
 //! - [`sign`] signs only the inputs that re-derive to the Starter, changing nothing else.
@@ -23,7 +24,7 @@ mod sign;
 pub use account::{derive_account, Account, AddressEntry};
 pub use chain_entry::{chain_entry, ChainEntry, NetworkEntry};
 pub use clear::{ClearInput, ClearOutput, ClearView, DangerousMode, Destination};
-pub use decode::{decode, AssetAmount, Decoded, OwnedInput, Refusal, RefusalCode, VerifiableFacts};
+pub use decode::{check, decode, AssetAmount, Decoded, OwnedInput, Refusal, RefusalCode, VerifiableFacts};
 pub use sign::sign;
 
 /// No ambient randomness inside the module: any code path that reaches getrandom fails loudly.

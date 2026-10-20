@@ -151,6 +151,36 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     assert.deepEqual(await signing, { result: PSETS.blind.signed });
   });
 
+  test("while locked, a request the Chain Module refuses without the Starter is refused without an unlock window", async () => {
+    const home = await session.openPage("index.html#/");
+    await home.waitForSelector('[data-vault-state="unlocked"]', { timeout: 10_000 });
+    await home.click("[data-lock]");
+    await home.waitForSelector('[data-vault-state="locked"]');
+    await home.close();
+
+    const starterFree = [
+      [PSETS.wrongGenesis.payload, /genesis/i],
+      [PSETS.confidentialInput.payload, /confidential/i],
+      [PSETS.confidentialOutput.payload, /confidential/i],
+      [PSETS.missingDerivation.payload, /bip32_derivation/],
+    ];
+    for (const [payload, message] of starterFree) {
+      const answering = signTransaction(blindApp, signingRequest(payload));
+      const window = session.waitForApprovalWindow({ timeout: 5_000 }).then(
+        async (approval) => {
+          await approval.close();
+          return "an approval window opened";
+        },
+        () => "no window",
+      );
+      const answer = await Promise.race([answering, window]);
+      assert.notEqual(answer, "an approval window opened", "no unlock window");
+      assert.equal(answer.error?.code, -32602, answer.error?.message);
+      assert.match(answer.error?.message, message);
+      await window;
+    }
+  });
+
   test("none of the above raised extension runtime errors", async () => {
     assert.deepEqual((await session.extensionErrors()).runtimeErrors, []);
   });

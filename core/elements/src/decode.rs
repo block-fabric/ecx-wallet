@@ -164,6 +164,12 @@ fn output_is_confidential(output: &Output) -> bool {
         || output.blind_asset_proof.is_some()
 }
 
+/// The refusals that need no Starter (rules 5-7), so the wallet can refuse before asking the user
+/// to unlock. `decode` and `sign` run them again.
+pub fn check(payload: &str) -> Result<(), Refusal> {
+    validated(payload).map(|_| ())
+}
+
 pub fn decode(payload: &str, starter: &str) -> Result<Decoded, Refusal> {
     let pset = validated(payload)?;
     let wallet = Wallet::new(starter).map_err(|e| refuse(RefusalCode::InvalidStarter, e))?;

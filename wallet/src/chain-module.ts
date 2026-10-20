@@ -119,6 +119,8 @@ export interface ChainModule {
   chainEntry(): ChainEntry;
   /** The Slot's Starter → its account, with the first `receive` receive addresses. */
   deriveAccount(starter: string, options: { receive: number }): Account;
+  /** Refuses (throws ChainModuleRefusal) what the module would refuse anyway, without the Starter. */
+  check(payload: string): void;
   /** A request's payload → a Clear View or Blind. Throws ChainModuleRefusal. */
   decode(payload: string, starter: string): Decoded;
   /** The payload with signatures on the inputs the Starter owns; nothing else changes. Throws ChainModuleRefusal. */
@@ -150,6 +152,7 @@ export async function loadChainModule(bytes: BufferSource): Promise<ChainModule>
     declare: () => json<Declaration>("declare"),
     chainEntry: () => json<ChainEntry>("chain_entry"),
     deriveAccount: (starter, { receive }) => json<Account>("derive_account", starter, receive),
+    check: (payload) => refusals(() => void m.callText("check", payload)),
     decode: (payload, starter) => refusals(() => json<Decoded>("decode", payload, starter)),
     sign: (payload, starter) => refusals(() => m.callText("sign", payload, starter)),
   };

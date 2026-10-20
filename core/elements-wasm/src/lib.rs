@@ -37,6 +37,12 @@ fn refusal(r: ecx_elements::Refusal) -> String {
     json(&r).unwrap_or(r.message)
 }
 
+/// Base64 PSET → `null` if it passes the refusals that need no Starter, or a refusal.
+#[no_mangle]
+pub unsafe extern "C" fn check(payload: *const u8, payload_len: usize) -> i32 {
+    ret_text(text(payload, payload_len).and_then(|p| ecx_elements::check(p).map_err(refusal).map(|()| "null".into())))
+}
+
 /// Base64 PSET + Slot 24 Starter → `{ kind: "clear", view }` or
 /// `{ kind: "blind", reason, verifiableFacts }` as JSON, or a refusal.
 #[no_mangle]

@@ -61,7 +61,8 @@ export async function chainModuleFor(deps: SigningDeps, request: SigningRequest)
 }
 
 /**
- * Validation steps 5-7 (the Chain Module's), Blind vs `blindRefusal`, then the user's approval and
+ * Validation steps 5-7 (the Chain Module's, before any unlock prompt: they need no Starter), then
+ * unlock if needed, Blind vs `blindRefusal` (needs the Starter to decode), the user's approval and
  * the signature. `blindRefusal` is why a Blind request must be refused, or undefined if the
  * requester may Blind-sign. The request only ever reaches its own Slot's Chain Module, with that
  * Slot's Starter. Returns the signed payload.
@@ -71,6 +72,8 @@ export async function reviewAndSign(
   { requester, request, module, blindRefusal }: { requester: string; request: SigningRequest; module: ChainModule; blindRefusal?: string },
 ): Promise<string> {
   const nowSeconds = () => Math.floor(deps.now() / 1000);
+  // Everything that needs no Starter comes before the user is asked to unlock.
+  await refusing(async () => module.check(request.payload));
   const approval = deps.openSigningApproval({ origin: requester, chain: request.chain });
   try {
     if (!(await deps.isUnlocked()) && !(await approval.unlock())) throw rejected();
