@@ -116,7 +116,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     withWallet(async (session) => {
       const bad = await importWallet(session, { phrase: "legal winner thank year wave sausage worth useful legal winner thank thank" });
       await bad.waitForSelector("[data-error]");
-      assert.match(await bad.$eval("[data-error]", (e) => e.textContent), /phrase/i);
+      assert.match(await bad.$eval("[data-error]", (e) => e.textContent), /Master Mnemonic/);
       await bad.close();
       assert.equal(await homeState(session), "onboarding");
 
