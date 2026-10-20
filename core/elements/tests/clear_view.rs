@@ -178,3 +178,17 @@ fn the_decoder_is_never_applied_outside_its_binding() {
 fn unknown_fields_make_an_otherwise_clear_transfer_blind() {
     assert!(blind_reason(&transfer_with_unknown_fields()).contains("doesn't understand"));
 }
+
+#[test]
+fn the_fee_shown_is_the_total_of_every_fee_output() {
+    let view = clear(&with_two_fee_outputs());
+    assert_eq!((view.fee.asset.as_str(), view.fee.amount.as_str()), (network().policy_asset.as_str(), "1500"));
+    assert_eq!(view.outputs.len(), 2, "fee outputs are not rows: {:?}", view.outputs);
+}
+
+#[test]
+fn a_fee_output_in_another_asset_than_the_policy_asset_is_blind() {
+    let mut pset = transfer();
+    pset.add_output(Output::new_explicit(Script::new(), 500, other_asset(), None));
+    assert!(blind_reason(&pset).contains("fee"));
+}

@@ -11,10 +11,10 @@ use elements_miniscript::elements::confidential::{Asset, Value};
 use elements_miniscript::elements::hashes::Hash;
 use elements_miniscript::elements::pset::raw::ProprietaryKey;
 use elements_miniscript::elements::pset::{Input, Output, PartiallySignedTransaction};
-use elements_miniscript::elements::script::Instruction;
-use elements_miniscript::elements::{BlockHash, Script};
+use elements_miniscript::elements::BlockHash;
 use serde::Serialize;
 
+use crate::classify::{classify, Classified, OutputKind, Sighash};
 use crate::clear::{clear_view, ClearView};
 use crate::network;
 use crate::ownership::Wallet;
@@ -167,21 +167,21 @@ fn output_is_confidential(output: &Output) -> bool {
 pub fn decode(payload: &str, starter: &str) -> Result<Decoded, Refusal> {
     let pset = validated(payload)?;
     let wallet = Wallet::new(starter).map_err(|e| refuse(RefusalCode::InvalidStarter, e))?;
-    let facts = verifiable_facts(&pset, &wallet);
+    let classified = classify(&pset, &wallet);
+    let facts = verifiable_facts(&pset, &classified);
     if !facts.unknown_fields.is_empty() {
         let reason = "The request contains fields the Elements Decoder doesn't understand.";
         return Ok(Decoded::Blind { reason: reason.into(), verifiable_facts: facts });
     }
-    match clear_view(&pset, &wallet) {
+    match clear_view(&pset, &classified) {
         Ok(view) => Ok(Decoded::Clear { view }),
         Err(why) => Ok(Decoded::Blind { reason: format!("The Elements Decoder can't fully explain this request: {why}"), verifiable_facts: facts }),
     }
 }
 
-fn verifiable_facts(pset: &PartiallySignedTransaction, wallet: &Wallet) -> VerifiableFacts {
+fn verifiable_facts(pset: &PartiallySignedTransaction, classified: &Classified) -> VerifiableFacts {
     let mut owned_inputs = vec![];
     let mut leaving = BTreeMap::<String, i128>::new();
-    let mut fee = BTreeMap::<String, i128>::new();
     let mut unknown_fields = vec![];
     let mut dangerous_flags = vec![];
 
@@ -190,19 +190,18 @@ fn verifiable_facts(pset: &PartiallySignedTransaction, wallet: &Wallet) -> Verif
         pset.global.proprietary.keys().filter(|k| **k != genesis_key()).map(|k| format!("global: {}", proprietary(k))),
     );
 
-    for (i, input) in pset.inputs().iter().enumerate() {
-        let utxo = input.witness_utxo.as_ref().expect("validated");
-        let (Asset::Explicit(asset), Value::Explicit(amount)) = (utxo.asset, utxo.value) else { unreachable!("validated") };
-        if wallet.owned_input_key(input).is_some() {
-            owned_inputs.push(OwnedInput { index: i, asset: asset.to_string(), amount: amount.to_string() });
-            *leaving.entry(asset.to_string()).or_default() += amount as i128;
-        } else if wallet.claims_our_key(input) {
+    for (class, input) in classified.inputs.iter().zip(pset.inputs()) {
+        let i = class.index;
+        if class.yours {
+            owned_inputs.push(OwnedInput { index: i, asset: class.asset.clone(), amount: class.amount.to_string() });
+            *leaving.entry(class.asset.clone()).or_default() += class.amount as i128;
+        } else if class.unproven_claim {
             dangerous_flags.push(format!(
                 "input {i} claims one of this wallet's keys, but its key or script doesn't re-derive; it will not be signed"
             ));
         }
-        if let Some(sighash) = input.sighash_type.filter(|t| t.to_u32() != 1) {
-            dangerous_flags.push(format!("input {i} uses non-default sighash 0x{:02x}", sighash.to_u32()));
+        if let Sighash::Known(sighash) | Sighash::Unknown(sighash) = class.sighash {
+            dangerous_flags.push(format!("input {i} uses non-default sighash 0x{sighash:02x}"));
         }
         if input.issuance_value_amount.is_some() || input.issuance_inflation_keys.is_some() {
             dangerous_flags.push(format!("input {i} issues or reissues an asset"));
@@ -214,34 +213,22 @@ fn verifiable_facts(pset: &PartiallySignedTransaction, wallet: &Wallet) -> Verif
         unknown_fields.extend(input.proprietary.keys().map(|k| format!("input {i}: {}", proprietary(k))));
     }
 
-    for (i, output) in pset.outputs().iter().enumerate() {
-        let (asset, amount) = (output.asset.expect("validated").to_string(), output.amount.expect("validated") as i128);
-        if output.script_pubkey.is_empty() {
-            *fee.entry(asset).or_default() += amount;
-        } else if wallet.owns_output(output) {
-            *leaving.entry(asset).or_default() -= amount;
-        } else if is_peg_out_burn(&output.script_pubkey) {
-            dangerous_flags.push(format!("output {i} is a peg-out burn: irreversible"));
+    for (class, output) in classified.outputs.iter().zip(pset.outputs()) {
+        let i = class.index;
+        match class.kind {
+            OutputKind::Script { yours: true } => *leaving.entry(class.asset.clone()).or_default() -= class.amount as i128,
+            OutputKind::WithdrawalBurn => dangerous_flags.push(format!("output {i} is a peg-out burn: irreversible")),
+            OutputKind::Fee | OutputKind::Script { yours: false } => {}
         }
         unknown_fields.extend(output.unknown.keys().map(|k| format!("output {i}: unknown field type 0x{:02x}", k.type_value)));
         unknown_fields.extend(output.proprietary.keys().map(|k| format!("output {i}: {}", proprietary(k))));
     }
 
-    let amounts = |m: BTreeMap<String, i128>| {
-        m.into_iter().map(|(asset, amount)| AssetAmount { asset, amount: amount.to_string() }).collect()
-    };
-    VerifiableFacts { owned_inputs, total_leaving: amounts(leaving), fee: amounts(fee), unknown_fields, dangerous_flags }
+    let amounts = |m: BTreeMap<String, i128>| m.into_iter().map(|(asset, amount)| AssetAmount { asset, amount: amount.to_string() }).collect();
+    let fee = classified.fee.iter().map(|(asset, amount)| AssetAmount { asset: asset.clone(), amount: amount.to_string() }).collect();
+    VerifiableFacts { owned_inputs, total_leaving: amounts(leaving), fee, unknown_fields, dangerous_flags }
 }
 
 fn proprietary(key: &ProprietaryKey) -> String {
     format!("proprietary field {}/{}", String::from_utf8_lossy(&key.prefix), key.subtype)
-}
-
-/// An OP_RETURN whose first push is the parent (L1) chain's genesis: a native-withdrawal burn.
-pub(crate) fn is_peg_out_burn(script: &Script) -> bool {
-    let parent = BlockHash::from_str(&network().parent_genesis_hash).expect("Chain Entry parent genesis is valid");
-    let mut instructions = script.instructions();
-    script.is_op_return()
-        && instructions.next().is_some()
-        && matches!(instructions.next(), Some(Ok(Instruction::PushBytes(bytes))) if bytes == parent.as_byte_array())
 }

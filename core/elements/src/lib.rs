@@ -13,6 +13,7 @@
 use serde::Serialize;
 
 mod account;
+mod classify;
 mod clear;
 mod decode;
 pub mod chain_entry;

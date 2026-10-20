@@ -91,6 +91,14 @@ pub fn fee(value: u64) -> Output {
     pay(Script::new(), value)
 }
 
+/// `transfer()` with its fee split over two fee outputs (1 000 + 500; change shrinks by 500).
+pub fn with_two_fee_outputs() -> Pset {
+    let mut pset = transfer();
+    pset.outputs_mut()[1].amount = Some(28_500);
+    pset.add_output(fee(500));
+    pset
+}
+
 /// One owned input (100 000) and one foreign input (50 000), paying a foreign address 120 000,
 /// 29 000 change back to us, and a 1 000 fee.
 pub fn transfer() -> Pset {

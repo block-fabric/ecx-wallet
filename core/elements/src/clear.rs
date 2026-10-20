@@ -3,19 +3,18 @@
 //!
 //! Hand-written: LWK's `pset_balance` refuses owned explicit inputs and outputs. Whether an input or
 //! output is "yours" is decided only by re-deriving it (`ownership.rs`), never by the requester.
-use elements_miniscript::elements::confidential::{Asset, Value};
 use std::str::FromStr;
 
-use elements_miniscript::elements::pset::{Input, Output, PartiallySignedTransaction, PsbtSighashType};
+use elements_miniscript::elements::pset::{Input, Output, PartiallySignedTransaction};
 use elements_miniscript::elements::script::Instruction;
 use elements_miniscript::elements::hashes::Hash;
 use elements_miniscript::elements::{Address, AssetId, Txid};
 use serde::Serialize;
 
 use crate::account::address_params;
-use crate::decode::{is_peg_out_burn, AssetAmount};
+use crate::classify::{Classified, OutputKind, Sighash};
+use crate::decode::AssetAmount;
 use crate::network;
-use crate::ownership::Wallet;
 
 /// What the user is shown for a request the Decoder fully understands.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -84,11 +83,7 @@ pub enum DangerousMode {
 }
 
 /// The Clear View of `pset` (already through rules 5-7), or why the Decoder can't give one.
-pub(crate) fn clear_view(pset: &PartiallySignedTransaction, wallet: &Wallet) -> Result<ClearView, String> {
-    let explicit = |asset: Asset, value: Value| match (asset, value) {
-        (Asset::Explicit(a), Value::Explicit(v)) => (a.to_string(), v.to_string()),
-        _ => unreachable!("validated: explicit only"),
-    };
+pub(crate) fn clear_view(pset: &PartiallySignedTransaction, classified: &Classified) -> Result<ClearView, String> {
     let global = &pset.global;
     if !global.xpub.is_empty() || global.tx_data.tx_modifiable.is_some() || global.elements_tx_modifiable_flag.is_some() {
         return Err("it has global fields the Decoder doesn't explain.".into());
@@ -102,44 +97,44 @@ pub(crate) fn clear_view(pset: &PartiallySignedTransaction, wallet: &Wallet) -> 
 
     let mut dangerous_modes = vec![];
     let mut inputs = vec![];
-    for (index, input) in pset.inputs().iter().enumerate() {
-        let utxo = input.witness_utxo.as_ref().expect("validated");
-        let (asset, amount) = explicit(utxo.asset, utxo.value);
-        let yours = wallet.owned_input_key(input).is_some();
-        if !yours && wallet.claims_our_key(input) {
+    for input in &classified.inputs {
+        let index = input.index;
+        if input.unproven_claim {
             return Err(format!("input {index} claims one of this wallet's keys, but it doesn't re-derive."));
         }
-        match input.sighash_type.map(|t| t.to_u32()) {
-            None | Some(SIGHASH_ALL) => {}
-            Some(sighash) if is_known_sighash(sighash) => {
-                dangerous_modes.push(DangerousMode::NonDefaultSighash { input: index, sighash })
-            }
-            Some(sighash) => return Err(format!("input {index} asks for unknown sighash type 0x{sighash:02x}.")),
+        match input.sighash {
+            Sighash::All => {}
+            Sighash::Known(sighash) => dangerous_modes.push(DangerousMode::NonDefaultSighash { input: index, sighash }),
+            Sighash::Unknown(sighash) => return Err(format!("input {index} asks for unknown sighash type 0x{sighash:02x}.")),
         }
-        inputs.push(ClearInput { index, asset, amount, yours });
+        inputs.push(ClearInput { index, asset: input.asset.clone(), amount: input.amount.to_string(), yours: input.yours });
     }
 
     let mut outputs = vec![];
-    let mut fee = None;
-    for (index, output) in pset.outputs().iter().enumerate() {
-        let (asset, amount) = (output.asset.expect("validated").to_string(), output.amount.expect("validated").to_string());
-        if output.script_pubkey.is_empty() {
-            fee = Some(AssetAmount { asset, amount });
-            continue;
-        }
-        let destination = if is_peg_out_burn(&output.script_pubkey) {
-            let peg_out = peg_out(output).ok_or_else(|| format!("output {index} is a peg-out burn it can't fully parse."))?;
-            dangerous_modes.push(DangerousMode::PegOutBurn { output: index });
-            peg_out
-        } else {
-            let address = Address::from_script(&output.script_pubkey, None, address_params())
-                .ok_or_else(|| format!("output {index} pays a script that isn't an address."))?;
-            Destination::Address { address: address.to_string(), yours: wallet.owns_output(output) }
+    for (class, output) in classified.outputs.iter().zip(pset.outputs()) {
+        let index = class.index;
+        let destination = match class.kind {
+            OutputKind::Fee => continue,
+            OutputKind::WithdrawalBurn => {
+                let peg_out = peg_out(output).ok_or_else(|| format!("output {index} is a peg-out burn it can't fully parse."))?;
+                dangerous_modes.push(DangerousMode::PegOutBurn { output: index });
+                peg_out
+            }
+            OutputKind::Script { yours } => {
+                let address = Address::from_script(&output.script_pubkey, None, address_params())
+                    .ok_or_else(|| format!("output {index} pays a script that isn't an address."))?;
+                Destination::Address { address: address.to_string(), yours }
+            }
         };
-        outputs.push(ClearOutput { index, asset, amount, destination });
+        outputs.push(ClearOutput { index, asset: class.asset.clone(), amount: class.amount.to_string(), destination });
     }
-    let fee = fee.ok_or("The request has no fee output.")?;
-    Ok(ClearView { dangerous_modes, inputs, outputs, fee })
+
+    let policy_asset = &network().policy_asset;
+    if let Some(other) = classified.fee.keys().find(|asset| *asset != policy_asset) {
+        return Err(format!("it pays a fee in asset {other}, not in the chain's policy asset."));
+    }
+    let fee = classified.fee.get(policy_asset).ok_or("The request has no fee output.")?;
+    Ok(ClearView { dangerous_modes, inputs, outputs, fee: AssetAmount { asset: policy_asset.clone(), amount: fee.to_string() } })
 }
 
 /// True if `input` sets nothing beyond what a Clear View shows or `sign` needs. Unknown and
@@ -204,11 +199,3 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-const SIGHASH_ALL: u32 = 0x01;
-
-/// The standard ECDSA sighash types (ALL/NONE/SINGLE, each optionally ANYONECANPAY): the ones
-/// rust-elements signs as asked. LWK would sign any other type (RANGEPROOF included) as ALL, so
-/// the Decoder can't explain it.
-fn is_known_sighash(sighash: u32) -> bool {
-    PsbtSighashType::from_u32(sighash).ecdsa_hash_ty().is_some()
-}
