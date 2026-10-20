@@ -1,0 +1,9 @@
+packages:
+  - core
+  - wallet
+  - app
+  - extension
+  - client
+  - e2e
+allowBuilds:
+  esbuild: true

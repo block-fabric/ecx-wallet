@@ -1,0 +1,10 @@
+{
+  "name": "@ecx/wallet",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Target-agnostic wallet logic: Grants, Provider request handling, (later) Vault orchestration, Signing Request validation and routing, Chain Module WASM instantiation.",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit -p ." },
+  "devDependencies": { "typescript": "5.9.3" }
+}
