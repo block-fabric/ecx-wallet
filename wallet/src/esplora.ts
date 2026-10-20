@@ -7,8 +7,11 @@
 import { NATIVE_COIN, type AssetAmount, type IdentityBlock } from "./chain-module";
 import { serverFetch, SidechainServerError, type Fetch, type SidechainServer } from "./sidechain-server";
 
-/** How many address queries run at once (40 addresses per read). */
-const QUERIES_AT_ONCE = 8;
+/**
+ * How many address queries run at once: 40 addresses in two rounds. esplora.beta answered 20 at
+ * once in about the time of 8, and slowed down sharply at 40 (measured 2026-10-20).
+ */
+export const QUERIES_AT_ONCE = 20;
 
 export interface EsploraServerConfig {
   url: string;

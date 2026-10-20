@@ -5,25 +5,21 @@
   import TopBar from "$lib/TopBar.svelte";
 
   const slot = Number(page.params.slot);
-  let report = $state<ChainReport | undefined>(undefined);
-  let loaded = $state(false);
+  /** What eCash's server reports, or why it couldn't be read; undefined while scanning. */
+  let report = $state<ChainReport | { error: string } | undefined>(undefined);
   let amount = $state("");
   let busy = $state(false);
   let done = $state<{ txid: string; server: string } | undefined>(undefined);
   let error = $state("");
 
   /** The confirmed sats eCash's server reports: the only coins a Deposit spends. */
-  const available = $derived(report?.balances.find((b) => b.asset === "")?.amount ?? "0");
+  const available = $derived(report !== undefined && !("error" in report) ? (report.balances.find((b) => b.asset === "")?.amount ?? "0") : undefined);
 
+  // Only shown to help pick an amount: the Deposit scans the coins again itself, so the form
+  // doesn't wait for this (the server can take tens of seconds over 40 addresses).
   l1Reported().then(
-    (r) => {
-      report = r;
-      loaded = true;
-    },
-    (e) => {
-      error = (e as Error).message;
-      loaded = true;
-    },
+    (r) => (report = r),
+    (e) => (report = { error: (e as Error).message }),
   );
 
   async function submit(e: SubmitEvent) {
@@ -41,42 +37,46 @@
   }
 </script>
 
-<main class="screen" data-screen-ready={loaded ? "" : undefined}>
+<main class="screen" data-screen-ready>
   <TopBar title="Deposit to Slot {slot}" back="#/" />
 
-  {#if !loaded}
-    <p class="loading"><span class="spinner"></span>Loading…</p>
-  {/if}
-
-  {#if report}
-    <div class="card">
-      <span class="muted small">Available on eCash (confirmed)</span>
+  <div class="card">
+    <span class="muted small">Available on eCash (confirmed)</span>
+    {#if report === undefined}
+      <p class="loading small" data-deposit-scanning>
+        <span class="spinner"></span>Scanning your eCash addresses for confirmed coins…
+      </p>
+    {:else if "error" in report}
+      <p class="error small" data-balance-error>Balance unavailable: {report.error}</p>
+    {:else}
       <strong class="amount" data-deposit-available>{available} sats</strong>
       <p class="reported">Reported by {report.server}. This wallet doesn't verify it.</p>
-    </div>
-  {/if}
+    {/if}
+  </div>
 
-  {#if loaded}
-    <form class="stack" onsubmit={submit}>
-      <div class="card">
-        <label>
-          Amount (sats)
-          <input inputmode="numeric" bind:value={amount} autocomplete="off" data-deposit-amount />
-        </label>
-      </div>
-      <p class="notice">
-        <Icon name="warning" />
-        <span>
-          A Deposit moves eCash into Slot {slot}. It is credited to your own address there after 100 eCash blocks, once
-          the chain's operator imports it. It only comes back to eCash through a Withdrawal, which takes months.
-        </span>
-      </p>
-      <p class="reported">
-        This wallet builds the transaction from your own coins. You review exactly what it built before anything is signed.
-      </p>
-      <button class="primary block" type="submit" disabled={busy || amount.trim() === ""} data-deposit-submit>Review deposit</button>
-    </form>
-    {#if busy}<p class="loading small" data-deposit-waiting><span class="spinner"></span>Building the deposit and waiting for your approval…</p>{/if}
+  <form class="stack" onsubmit={submit}>
+    <div class="card">
+      <label>
+        Amount (sats)
+        <input inputmode="numeric" bind:value={amount} autocomplete="off" data-deposit-amount />
+      </label>
+    </div>
+    <p class="notice">
+      <Icon name="warning" />
+      <span>
+        A Deposit moves eCash into Slot {slot}. It is credited to your own address there after 100 eCash blocks, once
+        the chain's operator imports it. It only comes back to eCash through a Withdrawal, which takes months.
+      </span>
+    </p>
+    <p class="reported">
+      This wallet builds the transaction from your own coins. You review exactly what it built before anything is signed.
+    </p>
+    <button class="primary block" type="submit" disabled={busy || amount.trim() === ""} data-deposit-submit>Review deposit</button>
+  </form>
+  {#if busy}
+    <p class="loading small" data-deposit-waiting>
+      <span class="spinner"></span>Scanning your eCash coins and building the deposit, then waiting for your approval…
+    </p>
   {/if}
 
   {#if done}

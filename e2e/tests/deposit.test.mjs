@@ -51,6 +51,7 @@ const l1Config = (txs) => ({
   utxos: { [L1_RECEIVE_0]: [{ txid: FUNDING.txid, vout: 0, value: 250000, confirmed: true }] },
   addressTxCounts: {},
   refuseBroadcast: undefined,
+  delayMs: 0,
 });
 const ESPLORA = { identityBlock: { height: 0, hash: GENESIS }, utxos: {} };
 
@@ -134,6 +135,21 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     await session?.close();
     await stub?.close();
     await l1Stub?.close();
+  });
+
+  test("the Deposit screen takes an amount at once, and says it's still scanning for the balance", async () => {
+    L1.delayMs = 1500;
+    try {
+      const page = await openWalletPage(session, "#/deposit/24");
+      assert.ok(await page.$("[data-deposit-scanning]"), "the scan is shown as in progress");
+      assert.ok(await page.$("[data-deposit-amount]"), "the form doesn't wait for it");
+      await page.waitForSelector("[data-deposit-available]", { timeout: 20_000 });
+      assert.match(await page.$eval("[data-deposit-available]", (e) => e.textContent), /^250000 sats$/);
+      assert.equal(await page.$("[data-deposit-scanning]"), null);
+      await page.close();
+    } finally {
+      L1.delayMs = 0;
+    }
   });
 
   describe("with a Treasury", () => {

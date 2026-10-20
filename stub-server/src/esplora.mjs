@@ -12,7 +12,8 @@ import { parseTx, scripthash } from "./bitcoin-tx.mjs";
  * @typedef {{ hex: string, confirmed?: boolean, blockHeight?: number, blockHash?: string }} TxFixture
  * @typedef {{ identityBlock: { height: number, hash: string }, blocks?: Record<number, string>,
  *   tipHeight?: number, utxos?: Record<string, UtxoFixture[]>, addressTxCounts?: Record<string, number>,
- *   txs?: TxFixture[], feeEstimates?: Record<string, number>, refuseBroadcast?: string }} EsploraStubConfig
+ *   txs?: TxFixture[], feeEstimates?: Record<string, number>, refuseBroadcast?: string,
+ *   delayMs?: number }} EsploraStubConfig
  */
 
 /**
@@ -29,6 +30,7 @@ import { parseTx, scripthash } from "./bitcoin-tx.mjs";
  * - `GET /fee-estimates`: `config.feeEstimates` (404 if absent);
  * - `POST /tx`: parses the transaction, adds it to `config.txs` unconfirmed and answers its txid,
  *   or refuses with `config.refuseBroadcast`.
+ * Every answer waits `config.delayMs` (default none), as a slow public server does.
  */
 export function createEsploraStub(config) {
   /** Every request, in order: its path, or `POST <path>`. */
@@ -141,8 +143,10 @@ export function createEsploraStub(config) {
       requests.push(request.method === "GET" ? pathname : `${request.method} ${pathname}`);
       const [status, answer] = route(request.method, pathname, body);
       const json = typeof answer !== "string";
-      response.writeHead(status, { "Content-Type": json ? "application/json" : "text/plain" });
-      response.end(json ? JSON.stringify(answer) : answer);
+      setTimeout(() => {
+        response.writeHead(status, { "Content-Type": json ? "application/json" : "text/plain" });
+        response.end(json ? JSON.stringify(answer) : answer);
+      }, config.delayMs ?? 0);
     });
   });
 

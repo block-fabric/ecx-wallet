@@ -11,7 +11,7 @@
 import { createKeyRouting, type ChainModules, type Keys } from "./accounts";
 import { ChainModuleRefusal, NATIVE_COIN, type ChainEntry, type ClearView, type DepositCredit, type L1AccountKey, type L1Module, type NetworkEntry } from "./chain-module";
 import { ErrorCode, ProviderRpcError } from "./errors";
-import type { EsploraClient } from "./esplora";
+import { QUERIES_AT_ONCE, type EsploraClient } from "./esplora";
 import { WATCHED_CHANGE_ADDRESSES, WATCHED_RECEIVE_ADDRESSES } from "./pull-path";
 import { rejected, type SignPrompt, type SigningApproval } from "./signing";
 import { SidechainServerError } from "./sidechain-server";
@@ -29,8 +29,6 @@ const FEE_TARGET = "6";
 const FALLBACK_FEE_RATE = 1;
 /** sat/vB the rate never goes below (besides the server's own 1008-block floor). */
 const MIN_FEE_RATE = 0.1;
-/** How many address queries run at once, as on the pull path. */
-const QUERIES_AT_ONCE = 8;
 
 /** A broadcast Deposit the wallet keeps an eye on, until it is credited or dismissed. */
 export interface PendingDeposit {
