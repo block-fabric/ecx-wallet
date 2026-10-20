@@ -1,4 +1,4 @@
-// The stub Elements Sidechain Server: the standard Sidechain Server API (pull side) answered from
+// The stub Elements Sidechain Server: the Standard Sidechain API (pull side) answered from
 // fixtures. Reference for sidechain teams and the e2e suite's server. The protocol it implements is
 // documented in ../README.md; keep the two in step.
 //

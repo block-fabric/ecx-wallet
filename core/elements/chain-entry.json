@@ -19,7 +19,7 @@
         "p2shPrefix": 5,
         "bechHrp": "bc"
       },
-      "sidechainServer": "http://127.0.0.1:24024",
+      "sidechainServer": { "api": "esplora", "url": "https://explorer.bitnames.info/api" },
       "officialApps": ["https://elements-app.invalid"]
     }
   }

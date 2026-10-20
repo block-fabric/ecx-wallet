@@ -22,7 +22,7 @@ mod ownership;
 mod sign;
 
 pub use account::{derive_account, Account, AddressEntry};
-pub use chain_entry::{chain_entry, ChainEntry, NetworkEntry};
+pub use chain_entry::{chain_entry, ChainEntry, NetworkEntry, ServerApi, SidechainServerEntry};
 pub use clear::{ClearInput, ClearOutput, ClearView, DangerousMode, Destination};
 pub use decode::{check, decode, AssetAmount, Decoded, OwnedInput, Refusal, RefusalCode, VerifiableFacts};
 pub use sign::sign;

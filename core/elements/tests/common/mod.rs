@@ -34,7 +34,7 @@ pub struct Key {
 
 /// `starter`'s key at `<chain>/<index>` of its `elwpkh` account.
 pub fn key(starter: &str, chain: u32, index: u32) -> Key {
-    let desc = Descriptor::<DescriptorPublicKey>::from_str(&derive_account(starter, 0).unwrap().descriptor).unwrap();
+    let desc = Descriptor::<DescriptorPublicKey>::from_str(&derive_account(starter, 0, 0).unwrap().descriptor).unwrap();
     let single = desc.into_single_descriptors().unwrap().swap_remove(chain as usize);
     let at = single.at_derivation_index(index).unwrap();
     let mut found = None;

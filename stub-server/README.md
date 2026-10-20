@@ -1,8 +1,10 @@
-# Sidechain Server API, pull side: draft 1
+# Standard Sidechain API, pull side: draft 1
 
-This directory holds the stub Elements Sidechain Server (`src/server.mjs`) and the first draft of
-the protocol it implements. A sidechain team can build a real Sidechain Server from this document
-and check it against the stub. Vocabulary follows [GLOSSARY.md](../GLOSSARY.md). The Signing
+This directory holds the stub Elements Sidechain Server for the Standard Sidechain API
+(`src/server.mjs`) and the first draft of that API. A sidechain team can build a real Sidechain
+Server from this document and check it against the stub. A Chain Entry names this API as
+`"api": "ecx-v0"`. A chain with an existing indexer may name that instead (docs/adr/0002): Slot
+24's betanet uses Esplora, and `src/esplora.mjs` is the e2e build's stub for it (see the end). Vocabulary follows [GLOSSARY.md](../GLOSSARY.md). The Signing
 Request envelope and how the wallet validates it come from the
 [Wallet Base spec](https://github.com/marcusmmmz/ecx-wallet/issues/18).
 
@@ -29,8 +31,8 @@ wallet to use.
 ## Transport
 
 - HTTPS + JSON (`Content-Type: application/json`), UTF-8. The stub uses plain HTTP on loopback.
-- Base URL: the network's `sidechainServer` in the Slot's Chain Entry (for Slot 24:
-  `core/elements/chain-entry.json`). Paths below are relative to it. The extension build grants
+- Base URL: the network's `sidechainServer.url` in the Slot's Chain Entry, with `api` `"ecx-v0"`.
+  Paths below are relative to it. The extension build grants
   itself access to exactly these origins (`host_permissions` and CSP `connect-src`).
 - The wallet calls from an extension origin with `credentials: "omit"`. Send CORS headers on every
   answer and answer `OPTIONS` preflights with `204`:
@@ -184,15 +186,27 @@ The stub only records the submission (`submissions()`) and returns no `txid`.
     `[{ asset, amount, destination, payload, expiresIn?, hints? }]`.
   - It returns `{ listen(port, host), close(), registrations(), submissions() }`. The last two let
     tests observe the server without test-only HTTP routes.
-- `pnpm --filter @ecx/stub-server start` runs it on Slot 24's Chain Entry URL
+- `pnpm --filter @ecx/stub-server start -- ecx-v0` runs it on the e2e build's Slot 24 server URL
   (`http://127.0.0.1:24024`) for the "abandon … about" test wallet, with the `clear` fixture from
-  `e2e/fixtures/elements-psets.json`.
+  `e2e/fixtures/elements-psets.json`. No build speaks this API to Slot 24, so this is for poking
+  at it by hand.
 - In the e2e suite: `serveSidechainServer(config)` in `e2e/harness.mjs`, used by
-  `e2e/tests/pull-path.test.mjs`.
+  `e2e/tests/sidechain-servers.test.mjs` (node, no browser).
+
+## The Esplora stub
+
+`createEsploraStub({ genesisHash, utxos })` from `@ecx/stub-server/esplora` (`src/esplora.mjs`)
+answers the Esplora endpoints the wallet reads (docs/adr/0002): `GET /block-height/0` with
+`genesisHash`, and `GET /address/{address}/utxo` with `utxos[address]`, each fixture
+`{ txid, vout, value, asset, confirmed }` (or commitments instead of `value`/`asset`, for a
+confidential output). It reads the config on every request, sends no CORS headers (like the
+Elements explorer) and records `requests()`. `pnpm --filter @ecx/stub-server start` runs it for the
+e2e build; the e2e suite starts it with `serveEsplora(config)`.
 
 ## Open for later drafts
 
-- How the wallet learns a server's identity (`info`) and how user server overrides work (spec #12).
+- How the wallet learns a server's identity (`info`) and how user server overrides work (spec #12;
+  an override is an `{ api, url }` pair, docs/adr/0002).
 - Pagination and confirmations in `history`, plus unconfirmed balances.
 - Fee selection in the build request.
 - Confidential transactions: View Key sharing, blinding, and `fundTransaction`.

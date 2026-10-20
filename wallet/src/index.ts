@@ -39,6 +39,8 @@ export {
   type Declaration,
   type DerivedAddress,
   type NetworkEntry,
+  type ServerApi,
+  type SidechainServerEntry,
 } from "./chain-module";
 export {
   createVault,
@@ -51,12 +53,16 @@ export {
   type VaultDeps,
   type VaultStatus,
 } from "./vault";
+export { SidechainServerError, type ReportedState, type SidechainServer, type TransferOrder, type WatchData } from "./sidechain-server";
+export { sidechainServer } from "./server-api";
+export { standardSidechainServer } from "./standard-sidechain-api";
+export { esploraServer, type EsploraServerConfig } from "./esplora";
 export {
-  sidechainServer,
-  SidechainServerError,
-  type ReportedState,
-  type SidechainServer,
-  type TransferOrder,
-  type WatchData,
-} from "./sidechain-server";
-export { createPullPath, WATCHED_RECEIVE_ADDRESSES, type PullPath, type PullPathDeps, type SendResult, type SlotReport } from "./pull-path";
+  createPullPath,
+  WATCHED_CHANGE_ADDRESSES,
+  WATCHED_RECEIVE_ADDRESSES,
+  type PullPath,
+  type PullPathDeps,
+  type SendResult,
+  type SlotReport,
+} from "./pull-path";

@@ -4,22 +4,9 @@ import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
-import * as esbuild from "esbuild";
-import { DIST, ROOT } from "../harness.mjs";
+import { DIST, ROOT, importWallet } from "../harness.mjs";
 
 const ABANDON = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
-
-/** The wallet's TypeScript glue, bundled for node the way esbuild bundles it for the background. */
-async function importWallet() {
-  const out = await esbuild.build({
-    entryPoints: [path.join(ROOT, "wallet", "src", "index.ts")],
-    bundle: true,
-    format: "esm",
-    platform: "neutral",
-    write: false,
-  });
-  return import(`data:text/javascript;base64,${Buffer.from(out.outputFiles[0].text).toString("base64")}`);
-}
 
 test("every shipped .wasm imports nothing but memory", async () => {
   const wasm = (await readdir(DIST.chromium)).filter((f) => f.endsWith(".wasm"));
@@ -70,7 +57,7 @@ test("the shipped Elements Chain Module declares its binding and bundles Slot 24
   assert.equal(entry.networks.betanet.policyAsset, "5836dcc06130dcf6a65b6ac493813fd65559955283e44cc3f07966294eccb2c8");
 });
 
-test("the shipped Elements Chain Module derives the Slot 24 receive addresses from the Starter", async () => {
+test("the shipped Elements Chain Module derives the Slot 24 receive and change addresses from the Starter", async () => {
   const { loadChainModule } = await importWallet();
   const elements = await loadChainModule(await readFile(path.join(DIST.chromium, "elements.wasm")));
   const account = elements.deriveAccount(SLOT_24_STARTER, { receive: 2 });
@@ -78,7 +65,11 @@ test("the shipped Elements Chain Module derives the Slot 24 receive addresses fr
     "elements1qew44aehkjstjm56ng2rjrz57vwxh5g9su6dlpm",
     "elements1qnx6kczxpu35ypahwhqddx2pn6q0nuyaap97ygn",
   ]);
+  assert.deepEqual(account.change, [], "no change addresses unless asked");
   assert.match(account.descriptor, /^elwpkh\(\[3b27f87d\/84h\/1h\/0h\]tpub/);
+  assert.deepEqual(elements.deriveAccount(SLOT_24_STARTER, { receive: 0, change: 1 }).change.map((a) => a.address), [
+    "elements1q2n6usykz5ycrnfpup3hx0qa0manae07jgvvmuc",
+  ]);
   assert.throws(() => elements.deriveAccount("not a starter", { receive: 1 }), /Starter/);
 });
 

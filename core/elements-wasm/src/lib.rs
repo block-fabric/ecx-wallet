@@ -25,10 +25,11 @@ pub extern "C" fn chain_entry() -> i32 {
     ret_text(json(ecx_elements::chain_entry()))
 }
 
-/// Slot 24 Starter + how many receive addresses → the account (descriptor, addresses), as JSON.
+/// Slot 24 Starter + how many receive and change addresses → the account (descriptor, addresses),
+/// as JSON.
 #[no_mangle]
-pub unsafe extern "C" fn derive_account(starter: *const u8, starter_len: usize, receive: u32) -> i32 {
-    ret_text(text(starter, starter_len).and_then(|s| ecx_elements::derive_account(s, receive)).and_then(|a| json(&a)))
+pub unsafe extern "C" fn derive_account(starter: *const u8, starter_len: usize, receive: u32, change: u32) -> i32 {
+    ret_text(text(starter, starter_len).and_then(|s| ecx_elements::derive_account(s, receive, change)).and_then(|a| json(&a)))
 }
 
 /// A refusal travels as the error result, as JSON (`{ code, message }`), so the host can tell
