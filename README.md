@@ -66,7 +66,8 @@ pnpm typecheck
 
 ### Writing e2e tests
 
-`e2e/harness.mjs` exports `launchWallet(name)` / `launchBrave()` / `launchFirefox()`, `serveTestApp()`
+`e2e/harness.mjs` exports `launchWallet(name)` / `launchBrave()` / `launchFirefox()`, `setUpWallet(session)`
+(imports `ABANDON`, no passphrase, and leaves the wallet unlocked), `serveTestApp()`
 and `openTestApp(session, app, host)`, and `openWalletPage(session, "#/grants")` for a wallet screen (it waits
 for `[data-screen-ready]`; Firefox's extension UUID is pinned so its pages have a known URL). Each `<name>.localhost` host is its own origin (Grants are per
 origin). The test Sidechain App (`e2e/test-app/`) exposes `window.testApp.request(method, params)`

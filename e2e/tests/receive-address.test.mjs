@@ -5,10 +5,8 @@
 // core/elements/tests/elements.rs), so seeing it proves the address came from the Slot 24 Starter.
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { BROWSERS, launchWallet, openTestApp, serveTestApp } from "../harness.mjs";
+import { BROWSERS, launchWallet, openTestApp, serveTestApp, setUpWallet, WALLET_PASSWORD } from "../harness.mjs";
 
-const ABANDON = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
-const PASSWORD = "correct horse battery";
 const SLOT_24_ADDRESS = "elements1qew44aehkjstjm56ng2rjrz57vwxh5g9su6dlpm";
 
 async function openHome(session) {
@@ -20,17 +18,6 @@ async function openHome(session) {
 async function typeInto(page, selector, text) {
   await page.$eval(selector, (e) => (e.value = ""));
   await page.type(selector, text);
-}
-
-async function importAbandon(session) {
-  const page = await session.openPage("index.html#/import");
-  await page.waitForSelector("[data-wallet-ready]", { timeout: 10_000 });
-  await typeInto(page, "[data-import-phrase]", ABANDON);
-  await typeInto(page, "[data-new-password]", PASSWORD);
-  await typeInto(page, "[data-repeat-password]", PASSWORD);
-  await page.click("[data-submit]");
-  await page.waitForSelector('[data-vault-state="unlocked"]');
-  await page.close();
 }
 
 /** Connects `host`'s test app with `scope`, approving the prompt. */
@@ -47,7 +34,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
   let app;
   before(async () => {
     [session, app] = await Promise.all([launchWallet(browserName), serveTestApp()]);
-    await importAbandon(session);
+    await setUpWallet(session); // ABANDON, no passphrase
   });
   after(async () => {
     await session?.close();
@@ -85,7 +72,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     assert.equal(locked.error?.code, 4100);
     assert.match(locked.error?.message, /locked/i);
 
-    await typeInto(home, "[data-password]", PASSWORD);
+    await typeInto(home, "[data-password]", WALLET_PASSWORD);
     await home.click("[data-unlock]");
     await home.waitForSelector('[data-vault-state="unlocked"]');
     const unlocked = await page.evaluate(() => window.testApp.request("getAddresses", { slot: 24 }));

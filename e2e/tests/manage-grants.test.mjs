@@ -1,7 +1,7 @@
 // Seam 1: a user sees and revokes Grants; a Sidechain App disconnects.
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { BROWSERS, launchWallet, openTestApp, openWalletPage, serveTestApp } from "../harness.mjs";
+import { BROWSERS, launchWallet, openTestApp, openWalletPage, serveTestApp, setUpWallet } from "../harness.mjs";
 
 for (const browserName of BROWSERS) describe(browserName, () => {
 
@@ -9,6 +9,8 @@ let session;
 let app;
 before(async () => {
   [session, app] = await Promise.all([launchWallet(browserName), serveTestApp()]);
+  // Unlocked, so a Granted getAddresses actually answers.
+  await setUpWallet(session);
 });
 after(async () => {
   await session?.close();
@@ -33,7 +35,7 @@ test("disconnect removes the calling origin's Grant only", async () => {
 
   assert.deepEqual(await leaving.evaluate(() => window.testApp.request("disconnect")), { result: null });
   assert.equal((await getAddresses(leaving)).error?.code, 4100);
-  assert.notEqual((await getAddresses(staying)).error?.code, 4100);
+  assert.ok((await getAddresses(staying)).result, "the other origin still gets its addresses");
 
   // Disconnecting again, with no Grant left, is harmless.
   assert.deepEqual(await leaving.evaluate(() => window.testApp.request("disconnect")), { result: null });
@@ -85,13 +87,13 @@ test("revoking a Grant on the Grants screen makes that origin's next request fai
   assert.ok(origins.includes(app.origin("kept.localhost")), "other Grants are untouched");
 
   assert.equal((await getAddresses(revoked)).error?.code, 4100);
-  assert.notEqual((await getAddresses(kept)).error?.code, 4100);
+  assert.ok((await getAddresses(kept)).result, "the kept origin still gets its addresses");
 
   // Connecting again prompts again, and restores access.
   const reconnecting = revoked.evaluate((scope) => window.testApp.request("connect", scope), scope);
   await (await session.waitForApprovalWindow()).click("[data-approve]");
   assert.deepEqual(await reconnecting, { result: scope });
-  assert.notEqual((await getAddresses(revoked)).error?.code, 4100);
+  assert.ok((await getAddresses(revoked)).result, "reconnecting restores access");
   await Promise.all([page.close(), revoked.close(), kept.close()]);
 });
 
