@@ -59,13 +59,25 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     await app?.close();
   });
 
+  /** `answering`'s answer; fails (closing it) if an approval window opens first. */
+  async function answeredWithoutWindow(answering) {
+    const window = session.waitForApprovalWindow({ timeout: 5_000 }).then(
+      async (approval) => {
+        await approval.close();
+        return "an approval window opened";
+      },
+      () => "no window",
+    );
+    const answer = await Promise.race([answering, window]);
+    assert.notEqual(answer, "an approval window opened", "no approval window");
+    await window;
+    return answer;
+  }
+
   /** Connects `host` for Slot 24 signTransaction; ticks the Blind Signing opt-in if `blind`. */
   async function connect(host, { blind }) {
     const page = await openTestApp(session, app, host);
-    const connecting = page.evaluate(
-      (blind) => window.testApp.request("connect", { slots: [24], methods: ["signTransaction"], blindSigning: blind }),
-      blind,
-    );
+    const connecting = page.evaluate(() => window.testApp.request("connect", { slots: [24], methods: ["signTransaction"] }));
     const approval = await session.waitForApprovalWindow();
     assert.equal(await approval.$eval("[data-blind-opt-in]", (e) => e.checked), false, "Blind Signing is off by default");
     if (blind) await approval.click("[data-blind-opt-in]");
@@ -106,6 +118,16 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     assert.equal(answer.error?.code, 4100);
     assert.match(answer.error?.message, /Blind/);
     assert.equal((await session.approvalWindows()).length, 0);
+    await page.close();
+  });
+
+  test("a site can't ask for Blind Signing through connect: only the approval window's checkbox turns it on", async () => {
+    const page = await connect("asks-blind.localhost", { blind: false });
+    const asking = page.evaluate(() =>
+      window.testApp.request("connect", { slots: [24], methods: ["signTransaction"], blindSigning: true }),
+    );
+    const answer = await answeredWithoutWindow(asking);
+    assert.deepEqual(answer.result, { slots: [24], methods: ["signTransaction"] }, "the Grant, without Blind Signing");
     await page.close();
   });
 
@@ -165,19 +187,9 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       [PSETS.missingDerivation.payload, /bip32_derivation/],
     ];
     for (const [payload, message] of starterFree) {
-      const answering = signTransaction(blindApp, signingRequest(payload));
-      const window = session.waitForApprovalWindow({ timeout: 5_000 }).then(
-        async (approval) => {
-          await approval.close();
-          return "an approval window opened";
-        },
-        () => "no window",
-      );
-      const answer = await Promise.race([answering, window]);
-      assert.notEqual(answer, "an approval window opened", "no unlock window");
+      const answer = await answeredWithoutWindow(signTransaction(blindApp, signingRequest(payload)));
       assert.equal(answer.error?.code, -32602, answer.error?.message);
       assert.match(answer.error?.message, message);
-      await window;
     }
   });
 

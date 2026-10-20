@@ -38,7 +38,7 @@ export function createProviderHandler(deps: ProviderDeps) {
     const scope = parseScope(params);
     const existing = await grants.get(origin);
     if (!covers(existing, scope)) {
-      const answer = await askToConnect({ origin, ...scope, blindSigning: scope.blindSigning ?? false });
+      const answer = await askToConnect({ origin, ...scope });
       if (!answer.approved) throw rejected();
       await grants.put(widen(await grants.get(origin), origin, scope, answer.blindSigning));
     }
@@ -120,7 +120,7 @@ function parseSlot(params: unknown): number {
 }
 
 function parseScope(params: unknown): Scope {
-  const { slots, methods, blindSigning } = (params ?? {}) as { slots?: unknown; methods?: unknown; blindSigning?: unknown };
+  const { slots, methods } = (params ?? {}) as { slots?: unknown; methods?: unknown };
   if (
     !Array.isArray(slots) ||
     slots.length === 0 ||
@@ -138,7 +138,6 @@ function parseScope(params: unknown): Scope {
   return {
     slots: [...new Set(slots as number[])],
     methods: [...new Set(methods as GrantableMethod[])],
-    ...(blindSigning === true ? { blindSigning: true } : {}),
   };
 }
 

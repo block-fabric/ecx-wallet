@@ -119,7 +119,6 @@
     <label class="opt-in">
       <input type="checkbox" bind:checked={blindOptIn} data-blind-opt-in />
       Also allow <strong>Blind Signing</strong>: asking you to sign requests the wallet can't explain.
-      {#if prompt.blindSigning}<em>The site asked for this.</em>{/if}
       Leave this off unless you trust this site completely.
     </label>
 

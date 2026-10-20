@@ -6,8 +6,6 @@ export interface ConnectPrompt {
   origin: string;
   slots: number[];
   methods: string[];
-  /** The site asked for the Blind Signing opt-in (the checkbox still starts unticked). */
-  blindSigning: boolean;
 }
 
 /** A Signing Request arrived while locked: unlock first, in the approval window. */
