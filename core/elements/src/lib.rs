@@ -4,17 +4,24 @@
 //! - [`declare`] reports the binding the module serves;
 //! - [`derive_account`] turns the Slot 24 Starter into addresses and watch data.
 //!
-//! Later: `decode(request)` (Clear View or Blind) and `sign(request, starter)`.
+//! - [`decode`] refuses what the wallet must never sign, and otherwise returns a Clear View (next
+//!   ticket) or Blind with the facts it can prove;
+//! - [`sign`] signs only the inputs that re-derive to the Starter, changing nothing else.
 //!
 //! The module holds nothing between calls and receives only its own Slot's Starter. Every
 //! per-network value comes from Slot 24's Chain Entry (`chain-entry.json`), never from constants.
 use serde::Serialize;
 
 mod account;
+mod decode;
 pub mod chain_entry;
+mod ownership;
+mod sign;
 
 pub use account::{derive_account, Account, AddressEntry};
 pub use chain_entry::{chain_entry, ChainEntry, NetworkEntry};
+pub use decode::{decode, AssetAmount, Decoded, OwnedInput, Refusal, RefusalCode, VerifiableFacts};
+pub use sign::sign;
 
 /// No ambient randomness inside the module: any code path that reaches getrandom fails loudly.
 #[cfg(target_arch = "wasm32")]

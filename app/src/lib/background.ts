@@ -2,10 +2,47 @@
 // secret and makes every decision. The app renders what it is given and reports the user's choice.
 
 export interface ConnectPrompt {
+  kind: "connect";
   origin: string;
   slots: number[];
   methods: string[];
+  /** The site asked for the Blind Signing opt-in (the checkbox still starts unticked). */
+  blindSigning: boolean;
 }
+
+/** A Signing Request arrived while locked: unlock first, in the approval window. */
+export interface UnlockPrompt {
+  kind: "unlock";
+  origin: string;
+  chain: string;
+}
+
+export interface AssetAmount {
+  asset: string;
+  amount: string;
+}
+
+/** What the Chain Module can prove about a request it can't explain. */
+export interface VerifiableFacts {
+  ownedInputs: (AssetAmount & { index: number })[];
+  totalLeaving: AssetAmount[];
+  fee: AssetAmount[];
+  unknownFields: string[];
+  dangerousFlags: string[];
+}
+
+export type Decoded = { kind: "blind"; reason: string; verifiableFacts: VerifiableFacts };
+
+export interface SignPrompt {
+  kind: "sign";
+  origin: string;
+  chain: string;
+  requestId: string;
+  decoded: Decoded;
+  hints?: { summary?: string; outputLabels?: Record<string, string> };
+}
+
+export type ApprovalPrompt = ConnectPrompt | UnlockPrompt | SignPrompt;
 
 type Response<T> = { ok: true; result: T } | { ok: false; error: { code: number; message: string } };
 
@@ -15,10 +52,14 @@ async function send<T>(message: unknown): Promise<T> {
   return response.result;
 }
 
-export const getApproval = (id: string) => send<ConnectPrompt | null>({ kind: "approval.get", id });
+/** The approval's current prompt; waits while the background prepares it. Null once it's over. */
+export const getApproval = (id: string) => send<ApprovalPrompt | null>({ kind: "approval.get", id });
 
-export const resolveApproval = (id: string, approved: boolean) =>
-  send<null>({ kind: "approval.resolve", id, approved });
+export const resolveApproval = (id: string, approved: boolean, options: { blindSigning?: boolean } = {}) =>
+  send<null>({ kind: "approval.resolve", id, approved, ...options });
+
+/** Unlocks the wallet from an approval window; throws on a wrong password. */
+export const unlockApproval = (id: string, password: string) => send<null>({ kind: "approval.unlock", id, password });
 
 export interface VaultStatus {
   exists: boolean;

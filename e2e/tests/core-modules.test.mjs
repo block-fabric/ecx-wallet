@@ -81,3 +81,28 @@ test("the shipped Elements Chain Module derives the Slot 24 receive addresses fr
   assert.match(account.descriptor, /^elwpkh\(\[3b27f87d\/84h\/1h\/0h\]tpub/);
   assert.throws(() => elements.deriveAccount("not a starter", { receive: 1 }), /Starter/);
 });
+
+const PSETS = JSON.parse(await readFile(path.join(ROOT, "e2e", "fixtures", "elements-psets.json"), "utf8"));
+
+test("the shipped Elements Chain Module decodes a request it can't explain as Blind, with its verifiable facts", async () => {
+  const { loadChainModule } = await importWallet();
+  const elements = await loadChainModule(await readFile(path.join(DIST.chromium, "elements.wasm")));
+  const decoded = elements.decode(PSETS.blind.payload, SLOT_24_STARTER);
+  assert.equal(decoded.kind, "blind");
+  assert.deepEqual(decoded.verifiableFacts.ownedInputs.map((i) => [i.index, i.amount]), [[0, "100000"]]);
+  assert.deepEqual(decoded.verifiableFacts.fee.map((f) => f.amount), ["1000"]);
+});
+
+test("the shipped Elements Chain Module signs its own input exactly as LWK does, and refuses by rule", async () => {
+  const { loadChainModule, ChainModuleRefusal } = await importWallet();
+  const elements = await loadChainModule(await readFile(path.join(DIST.chromium, "elements.wasm")));
+  assert.equal(elements.sign(PSETS.blind.payload, SLOT_24_STARTER), PSETS.blind.signed);
+  assert.throws(
+    () => elements.sign(PSETS.wrongGenesis.payload, SLOT_24_STARTER),
+    (e) => e instanceof ChainModuleRefusal && e.code === "wrongGenesis",
+  );
+  assert.throws(
+    () => elements.decode(PSETS.confidentialInput.payload, SLOT_24_STARTER),
+    (e) => e instanceof ChainModuleRefusal && e.code === "confidential",
+  );
+});

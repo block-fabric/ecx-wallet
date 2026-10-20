@@ -13,10 +13,13 @@ import {
   loadVaultModule,
   ProviderRpcError,
   VaultError,
+  type ConnectAnswer,
   type ConnectPrompt,
   type Grant,
   type GrantStore,
   type KeyValueStore,
+  type SigningApproval,
+  type SignPrompt,
   type VaultModule,
 } from "@ecx/wallet";
 import type { BackgroundMessage, ProviderResponse } from "./messages";
@@ -91,51 +94,120 @@ const grants: GrantStore = {
   },
 };
 
-// Pending approvals live in memory. Provisional: if the worker is stopped while an approval
-// window is open, the request is lost and the page gets 4900 from the content script.
-interface PendingApproval {
-  prompt: ConnectPrompt;
-  settle: (approved: boolean) => void;
-  windowId?: number;
-}
-const approvals = new Map<string, PendingApproval>();
+// Approval windows. Their state lives in memory. Provisional: if the worker is stopped while an
+// approval window is open, the request is lost and the page gets 4900 from the content script.
 
-function askToConnect(prompt: ConnectPrompt): Promise<boolean> {
-  const id = crypto.randomUUID();
-  return new Promise((resolve) => {
-    const pending: PendingApproval = {
-      prompt,
-      settle: (approved) => {
-        approvals.delete(id);
-        if (pending.windowId !== undefined) chrome.windows.remove(pending.windowId).catch(() => {});
-        resolve(approved);
-      },
-    };
-    approvals.set(id, pending);
+/** What an approval window shows; the page renders it and reports the user's answer. */
+type ApprovalPrompt =
+  | ({ kind: "connect" } & ConnectPrompt)
+  | { kind: "unlock"; origin: string; chain: string }
+  | ({ kind: "sign" } & SignPrompt);
+
+/** The user's answer; null when the window was closed. */
+type ApprovalAnswer = { approved: boolean; blindSigning?: boolean } | null;
+
+/**
+ * One window that can ask several questions in turn (unlock, then approve). The page asks for the
+ * current prompt (`approval.get`), which waits while the background prepares the next one.
+ */
+class ApprovalWindow {
+  readonly id = crypto.randomUUID();
+  windowId?: number;
+  private opened = false;
+  private closed = false;
+  private current = deferred<ApprovalPrompt | null>();
+  private answer?: (answer: ApprovalAnswer) => void;
+
+  /** The prompt the page should show now (waits while the next one is being prepared). */
+  prompt(): Promise<ApprovalPrompt | null> {
+    return this.current.promise;
+  }
+
+  /** Shows `prompt` (opening the window on first use) and resolves with the user's answer. */
+  ask(prompt: ApprovalPrompt): Promise<ApprovalAnswer> {
+    if (this.closed) return Promise.resolve(null);
+    const answered = new Promise<ApprovalAnswer>((resolve) => (this.answer = resolve));
+    this.current.resolve(prompt);
+    if (!this.opened) this.open();
+    return answered;
+  }
+
+  /** Records the user's answer; the page then waits for the next prompt, if any. */
+  settle(answer: ApprovalAnswer): void {
+    const resolve = this.answer;
+    this.answer = undefined;
+    this.current = deferred();
+    resolve?.(answer);
+  }
+
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    approvals.delete(this.id);
+    this.settle(null);
+    this.current.resolve(null);
+    if (this.windowId !== undefined) chrome.windows.remove(this.windowId).catch(() => {});
+  }
+
+  private open(): void {
+    this.opened = true;
+    approvals.set(this.id, this);
     chrome.windows
-      .create({ url: chrome.runtime.getURL(`index.html#/approve/${id}`), type: "popup", width: 420, height: 600 })
+      .create({ url: chrome.runtime.getURL(`index.html#/approve/${this.id}`), type: "popup", width: 420, height: 640 })
       .then((window) => {
-        pending.windowId = window?.id;
-        if (!approvals.has(id) && window?.id !== undefined) chrome.windows.remove(window.id).catch(() => {});
-      }, () => pending.settle(false));
-  });
+        this.windowId = window?.id;
+        if (this.closed && window?.id !== undefined) chrome.windows.remove(window.id).catch(() => {});
+      }, () => this.close());
+  }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => (resolve = r));
+  return { promise, resolve };
+}
+
+const approvals = new Map<string, ApprovalWindow>();
+
+async function askToConnect(prompt: ConnectPrompt): Promise<ConnectAnswer> {
+  const approval = new ApprovalWindow();
+  try {
+    const answer = await approval.ask({ kind: "connect", ...prompt });
+    return { approved: answer?.approved === true, blindSigning: answer?.approved === true && answer.blindSigning === true };
+  } finally {
+    approval.close();
+  }
+}
+
+function openSigningApproval(context: { origin: string; chain: string }): SigningApproval {
+  const approval = new ApprovalWindow();
+  return {
+    unlock: async () => (await approval.ask({ kind: "unlock", ...context }))?.approved === true,
+    confirm: async (prompt) => (await approval.ask({ kind: "sign", ...prompt }))?.approved === true,
+    close: () => approval.close(),
+  };
 }
 
 // Closing the approval window counts as rejecting.
 chrome.windows.onRemoved.addListener((windowId) => {
-  for (const pending of approvals.values()) if (pending.windowId === windowId) pending.settle(false);
+  for (const approval of approvals.values()) if (approval.windowId === windowId) approval.close();
 });
 
 // Each Slot's Chain Module runs in its own WASM instance (instantiated on first use) and gets
 // only that Slot's Starter, per call.
-const accounts = createAccounts({ starter: (slot) => vault.starter(slot), chainModule: createChainModules(fetchWasm) });
+const chainModule = createChainModules(fetchWasm);
+const accounts = createAccounts({ starter: (slot) => vault.starter(slot), chainModule });
 
 const handleProviderRequest = createProviderHandler({
   grants,
   askToConnect,
+  openSigningApproval,
   supportedSlots: SUPPORTED_SLOTS,
   isUnlocked: async () => (await vault.status()).unlocked,
   receiveAddresses: (slot) => accounts.receiveAddresses(slot),
+  chainModule,
+  starter: (slot) => vault.starter(slot),
+  now: () => Date.now(),
 });
 
 /** The requester's web origin as the browser reports it for a content-script message. */
@@ -159,11 +231,20 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
     }
     case "approval.get":
       if (!fromWalletPage(sender)) return null;
-      return approvals.get(message.id)?.prompt ?? null;
+      return (await approvals.get(message.id)?.prompt()) ?? null;
     case "approval.resolve":
       if (!fromWalletPage(sender)) return null;
-      approvals.get(message.id)?.settle(message.approved === true);
+      approvals.get(message.id)?.settle({ approved: message.approved === true, blindSigning: message.blindSigning === true });
       return null;
+    case "approval.unlock": {
+      // Unlocking from an approval window: throws (wrong password) without answering the prompt.
+      if (!fromWalletPage(sender)) return null;
+      const approval = approvals.get(message.id);
+      if (approval === undefined) return null;
+      await vault.unlock(String(message.password ?? ""));
+      approval.settle({ approved: true });
+      return null;
+    }
     case "grants.list":
       if (!fromWalletPage(sender)) return null;
       return (await grants.list()).sort((a, b) => a.origin.localeCompare(b.origin));

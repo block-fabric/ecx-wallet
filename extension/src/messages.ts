@@ -31,7 +31,9 @@ export interface RelayResponse {
 export type BackgroundMessage =
   | { kind: "provider.request"; method: unknown; params: unknown }
   | { kind: "approval.get"; id: string }
-  | { kind: "approval.resolve"; id: string; approved: boolean }
+  | { kind: "approval.resolve"; id: string; approved: boolean; blindSigning?: boolean }
+  // Unlock from an approval window (a Signing Request that arrived while locked).
+  | { kind: "approval.unlock"; id: string; password: string }
   | { kind: "grants.list" }
   | { kind: "grants.revoke"; origin: string }
   // Accounts (receive addresses per Slot): accepted only from the wallet's own pages.

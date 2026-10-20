@@ -21,7 +21,7 @@ use serde::Serialize;
 use crate::network;
 
 /// LWK's single-sig account path off mainnet (`lwk_common::singlesig_desc`, coin type 1).
-const ACCOUNT_PATH: &str = "84h/1h/0h";
+pub(crate) const ACCOUNT_PATH: &str = "84h/1h/0h";
 
 /// Addresses and watch data for one Starter.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

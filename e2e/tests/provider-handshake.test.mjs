@@ -96,7 +96,17 @@ test("a method outside the origin's Grant returns 4100, and Grants never carry o
   );
   await (await session.waitForApprovalWindow()).click("[data-approve]");
   assert.ok((await connecting).result);
-  assert.equal((await granted.evaluate(() => window.testApp.request("signTransaction", {}))).error?.code, 4100);
+  const signingRequest = {
+    version: "1.0",
+    id: "outside-grant",
+    chain: "ecash:betanet-s24",
+    method: "signTransaction",
+    format: "pset",
+    payload: "cHNldP8=",
+    expiresAt: Math.floor(Date.now() / 1000) + 600,
+  };
+  const signing = await granted.evaluate((r) => window.testApp.request("signTransaction", r), signingRequest);
+  assert.equal(signing.error?.code, 4100);
 
   // Another origin gets nothing from that Grant, whatever it claims about itself.
   const stranger = await openTestApp(session, app, "stranger.localhost");

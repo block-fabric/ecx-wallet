@@ -5,12 +5,14 @@ export type GrantableMethod = (typeof GRANTABLE_METHODS)[number];
 export interface Scope {
   slots: number[];
   methods: GrantableMethod[];
+  /** Asks for the Blind Signing opt-in too (the user still decides; it is off by default). */
+  blindSigning?: boolean;
 }
 
 /** A user's stored approval for one web origin. */
 export interface Grant extends Scope {
   origin: string;
-  /** Separate, off-by-default opt-in. Nothing sets it yet. */
+  /** Separate, off-by-default opt-in: without it, Blind requests are refused outright. */
   blindSigning: boolean;
 }
 
@@ -28,16 +30,20 @@ export function covers(grant: Grant | undefined, scope: Scope): boolean {
   return (
     grant !== undefined &&
     scope.slots.every((s) => grant.slots.includes(s)) &&
-    scope.methods.every((m) => grant.methods.includes(m))
+    scope.methods.every((m) => grant.methods.includes(m)) &&
+    (!scope.blindSigning || grant.blindSigning)
   );
 }
 
-/** The Grant after the user approves `scope`: the union with what the origin already had. */
-export function widen(existing: Grant | undefined, origin: string, scope: Scope): Grant {
+/**
+ * The Grant after the user approves `scope`: the union with what the origin already had. Blind
+ * Signing turns on only if the user ticked it (`blindSigning`), whatever the scope asked for.
+ */
+export function widen(existing: Grant | undefined, origin: string, scope: Scope, blindSigning: boolean): Grant {
   return {
     origin,
     slots: [...new Set([...(existing?.slots ?? []), ...scope.slots])],
     methods: [...new Set([...(existing?.methods ?? []), ...scope.methods])],
-    blindSigning: existing?.blindSigning ?? false,
+    blindSigning: (existing?.blindSigning ?? false) || blindSigning,
   };
 }

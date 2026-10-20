@@ -30,3 +30,29 @@ pub extern "C" fn chain_entry() -> i32 {
 pub unsafe extern "C" fn derive_account(starter: *const u8, starter_len: usize, receive: u32) -> i32 {
     ret_text(text(starter, starter_len).and_then(|s| ecx_elements::derive_account(s, receive)).and_then(|a| json(&a)))
 }
+
+/// A refusal travels as the error result, as JSON (`{ code, message }`), so the host can tell
+/// which rule refused the request.
+fn refusal(r: ecx_elements::Refusal) -> String {
+    json(&r).unwrap_or(r.message)
+}
+
+/// Base64 PSET + Slot 24 Starter → `{ kind: "blind", reason, verifiableFacts }` as JSON, or a
+/// refusal.
+#[no_mangle]
+pub unsafe extern "C" fn decode(payload: *const u8, payload_len: usize, starter: *const u8, starter_len: usize) -> i32 {
+    ret_text(text(payload, payload_len).and_then(|p| {
+        let s = text(starter, starter_len)?;
+        ecx_elements::decode(p, s).map_err(refusal).and_then(|d| json(&d))
+    }))
+}
+
+/// Base64 PSET + Slot 24 Starter → the same PSET (base64) with signatures on the owned inputs, or
+/// a refusal.
+#[no_mangle]
+pub unsafe extern "C" fn sign(payload: *const u8, payload_len: usize, starter: *const u8, starter_len: usize) -> i32 {
+    ret_text(text(payload, payload_len).and_then(|p| {
+        let s = text(starter, starter_len)?;
+        ecx_elements::sign(p, s).map_err(refusal)
+    }))
+}

@@ -1,6 +1,14 @@
 export { ErrorCode, ProviderRpcError } from "./errors";
 export { GRANTABLE_METHODS, covers, widen, type Grant, type GrantStore, type GrantableMethod, type Scope } from "./grants";
-export { createProviderHandler, type ConnectPrompt, type ProviderDeps } from "./provider";
+export {
+  createProviderHandler,
+  type ConnectAnswer,
+  type ConnectPrompt,
+  type ProviderDeps,
+  type SigningApproval,
+  type SignPrompt,
+} from "./provider";
+export { parseSigningRequest, SUPPORTED_MAJOR, type SigningRequest } from "./signing-request";
 export { CoreModule, CoreModuleError, type CoreArg } from "./wasm";
 export { loadVaultModule, type KdfParams, type VaultModule } from "./vault-module";
 export {
@@ -13,8 +21,13 @@ export {
   type SlotAddress,
 } from "./accounts";
 export {
+  ChainModuleRefusal,
   loadChainModule,
   type Account,
+  type AssetAmount,
+  type Decoded,
+  type RefusalCode,
+  type VerifiableFacts,
   type Binding,
   type ChainEntry,
   type ChainModule,
