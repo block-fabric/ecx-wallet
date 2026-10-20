@@ -12,6 +12,10 @@ _Avoid_: Core wallet, host wallet
 
 ### Keys
 
+**Vault**:
+The part of the Wallet Base that keeps the Master Mnemonic encrypted, unlocks it, and derives Starters from it; the only part that ever sees the Master Mnemonic.
+_Avoid_: Keystore, keyring, secret store
+
 **Master Mnemonic**:
 The single BIP39 phrase a user backs up; the root of their L1 keys and of every Starter.
 _Avoid_: Seed phrase, recovery phrase, master seed
