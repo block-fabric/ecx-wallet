@@ -3,7 +3,12 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Stub Elements Sidechain Server: the standard Sidechain Server API answered from fixtures (reference implementation and e2e server).",
-  "exports": { ".": "./src/server.mjs" },
-  "scripts": { "start": "node src/main.mjs" }
+  "description": "Stub Sidechain Servers answered from fixtures: the Standard Sidechain API (reference implementation) and Esplora (the e2e build's server).",
+  "exports": {
+    ".": "./src/server.mjs",
+    "./esplora": "./src/esplora.mjs"
+  },
+  "scripts": {
+    "start": "node src/main.mjs"
+  }
 }

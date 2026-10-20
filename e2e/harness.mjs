@@ -16,6 +16,8 @@ import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 import puppeteer from "puppeteer-core";
 import { createStubServer } from "@ecx/stub-server";
+import { createEsploraStub } from "@ecx/stub-server/esplora";
+import { E2E_SIDECHAIN_SERVER } from "./scripts/build.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(here, "..");
@@ -23,14 +25,25 @@ export const DIST = {
   chromium: path.join(ROOT, "extension", "dist", "chromium"),
   firefox: path.join(ROOT, "extension", "dist", "firefox"),
 };
+/** The e2e build (e2e/scripts/build.mjs): the shipped build with Slot 24's server on loopback. */
+export const DIST_E2E = {
+  chromium: path.join(ROOT, "e2e", "dist", "extension", "chromium"),
+  firefox: path.join(ROOT, "e2e", "dist", "extension", "firefox"),
+};
 
 /** Browsers the Provider suite runs against: `E2E_BROWSERS=brave,firefox` (the default). */
 export const BROWSERS = (process.env.E2E_BROWSERS ?? "brave,firefox").split(",").filter(Boolean);
 
-/** Launches the named browser (one of BROWSERS) with the matching extension build installed. */
-export function launchWallet(name, options) {
-  if (name === "brave") return launchBrave(options);
-  if (name === "firefox") return launchFirefox(options);
+/**
+ * Launches the named browser (one of BROWSERS) with the matching extension build installed: by
+ * default the e2e build, whose Slot 24 server is on loopback (see `serveEsplora`), so no test
+ * reaches the public explorer; `{ build: "shipped" }` for the shipped build. build-output.test
+ * checks the two differ only in that server.
+ */
+export function launchWallet(name, { build = "e2e", ...options } = {}) {
+  const dist = build === "shipped" ? DIST : DIST_E2E;
+  if (name === "brave") return launchBrave({ extensionPath: dist.chromium, ...options });
+  if (name === "firefox") return launchFirefox({ extensionPath: dist.firefox, ...options });
   throw new Error(`Unknown browser ${name}`);
 }
 
@@ -41,7 +54,7 @@ export function launchWallet(name, options) {
  * `profile`: reuse this profile dir (e.g. to restart the browser on the same profile); the caller
  * then owns it and `close()` leaves it in place. Default: a fresh throwaway profile.
  */
-export async function launchBrave({ extensionPath = DIST.chromium, profile: reuse } = {}) {
+export async function launchBrave({ extensionPath = DIST_E2E.chromium, profile: reuse } = {}) {
   const profile = reuse ?? (await mkdtemp(path.join(tmpdir(), "ecx-e2e-brave-")));
   const keepProfile = reuse !== undefined;
   const browser = await puppeteer.launch({
@@ -144,7 +157,7 @@ const FIREFOX_EXTENSION_ORIGIN = `moz-extension://${FIREFOX_EXTENSION_UUID}/`;
  * is installed again on each launch (temporary add-ons don't survive a restart), keeping its
  * storage and UUID.
  */
-export async function launchFirefox({ extensionPath = DIST.firefox, profile: reuse } = {}) {
+export async function launchFirefox({ extensionPath = DIST_E2E.firefox, profile: reuse } = {}) {
   const profile = reuse ?? (await mkdtemp(path.join(tmpdir(), "ecx-e2e-firefox-")));
   const keepProfile = reuse !== undefined;
   const browser = await puppeteer.launch({
@@ -336,16 +349,38 @@ export async function serveTestApp() {
 }
 
 /**
- * Starts the stub Sidechain Server (see stub-server/README.md) at the URL Slot 24's Chain Entry
- * names as betanet's default server, which is the one the built wallet talks to. `config` is the
- * stub's fixture table (`state`, `transfers`). Returns the stub plus its `url`; `await close()`.
+ * Starts the stub Standard Sidechain API server (see stub-server/README.md) on a free loopback
+ * port. `config` is the stub's fixture table (`state`, `transfers`). Returns the stub plus its
+ * `url`; `await close()`.
  */
 export async function serveSidechainServer(config) {
   const entry = JSON.parse(await readFile(path.join(ROOT, "core", "elements", "chain-entry.json"), "utf8")).networks.betanet;
-  const url = new URL(entry.sidechainServer);
   const stub = createStubServer({ chain: entry.chain, ...config });
+  return { ...stub, url: await stub.listen() };
+}
+
+/**
+ * Starts the stub Esplora server where the e2e build's Slot 24 Chain Entry names betanet's server,
+ * so one test file that uses it at a time. `config` (`genesisHash`, `utxos`) is read on every
+ * request, so a test may change it. Returns the stub plus its `url`; `await close()`.
+ */
+export async function serveEsplora(config) {
+  const url = new URL(E2E_SIDECHAIN_SERVER.url);
+  const stub = createEsploraStub(config);
   await stub.listen(Number(url.port), url.hostname);
-  return { ...stub, url: url.origin };
+  return { ...stub, url: E2E_SIDECHAIN_SERVER.url };
+}
+
+/** The wallet's TypeScript (`wallet/`), bundled for node the way esbuild bundles it for the background. */
+export async function importWallet() {
+  const out = await esbuild.build({
+    entryPoints: [path.join(ROOT, "wallet", "src", "index.ts")],
+    bundle: true,
+    format: "esm",
+    platform: "neutral",
+    write: false,
+  });
+  return import(`data:text/javascript;base64,${Buffer.from(out.outputFiles[0].text).toString("base64")}`);
 }
 
 /** Opens a wallet screen (a hash route of the app, e.g. `#/grants`) in a new tab, once rendered. */
@@ -371,6 +406,9 @@ export async function setUpWallet(session, { phrase = ABANDON, password = WALLET
   await page.type("[data-repeat-password]", password);
   await page.click("[data-submit]");
   await page.waitForSelector('[data-vault-state="unlocked"]');
+  // The home page now asks Slot 24's server for the balance; let that settle before closing, or
+  // Firefox logs the reply the closed page never received.
+  await page.waitForSelector("[data-balance], [data-no-balance], [data-balance-error]", { timeout: 20_000 });
   await page.close();
 }
 

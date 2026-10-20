@@ -1,5 +1,6 @@
-// The built extension loads in each browser (unpacked in Brave, as a temporary add-on in Firefox)
+// The shipped extension loads in each browser (unpacked in Brave, as a temporary add-on in Firefox)
 // with no manifest errors or warnings, and its pages run under the manifest CSP without errors.
+// Only onboarding pages are opened, so the shipped build never contacts the public explorer.
 import assert from "node:assert/strict";
 import { appendFile, cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -10,7 +11,7 @@ import { BROWSERS, DIST, launchWallet } from "../harness.mjs";
 for (const browserName of BROWSERS) describe(browserName, () => {
   let session;
   before(async () => {
-    session = await launchWallet(browserName);
+    session = await launchWallet(browserName, { build: "shipped" });
   });
   after(() => session?.close());
 

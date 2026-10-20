@@ -10,6 +10,9 @@
 // The manifests are hand-written except for the Sidechain Servers the wallet may reach: those come
 // from the Chain Entries (`core/elements/chain-entry.json`), added as `host_permissions` and as the
 // CSP's `connect-src`, so the wallet can talk to nothing else.
+//
+// The e2e build (e2e/scripts/build.mjs) points $ECX_CORE_DIST, $ECX_CHAIN_ENTRIES (comma-separated)
+// and $ECX_EXTENSION_DIST at its own core build, Chain Entry and output dir.
 import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,18 +21,18 @@ import { checkNoEval } from "./check-no-eval.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const appBuild = path.resolve(root, "..", "app", "build");
-const coreDist = path.resolve(root, "..", "core", "dist");
-const dist = path.join(root, "dist");
+const coreDist = process.env.ECX_CORE_DIST ?? path.resolve(root, "..", "core", "dist");
+const dist = process.env.ECX_EXTENSION_DIST ?? path.join(root, "dist");
 const staging = path.join(dist, ".staging");
 const TARGETS = ["chromium", "firefox"];
-const CHAIN_ENTRIES = [path.resolve(root, "..", "core", "elements", "chain-entry.json")];
+const CHAIN_ENTRIES = process.env.ECX_CHAIN_ENTRIES?.split(",") ?? [path.resolve(root, "..", "core", "elements", "chain-entry.json")];
 
 /** Every network's default Sidechain Server origin, across the bundled Chain Entries. */
 async function sidechainServerOrigins() {
   const origins = new Set();
   for (const file of CHAIN_ENTRIES) {
     const entry = JSON.parse(await readFile(file, "utf8"));
-    for (const network of Object.values(entry.networks)) origins.add(new URL(network.sidechainServer).origin);
+    for (const network of Object.values(entry.networks)) origins.add(new URL(network.sidechainServer.url).origin);
   }
   return [...origins].sort();
 }

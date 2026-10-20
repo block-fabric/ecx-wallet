@@ -15,8 +15,8 @@ pnpm workspace, one directory per module from the spec:
 | `app/` | SvelteKit UI (adapter-static, hash router, so SSR is off). Built as one `index.html` shell; screens are hash routes, e.g. `index.html#/approve/<id>`, `index.html#/grants`. |
 | `extension/` | MV3 shell: hand-written `manifests/chromium.json` and `manifests/firefox.json`; `src/background.ts`, `src/content.ts`, `src/inpage.ts` bundled with esbuild (not SvelteKit). |
 | `client/` | Library Sidechain Apps use to discover the Provider (`discoverProviders()`). |
-| `stub-server/` | Stub Elements Sidechain Server (`createStubServer`) answering the standard Sidechain Server API from fixtures, and that API's protocol draft (`stub-server/README.md`). |
-| `e2e/` | Seam 1 harness and tests: the built extension in headless Brave and Firefox. |
+| `stub-server/` | Stub Sidechain Servers answered from fixtures: the Standard Sidechain API (`createStubServer`, with that API's protocol draft in `stub-server/README.md`) and Esplora (`createEsploraStub`, the e2e build's Slot 24 server). |
+| `e2e/` | Seam 1 harness and tests: the built extension in headless Brave and Firefox, plus node tests of what needs no browser. `e2e/scripts/build.mjs` makes the e2e build (`e2e/dist/`). |
 
 Request path: page → `client` discovery → injected Provider (`inpage.ts`, main world) → content script
 (relay) → background (derives the origin from the browser's `sender`) → `wallet`'s Provider handler.
@@ -38,15 +38,24 @@ when unlocked (`accounts.list` message); the Provider's `getAddresses({ slot })`
 while locked).
 
 Pull path (`wallet/src/pull-path.ts`, `sidechain-server.ts`): each Slot talks to the Sidechain
-Server its Chain Entry names for the Chain Module's network (Slot 24: `sidechainServer` in
+Server its Chain Entry names for the Chain Module's network, in the Server API it names next to the
+URL (`sidechainServer: { api, url }`; docs/adr/0002). Slot 24's betanet is
+`{ "api": "esplora", "url": "https://explorer.bitnames.info/api" }` in
 `core/elements/chain-entry.json`; the extension build turns those URLs into `host_permissions` and
-CSP `connect-src`). The home page registers the Slot's descriptor and first 20 receive addresses
-(`accounts.reported`) and shows the balance per asset, labelled "Reported by <server URL>". The Send
-screen (`#/send/<slot>`, `send.start`) has the server build the transfer. The Signing Request it
-returns goes through the same validation, Chain Module and approval window as a Provider request
-(`wallet/src/signing.ts`), with the server URL as the requester. It must be Clear: there is no Grant,
-so a Blind request is refused without a window. After approval the wallet submits the signed PSET
-to the server.
+CSP `connect-src`. `server-api.ts` picks the client:
+- `esplora` (`esplora.ts`): checks `/block-height/0` against the Chain Entry's genesis (a mismatch
+  is a hard error), then sums the confirmed explicit outputs (`/address/:a/utxo`) of the first 20
+  receive and 20 change addresses per asset. Send isn't available over Esplora yet (#28).
+- `ecx-v0`, the Standard Sidechain API (`standard-sidechain-api.ts`, `stub-server/README.md`):
+  registers the descriptor and first 20 receive addresses before every call. Its Send has the
+  server build the transfer; the Signing Request goes through the same validation, Chain Module
+  and approval window as a Provider request (`wallet/src/signing.ts`), with the server URL as the
+  requester. It must be Clear: there is no Grant, so a Blind request is refused without a window.
+  After approval the wallet submits the signed PSET to the server. No bundled chain speaks it in
+  v0; `e2e/tests/sidechain-servers.test.mjs` tests it in node.
+
+The home page (`accounts.reported`) shows the balance per asset, labelled "Reported by <server
+URL>"; the Send screen is `#/send/<slot>` (`send.start`).
 
 Signing (`signTransaction`): the Provider handler checks, in the spec's order, the envelope (unknown
 MAJOR → 4200, unknown fields ignored, expired → -32602), the Grant (Slot + method → 4100), then
@@ -69,14 +78,29 @@ Firefox at `/usr/bin/firefox` (or `$FIREFOX`) for its half of the suite. No Chro
 
 ```sh
 pnpm install
-pnpm test          # Rust tests (Seam 2), then builds core + app + extension and runs the e2e suite
+pnpm test          # Rust tests (Seam 2), then builds core + app + extension, the e2e build, and runs the e2e suite
 pnpm build         # just builds: core/dist/*.wasm, then extension/dist/chromium and extension/dist/firefox
+pnpm build:e2e     # after pnpm build: the e2e build in e2e/dist/extension/{chromium,firefox}
 pnpm typecheck
 ```
 
 - Only one browser: `E2E_BROWSERS=brave pnpm test` (default `brave,firefox`). Watch it: `HEADFUL=1`.
 - Load the build by hand: `brave://extensions` → Developer mode → Load unpacked → `extension/dist/chromium`.
-- Screenshot every screen (Brave, light or dark): `node e2e/screenshots.mjs <out dir> [light|dark]` after `pnpm build`.
+- Screenshot every screen (Brave, light or dark): `node e2e/screenshots.mjs <out dir> [light|dark]` after `pnpm build && pnpm build:e2e`.
+- Try the e2e build by hand: load `e2e/dist/extension/chromium` and run `pnpm --filter @ecx/stub-server start` (the Esplora stub, answering for "abandon … about").
+
+### The e2e build
+
+The shipped build's Slot 24 server is the public Elements explorer, which tests can't control. So
+`e2e/scripts/build.mjs` builds the extension again from the same sources, with one change: betanet's
+`sidechainServer` is `E2E_SIDECHAIN_SERVER` (the Esplora stub at `http://127.0.0.1:24024`). The
+Chain Entry is compiled into `elements.wasm` (`core/elements/build.rs` takes
+`$ECX_ELEMENTS_CHAIN_ENTRY`), so that module is rebuilt, in its own cargo target dir
+(`core/target/e2e`). `build-output.test` checks the two builds differ only there: every other file
+byte-identical, the manifest only in the server's origin, and the module's `declare()` and
+`chainEntry()` only in betanet's server. Browser tests run on the e2e build (`launchWallet`'s
+default), so none reaches the public explorer; `extension-loads.test` loads the shipped build
+(`{ build: "shipped" }`) and opens only onboarding pages.
 
 ### MV3 fixes applied to the SvelteKit output
 
@@ -92,10 +116,11 @@ pnpm typecheck
 
 ### Writing e2e tests
 
-`e2e/harness.mjs` exports `launchWallet(name)` / `launchBrave()` / `launchFirefox()`, `setUpWallet(session)`
+`e2e/harness.mjs` exports `launchWallet(name, { build })` (`"e2e"` by default, or `"shipped"`) / `launchBrave()` / `launchFirefox()`, `setUpWallet(session)`
 (imports `ABANDON`, no passphrase, and leaves the wallet unlocked), `serveTestApp()`
-and `openTestApp(session, app, host)`, `serveSidechainServer(config)` (the stub Sidechain Server on the
-Chain Entry's URL, `http://127.0.0.1:24024`, so one pull-path test file at a time), and `openWalletPage(session, "#/grants")` for a wallet screen (it waits
+and `openTestApp(session, app, host)`, `serveEsplora(config)` (the stub Esplora server where the e2e build's Chain Entry
+names Slot 24's server, `http://127.0.0.1:24024`, so one test file using it at a time), `serveSidechainServer(config)` (the
+Standard Sidechain API stub on a free port), `importWallet()` (`wallet/` bundled for node), and `openWalletPage(session, "#/grants")` for a wallet screen (it waits
 for `[data-screen-ready]`; Firefox's extension UUID is pinned so its pages have a known URL). Each `<name>.localhost` host is its own origin (Grants are per
 origin). The test Sidechain App (`e2e/test-app/`) exposes `window.testApp.request(method, params)`
 returning `{ result }` or `{ error: { code, message } }`. A session has `waitForApprovalWindow()`,

@@ -6,7 +6,8 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "build": "pnpm --filter @ecx/core build && pnpm --filter @ecx/app build && pnpm --filter @ecx/extension build",
-    "test": "pnpm --filter @ecx/core test && pnpm build && pnpm --filter @ecx/e2e test",
+    "build:e2e": "node e2e/scripts/build.mjs",
+    "test": "pnpm --filter @ecx/core test && pnpm build && pnpm build:e2e && pnpm --filter @ecx/e2e test",
     "typecheck": "pnpm -r --if-present typecheck"
   }
 }

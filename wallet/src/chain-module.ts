@@ -17,6 +17,15 @@ export interface Declaration {
   capabilities: string[];
 }
 
+/** The protocol the wallet speaks to a Sidechain Server (docs/adr/0002). */
+export type ServerApi = "ecx-v0" | "esplora";
+
+/** A network's default Sidechain Server: where it is and which Server API it speaks. */
+export interface SidechainServerEntry {
+  api: ServerApi;
+  url: string;
+}
+
 /** One network of a sidechain, as its Chain Entry describes it. */
 export interface NetworkEntry {
   chain: string;
@@ -26,8 +35,8 @@ export interface NetworkEntry {
   addressParams: { p2pkhPrefix: number; p2shPrefix: number; blindedPrefix: number; bechHrp: string; blechHrp: string };
   /** The parent (L1) chain's address encoding, for a Withdrawal's L1 destination. */
   parentAddressParams: { p2pkhPrefix: number; p2shPrefix: number; bechHrp: string };
-  /** Default Sidechain Server URL. */
-  sidechainServer: string;
+  /** Default Sidechain Server. */
+  sidechainServer: SidechainServerEntry;
   /** Official App origins. */
   officialApps: string[];
 }
@@ -50,6 +59,7 @@ export interface DerivedAddress {
 export interface Account {
   descriptor: string;
   receive: DerivedAddress[];
+  change: DerivedAddress[];
 }
 
 export interface AssetAmount {
@@ -117,8 +127,8 @@ export class ChainModuleRefusal extends Error {
 export interface ChainModule {
   declare(): Declaration;
   chainEntry(): ChainEntry;
-  /** The Slot's Starter → its account, with the first `receive` receive addresses. */
-  deriveAccount(starter: string, options: { receive: number }): Account;
+  /** The Slot's Starter → its account, with the first `receive` receive and `change` (default 0) change addresses. */
+  deriveAccount(starter: string, options: { receive: number; change?: number }): Account;
   /** Refuses (throws ChainModuleRefusal) what the module would refuse anyway, without the Starter. */
   check(payload: string): void;
   /** A request's payload → a Clear View or Blind. Throws ChainModuleRefusal. */
@@ -151,7 +161,7 @@ export async function loadChainModule(bytes: BufferSource): Promise<ChainModule>
   return {
     declare: () => json<Declaration>("declare"),
     chainEntry: () => json<ChainEntry>("chain_entry"),
-    deriveAccount: (starter, { receive }) => json<Account>("derive_account", starter, receive),
+    deriveAccount: (starter, { receive, change = 0 }) => json<Account>("derive_account", starter, receive, change),
     check: (payload) => refusals(() => void m.callText("check", payload)),
     decode: (payload, starter) => refusals(() => json<Decoded>("decode", payload, starter)),
     sign: (payload, starter) => refusals(() => m.callText("sign", payload, starter)),

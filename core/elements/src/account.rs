@@ -31,6 +31,8 @@ pub struct Account {
     pub descriptor: String,
     /// External (receive) addresses, from index 0.
     pub receive: Vec<AddressEntry>,
+    /// Internal (change) addresses, from index 0.
+    pub change: Vec<AddressEntry>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -42,27 +44,34 @@ pub struct AddressEntry {
     pub script_pubkey: String,
 }
 
-/// The Starter → its account's descriptor and its first `receive_count` receive addresses.
-pub fn derive_account(starter: &str, receive_count: u32) -> Result<Account, String> {
+/// The Starter → its account's descriptor, its first `receive_count` receive addresses and its
+/// first `change_count` change addresses.
+pub fn derive_account(starter: &str, receive_count: u32, change_count: u32) -> Result<Account, String> {
     let signer = SwSigner::new(starter, false).map_err(|e| format!("invalid Starter: {e}"))?;
     let path = DerivationPath::from_str(&format!("m/{ACCOUNT_PATH}")).expect("valid path");
     let xpub = signer.derive_xpub(&path).map_err(|e| format!("derive xpub: {e:?}"))?;
     let descriptor = format!("elwpkh([{}/{ACCOUNT_PATH}]{xpub}/<0;1>/*)", signer.fingerprint());
 
     let parsed = Descriptor::<DescriptorPublicKey>::from_str(&descriptor).map_err(|e| e.to_string())?;
-    let external = parsed.into_single_descriptors().map_err(|e| e.to_string())?.swap_remove(0);
-    let receive = (0..receive_count)
-        .map(|index| {
-            let at = external.at_derivation_index(index).map_err(|e| e.to_string())?;
-            let address = at.address(address_params()).map_err(|e| e.to_string())?;
-            Ok(AddressEntry {
-                index,
-                address: address.to_string(),
-                script_pubkey: hex(at.script_pubkey().as_bytes()),
+    let [external, internal]: [_; 2] = parsed
+        .into_single_descriptors()
+        .map_err(|e| e.to_string())?
+        .try_into()
+        .map_err(|_| "expected a receive and a change chain".to_string())?;
+    let addresses = |chain: &Descriptor<DescriptorPublicKey>, count: u32| {
+        (0..count)
+            .map(|index| {
+                let at = chain.at_derivation_index(index).map_err(|e| e.to_string())?;
+                let address = at.address(address_params()).map_err(|e| e.to_string())?;
+                Ok(AddressEntry {
+                    index,
+                    address: address.to_string(),
+                    script_pubkey: hex(at.script_pubkey().as_bytes()),
+                })
             })
-        })
-        .collect::<Result<_, String>>()?;
-    Ok(Account { descriptor, receive })
+            .collect::<Result<Vec<_>, String>>()
+    };
+    Ok(Account { descriptor, receive: addresses(&external, receive_count)?, change: addresses(&internal, change_count)? })
 }
 
 /// The Chain Entry's address parameters, as rust-elements wants them (`&'static`).

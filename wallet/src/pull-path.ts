@@ -1,20 +1,23 @@
 // The pull path (spec #18, stories 14-20): the wallet talks to a Slot's Sidechain Server, the one
-// its Chain Entry names for the network the Chain Module serves. The wallet derives and registers
-// the addresses (the server never hands any out), shows the state the server reports, and sends
-// by having the server build a Signing Request that then takes the same review as any other.
+// its Chain Entry names for the network the Chain Module serves, in the Server API it names. The
+// wallet derives the addresses it watches (the server never hands any out), shows the state the
+// server reports, and sends by having the server build a Signing Request that then takes the same
+// review as any other.
 import { slotChainModule } from "./accounts";
-import type { AssetAmount, ChainModule } from "./chain-module";
+import type { AssetAmount, ChainEntry, ChainModule, NetworkEntry } from "./chain-module";
 import { ErrorCode, ProviderRpcError } from "./errors";
-import type { SidechainServer, TransferOrder } from "./sidechain-server";
+import type { SidechainServer, TransferOrder, WatchData } from "./sidechain-server";
 import { parseSigningRequest } from "./signing-request";
 import { chainModuleFor, reviewAndSign, type SigningDeps } from "./signing";
 
-/** Addresses registered with the server: the gap a server watches ahead of the first unused one. */
+/** Receive addresses the wallet watches: the gap a server watches ahead of the first unused one. */
 export const WATCHED_RECEIVE_ADDRESSES = 20;
+/** Change addresses the wallet watches, for servers that only see addresses (Esplora). */
+export const WATCHED_CHANGE_ADDRESSES = 20;
 
 export interface PullPathDeps extends SigningDeps {
-  /** A client for the Sidechain Server at `url`. */
-  sidechainServer(url: string): SidechainServer;
+  /** A client for `network`'s default Sidechain Server, in the Server API its Chain Entry names. */
+  sidechainServer(entry: ChainEntry, network: NetworkEntry): SidechainServer;
 }
 
 /** A Slot with its Chain Module and the Sidechain Server it talks to. */
@@ -53,23 +56,27 @@ export function createPullPath(deps: PullPathDeps) {
   /** The Slot's Chain Module and its Sidechain Server (the Chain Entry's default for its network). */
   async function slotServer(slot: number): Promise<SlotServer> {
     const { module, chain } = await slotChainModule(deps.chainModule, slot);
-    const network = Object.values(module.chainEntry().networks).find((n) => n.chain === chain);
+    const entry = module.chainEntry();
+    const network = Object.values(entry.networks).find((n) => n.chain === chain);
     if (network === undefined) throw new Error(`Slot ${slot}'s Chain Entry has no network for ${chain}.`);
-    return { slot, module, chain, server: deps.sidechainServer(network.sidechainServer) };
+    return { slot, module, chain, server: deps.sidechainServer(entry, network) };
   }
 
-  /** Registers the Slot's watch data with its server; returns the server's id for it. */
-  async function register({ slot, module, chain, server }: SlotServer): Promise<string> {
-    const account = module.deriveAccount(await deps.starter(slot), { receive: WATCHED_RECEIVE_ADDRESSES });
-    return server.register({ chain, descriptor: account.descriptor, addresses: account.receive });
+  /** The Slot's watch data, derived from its Starter by its Chain Module. */
+  async function watch({ slot, module, chain }: SlotServer): Promise<WatchData> {
+    const { descriptor, receive, change } = module.deriveAccount(await deps.starter(slot), {
+      receive: WATCHED_RECEIVE_ADDRESSES,
+      change: WATCHED_CHANGE_ADDRESSES,
+    });
+    return { chain, descriptor, receive, change };
   }
 
   return {
-    /** Registers the Slot's addresses and returns what its server reports for them. */
+    /** What the Slot's server reports for the addresses the wallet watches. */
     async reportedState(slot: number): Promise<SlotReport> {
       const target = await slotServer(slot);
       const { chain, server } = target;
-      const { balances, history } = await server.state(await register(target));
+      const { balances, history } = await server.state(await watch(target));
       return { slot, chain, server: server.url, balances, history };
     },
 
@@ -84,8 +91,8 @@ export function createPullPath(deps: PullPathDeps) {
       if (order.destination.trim() === "") throw new ProviderRpcError(ErrorCode.InvalidParams, "Enter a destination address.");
       const target = await slotServer(slot);
       const { server } = target;
-      const watchId = await register(target);
-      const built = await server.buildTransfer(watchId, { ...order, destination: order.destination.trim() });
+      const watched = await watch(target);
+      const built = await server.buildTransfer(watched, { ...order, destination: order.destination.trim() });
 
       const request = parseSigningRequest(built, Math.floor(deps.now() / 1000));
       if (request.slot !== slot) {
@@ -93,7 +100,7 @@ export function createPullPath(deps: PullPathDeps) {
       }
       const module = await chainModuleFor(deps, request);
       const signed = await reviewAndSign(deps, { requester: server.url, request, module, blindRefusal: BLIND_REFUSED });
-      const { accepted, txid } = await server.submit(watchId, request.id, signed);
+      const { accepted, txid } = await server.submit(watched, request.id, signed);
       return { requestId: request.id, server: server.url, accepted, ...(txid ? { txid } : {}) };
     },
   };

@@ -1,12 +1,15 @@
 //! Slot 24's Chain Entry: the one place betanet's per-network values live. It ships with the
 //! module (embedded from `chain-entry.json`) and the wallet reads it through `chain_entry()`.
+//!
+//! `build.rs` picks the file: `chain-entry.json`, or `$ECX_ELEMENTS_CHAIN_ENTRY` for the e2e
+//! build, whose Chain Entry differs only in its Sidechain Servers.
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
 /// The raw JSON, as shipped.
-pub const CHAIN_ENTRY_JSON: &str = include_str!("../chain-entry.json");
+pub const CHAIN_ENTRY_JSON: &str = include_str!(env!("ECX_ELEMENTS_CHAIN_ENTRY_PATH"));
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -30,10 +33,29 @@ pub struct NetworkEntry {
     pub address_params: AddressParamsEntry,
     /// How the parent (L1) chain encodes addresses: a Withdrawal's L1 destination is shown in it.
     pub parent_address_params: ParentAddressParamsEntry,
-    /// Default Sidechain Server URL (placeholder until the stub server lands).
-    pub sidechain_server: String,
+    /// The default Sidechain Server and the Server API the wallet speaks to it.
+    pub sidechain_server: SidechainServerEntry,
     /// Official App origins (placeholder).
     pub official_apps: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SidechainServerEntry {
+    pub api: ServerApi,
+    /// Base URL; the extension build grants itself access to its origin and nothing else.
+    pub url: String,
+}
+
+/// The protocol the wallet speaks to a Sidechain Server (docs/adr/0002). No default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ServerApi {
+    /// The Standard Sidechain API (`stub-server/README.md`).
+    #[serde(rename = "ecx-v0")]
+    EcxV0,
+    /// The Esplora REST API, the subset both electrs forks serve.
+    #[serde(rename = "esplora")]
+    Esplora,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

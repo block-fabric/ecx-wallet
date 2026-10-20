@@ -214,8 +214,8 @@ const handleProviderRequest = createProviderHandler({
   receiveAddresses: (slot) => accounts.receiveAddresses(slot),
 });
 
-// The pull path: each Slot's Sidechain Server, as its Chain Entry names it.
-const pullPath = createPullPath({ ...signing, sidechainServer: (url) => sidechainServer(url) });
+// The pull path: each Slot's Sidechain Server, in the Server API its Chain Entry names.
+const pullPath = createPullPath({ ...signing, sidechainServer: (entry, network) => sidechainServer(entry, network) });
 
 /** The requester's web origin as the browser reports it for a content-script message. */
 function requesterOrigin(sender: chrome.runtime.MessageSender): string | undefined {
@@ -273,7 +273,7 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
         SUPPORTED_SLOTS.map(async (slot) => ({ slot, addresses: await accounts.receiveAddresses(slot) })),
       );
     case "accounts.reported":
-      // What a Slot's Sidechain Server reports (registering the Slot's addresses with it first).
+      // What a Slot's Sidechain Server reports for the addresses the wallet watches.
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
       return pullPath.reportedState(supportedSlot(message.slot));
     case "send.start":

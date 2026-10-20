@@ -3,6 +3,9 @@
 //
 //   node scripts/build.mjs
 //
+// The e2e build (e2e/scripts/build.mjs) sets $ECX_ELEMENTS_CHAIN_ENTRY (the Chain Entry
+// elements.wasm embeds), $ECX_CORE_DIST (instead of core/dist/) and $CARGO_TARGET_DIR.
+//
 // Needs the pinned Rust toolchain (rust-toolchain.toml; rustup installs it) with the
 // wasm32-unknown-unknown target, and a clang with the WebAssembly backend plus llvm-ar for
 // libsecp256k1's C code (override with $CC_wasm32_unknown_unknown / $AR_wasm32_unknown_unknown;
@@ -16,7 +19,8 @@ import { fileURLToPath } from "node:url";
 import { checkWasmImports } from "./check-wasm-imports.mjs";
 
 const core = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const dist = path.join(core, "dist");
+const dist = process.env.ECX_CORE_DIST ?? path.join(core, "dist");
+const targetDir = process.env.CARGO_TARGET_DIR ?? path.join(core, "target");
 const TARGET = "wasm32-unknown-unknown";
 
 /** One entry per module: the C-ABI crate and the file it ships as. */
@@ -54,7 +58,7 @@ const wasmOpt = path.join(core, "node_modules", "binaryen", "bin", "wasm-opt");
 
 for (const { crate, file } of MODULES) {
   run("cargo", ["build", "--locked", "--release", "--target", TARGET, "-p", crate], env);
-  const raw = path.join(core, "target", TARGET, "release", `${crate.replaceAll("-", "_")}.wasm`);
+  const raw = path.join(targetDir, TARGET, "release", `${crate.replaceAll("-", "_")}.wasm`);
   const out = path.join(dist, file);
   // rustc emits bulk-memory and friends; wasm-opt rejects them unless enabled explicitly.
   run(process.execPath, [

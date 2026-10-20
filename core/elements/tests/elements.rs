@@ -3,14 +3,15 @@
 //! Address fixtures were computed independently of this crate, in the LWK 0.19.0 probe used for
 //! the spec's research notes, from the Slot 24 Starter of "abandon … about" with no passphrase
 //! (itself a BitWindow `DeriveStarter` vector, see core/vault/tests/vault.rs).
-use ecx_elements::{declare, derive_account};
+use ecx_elements::chain_entry::CHAIN_ENTRY_JSON;
+use ecx_elements::{chain_entry, declare, derive_account, ChainEntry, ServerApi};
 
 /// The Slot 24 Starter of "abandon … about", no passphrase.
 const STARTER: &str = "buyer citizen congress doll secret merry denial law live wait pass drive";
 
 #[test]
 fn the_slot_24_starter_derives_lwk_standard_wpkh_receive_addresses_in_elements_encoding() {
-    let account = derive_account(STARTER, 2).unwrap();
+    let account = derive_account(STARTER, 2, 0).unwrap();
     let addresses: Vec<_> = account.receive.iter().map(|a| (a.index, a.address.as_str())).collect();
     assert_eq!(
         addresses,
@@ -22,8 +23,24 @@ fn the_slot_24_starter_derives_lwk_standard_wpkh_receive_addresses_in_elements_e
 }
 
 #[test]
+fn the_slot_24_starter_derives_change_addresses_on_the_internal_chain() {
+    // Computed independently (plain BIP32/BIP84 + bech32 with the Chain Entry's `elements` HRP),
+    // which also reproduces the receive vectors above.
+    let account = derive_account(STARTER, 1, 2).unwrap();
+    let change: Vec<_> = account.change.iter().map(|a| (a.index, a.address.as_str(), a.script_pubkey.as_str())).collect();
+    assert_eq!(
+        change,
+        vec![
+            (0, "elements1q2n6usykz5ycrnfpup3hx0qa0manae07jgvvmuc", "001454f5c812c2a13039a43c0c6e6783afdf67dcbfd2"),
+            (1, "elements1q76a5rhnaglcfqz9t73rrh3jerxw76xlm6rvth3", "0014f6bb41de7d47f09008abf4463bc659199ded1bfb"),
+        ]
+    );
+    assert_eq!(account.receive.len(), 1);
+}
+
+#[test]
 fn the_watch_data_is_the_explicit_wpkh_descriptor_on_lwks_non_mainnet_default_path() {
-    let account = derive_account(STARTER, 1).unwrap();
+    let account = derive_account(STARTER, 1, 0).unwrap();
     assert_eq!(
         account.descriptor,
         "elwpkh([3b27f87d/84h/1h/0h]tpubDDL3PFxTGwYoTxQHpMfqnwzdZoPHtAxpSnXWkQAfV1eQutNJss45qjiXwTYwzNfmi1a63E4M3Q4v4FPw2xzf4ztGDanQJqndsAAYVRnYixi/<0;1>/*)"
@@ -32,14 +49,14 @@ fn the_watch_data_is_the_explicit_wpkh_descriptor_on_lwks_non_mainnet_default_pa
 
 #[test]
 fn a_different_starter_derives_different_addresses() {
-    let other = derive_account("blush cream bullet drive index disease noble east target dice put rate", 1).unwrap();
+    let other = derive_account("blush cream bullet drive index disease noble east target dice put rate", 1, 0).unwrap();
     assert_ne!(other.receive[0].address, "elements1qew44aehkjstjm56ng2rjrz57vwxh5g9su6dlpm");
     assert!(other.receive[0].address.starts_with("elements1q"));
 }
 
 #[test]
 fn something_that_is_not_a_starter_is_refused() {
-    assert!(derive_account("not a mnemonic", 1).is_err());
+    assert!(derive_account("not a mnemonic", 1, 0).is_err());
 }
 
 #[test]
@@ -49,4 +66,28 @@ fn declare_reports_the_betanet_slot_24_binding_for_psets() {
     assert_eq!(d.binding.format, "pset");
     assert_eq!(d.binding.payload_versions, vec!["1".to_string()]);
     assert!(d.capabilities.is_empty());
+}
+
+#[test]
+fn betanet_reads_its_state_from_the_elements_explorers_esplora() {
+    let server = &chain_entry().networks["betanet"].sidechain_server;
+    assert_eq!(server.api, ServerApi::Esplora);
+    assert_eq!(server.url, "https://explorer.bitnames.info/api");
+}
+
+/// The shipped Chain Entry with betanet's `sidechainServer` replaced.
+fn with_server(server: serde_json::Value) -> Result<ChainEntry, serde_json::Error> {
+    let mut entry: serde_json::Value = serde_json::from_str(CHAIN_ENTRY_JSON).unwrap();
+    entry["networks"]["betanet"]["sidechainServer"] = server;
+    serde_json::from_value(entry)
+}
+
+#[test]
+fn a_chain_entry_must_name_a_known_server_api() {
+    let url = "https://server.invalid";
+    assert!(with_server(serde_json::json!({ "api": "ecx-v0", "url": url })).is_ok());
+    assert!(with_server(serde_json::json!({ "api": "esplora", "url": url })).is_ok());
+    assert!(with_server(serde_json::json!({ "url": url })).is_err(), "no default API");
+    assert!(with_server(serde_json::json!({ "api": "electrum", "url": url })).is_err());
+    assert!(with_server(serde_json::json!(url)).is_err(), "a bare URL names no API");
 }

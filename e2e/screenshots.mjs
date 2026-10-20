@@ -1,9 +1,9 @@
 // Screenshots of every wallet screen, for checking UI changes by eye (not a test).
 //
-//   pnpm build && node e2e/screenshots.mjs <out dir> [light|dark]
+//   pnpm build && pnpm build:e2e && node e2e/screenshots.mjs <out dir> [light|dark]
 //
-// Drives the built extension through the same harness as the e2e suite: onboarding, create,
-// import, the account screen with balances from the stub Sidechain Server, Send, Grants, the
+// Drives the e2e build through the same harness as the e2e suite: onboarding, create, import,
+// the account screen with balances from the stub Esplora server, Send, Grants, the
 // locked screens, and each kind of approval window. Brave only: over BiDi, Firefox can't resize
 // or capture extension pages.
 import { mkdir, readFile } from "node:fs/promises";
@@ -13,7 +13,7 @@ import {
   launchWallet,
   openTestApp,
   openWalletPage,
-  serveSidechainServer,
+  serveEsplora,
   serveTestApp,
   setUpWallet,
 } from "./harness.mjs";
@@ -45,17 +45,14 @@ await mkdir(out, { recursive: true });
 const [session, app, stub] = await Promise.all([
   launchWallet("brave"),
   serveTestApp(),
-  serveSidechainServer({
-    state: {
-      [SLOT_24_ADDRESS]: {
-        balances: [
-          { asset: POLICY_ASSET, amount: "150000" },
-          { asset: OTHER_ASSET, amount: "7" },
-        ],
-        history: [],
-      },
+  serveEsplora({
+    genesisHash: "a7754ce0debc40baddbd8c47e79d19209685f22c63edaaf8b69cf54116374d7f",
+    utxos: {
+      [SLOT_24_ADDRESS]: [
+        { txid: "aa".repeat(32), vout: 0, value: 150000, asset: POLICY_ASSET, confirmed: true },
+        { txid: "bb".repeat(32), vout: 1, value: 7, asset: OTHER_ASSET, confirmed: true },
+      ],
     },
-    transfers: [],
   }),
 ]);
 
