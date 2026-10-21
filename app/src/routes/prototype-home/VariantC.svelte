@@ -1,7 +1,7 @@
 <script lang="ts">
-  // PROTOTYPE, throw away. Variant C, "B, in chain cards": B, but in Assets each chain is a card
-  // (its heading opens the chain; its assets and pending Deposits inside), with no banner above
-  // the tabs, and Activity is grouped by day.
+  // PROTOTYPE, throw away. Variant C, "B, folded": B, but each chain's section in Assets shows the
+  // chain's ECX subtotal and folds away, pending Deposits head Activity as "In progress" (no banner
+  // above the tabs; the Activity tab counts them), and Activity is grouped by day.
   import Mark from "$lib/Mark.svelte";
   import type { HistoryEntry } from "$lib/background";
   import { shortAsset } from "$lib/asset";
@@ -32,9 +32,12 @@
   let copied = $state(false);
   let homeTab = $state<"assets" | "activity">("assets");
   let menu = $state(false);
+  /** Chains whose section in Assets is folded away. */
+  let folded = $state<Record<string, boolean>>({});
 
   const detail = $derived(chains.find((c) => c.id === open));
   const receiveChain = $derived(chains.find((c) => c.id === receiving));
+  const deposits = $derived(chains.flatMap((c) => c.deposits ?? []));
   const feed = $derived(
     chains
       .flatMap((c) => c.history.map((entry) => ({ chain: c, entry })))
@@ -244,24 +247,40 @@
 
       <div class="tabs" role="tablist">
         <button role="tab" class:on={homeTab === "assets"} onclick={() => (homeTab = "assets")}>Assets</button>
-        <button role="tab" class:on={homeTab === "activity"} onclick={() => (homeTab = "activity")}>Activity</button>
+        <button role="tab" class:on={homeTab === "activity"} onclick={() => (homeTab = "activity")}>
+          Activity{#if deposits.length}<span class="count" title="Deposits in progress">{deposits.length}</span>{/if}
+        </button>
       </div>
       {#if homeTab === "assets"}
         {#each chains as c (c.id)}
           {@const assets = assetsOf(c.shown)}
-          <section class="chain-card">
-            <button class="chain-heading" onclick={() => ((open = c.id), (chainTab = "assets"))}>
-              {@render avatar(c, 28)}
-              <span class="col grow">
-                <strong>{c.name}</strong>
-                <span class="mono muted tiny">{c.chain}</span>
-              </span>
+          {@const ecx = ecxOf(c)}
+          <section class="chain-group">
+            <div class="chain-heading">
+              <button class="chain-name" onclick={() => ((open = c.id), (chainTab = "assets"))}>
+                {@render avatar(c, 24)}
+                <span class="col">
+                  <strong>{c.name}</strong>
+                  <span class="mono muted tiny">{c.chain}</span>
+                </span>
+              </button>
+              <span class="grow"></span>
               {#if c.shown.refreshing}<span class="spinner"></span>{/if}
-              <ProtoIcon name="forward" size={16} />
-            </button>
+              {#if ecx}<span class="small subtotal">{coins(ecx.amount, 8)} ECX</span>{/if}
+              <button
+                class="fold"
+                class:up={!folded[c.id]}
+                aria-label={folded[c.id] ? `Show ${c.name}` : `Hide ${c.name}`}
+                aria-expanded={!folded[c.id]}
+                onclick={() => (folded[c.id] = !folded[c.id])}
+              >
+                <ProtoIcon name="chevron" size={16} />
+              </button>
+            </div>
             {#if c.shown.error && !c.shown.report}
               <p class="err small unreachable">Couldn't reach its server. <button class="link"><ProtoIcon name="refresh" size={12} /> Retry</button></p>
             {/if}
+            {#if !folded[c.id]}
             <ul>
               {#each assets as { asset, amount, unconfirmed } (asset)}
                 {@const name = named(asset)}
@@ -280,29 +299,37 @@
                 </li>
               {/each}
             </ul>
-            {#each c.deposits ?? [] as d (d.txid)}
-              <div class="mini-deposit">
-                <span class="activity-icon deposit"><ProtoIcon name="deposit" size={14} /></span>
-                <div class="col grow">
-                  <div class="between">
-                    <span class="small"><strong>Deposit</strong> of {grouped(d.value)} sats</span>
-                    {#if d.state === "confirming"}<span class="tiny muted">{d.confirmations} / 100</span>{/if}
-                  </div>
-                  {#if d.state === "confirming"}
-                    <div class="bar"><span style:width="{d.confirmations}%"></span></div>
-                  {:else}
-                    <span class="tiny" class:err={d.state === "notFound"}>{depositState(d)}</span>
-                  {/if}
-                </div>
-              </div>
-            {/each}
-            {#if c.deposits?.length}
-              <p class="muted tiny deposit-note">Deposits wait 100 eCash blocks, then the chain's operator credits them. Withdrawals take months.</p>
             {/if}
           </section>
         {/each}
         <p class="reported-inline">Balances are as each chain's server reports them. This wallet doesn't verify them.</p>
       {:else}
+        {#if deposits.length}
+          <section class="col day">
+            <h2>In progress</h2>
+            <ul>
+              {#each deposits as d (d.txid)}
+                <li class="row">
+                  <span class="activity-icon deposit"><ProtoIcon name="deposit" size={16} /></span>
+                  <div class="col grow">
+                    <div class="between">
+                      <strong class="small">Deposit to {d.chainName}</strong>
+                      <strong class="small">{grouped(d.value)} sats</strong>
+                    </div>
+                    {#if d.state === "confirming"}
+                      <div class="bar"><span style:width="{d.confirmations}%"></span></div>
+                    {/if}
+                    <span class="tiny" class:muted={d.state !== "notFound"} class:err={d.state === "notFound"}>{depositState(d)}</span>
+                    {#if d.state === "notFound" || d.state === "unavailable"}
+                      <button class="small-button stop">Stop tracking</button>
+                    {/if}
+                  </div>
+                </li>
+              {/each}
+            </ul>
+            <p class="muted tiny">Deposits wait 100 eCash blocks, then the chain's operator credits them. Withdrawals take months.</p>
+          </section>
+        {/if}
         {#each days as { day, items } (day)}
           <section class="col day">
             <h2>{day}</h2>
@@ -598,46 +625,63 @@
   .asset-row:hover {
     background: none;
   }
-  .chain-card {
+  .chain-group {
     display: flex;
     flex-direction: column;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--surface);
-    box-shadow: var(--shadow);
-    overflow: hidden;
-  }
-  .tabs + .chain-card {
-    margin-top: -2px;
+    margin-top: -6px;
   }
   .chain-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 48px;
+  }
+  .chain-name {
     justify-content: flex-start;
-    gap: 10px;
-    min-height: 54px;
-    padding: 8px 12px;
+    gap: 8px;
+    min-height: 0;
+    padding: 0;
     border: none;
-    border-bottom: 1px solid var(--border);
-    border-radius: 0;
-    background: var(--surface-2);
-    font-weight: 400;
+    background: none;
     text-align: left;
   }
-  .chain-heading:hover {
-    background: color-mix(in srgb, var(--accent) 8%, var(--surface-2));
+  .chain-name:hover {
+    background: none;
+    color: var(--accent);
   }
-  .mini-deposit {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    padding: 10px 12px;
-    border-top: 1px solid var(--border);
+  .subtotal {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
   }
-  .mini-deposit .activity-icon {
-    width: 30px;
-    height: 30px;
+  .fold {
+    width: 28px;
+    min-height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: var(--muted);
+    transition: transform 0.15s;
   }
-  .deposit-note {
-    padding: 0 12px 10px 54px;
+  .fold.up {
+    transform: rotate(180deg);
+  }
+  .count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    margin-left: 6px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 0.7rem;
+  }
+  .stop {
+    align-self: flex-start;
+    margin-top: 4px;
   }
   .day {
     margin-top: 4px;
@@ -645,13 +689,10 @@
   .day h2 {
     padding-top: 6px;
   }
-  .chain-card .asset-row {
-    padding: 8px 12px;
+  .chain-group .asset-row {
+    padding-left: 12px;
   }
-  .chain-card li:last-child .asset-row {
-    border-bottom: none;
-  }
-  .chain-card .token-avatar {
+  .chain-group .token-avatar {
     width: 30px;
     height: 30px;
     font-size: 0.85rem;
@@ -660,7 +701,8 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 12px;
+    padding: 0 0 10px 12px;
+    border-bottom: 1px solid var(--border);
   }
   .link {
     min-height: 0;
