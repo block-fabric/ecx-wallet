@@ -1,45 +1,25 @@
 <script lang="ts">
-  import {
-    cachedState,
-    dismissDeposit,
-    dismissRefusedDeposit,
-    l1Account,
-    l1Cached,
-    l1Reported,
-    listAccounts,
-    listDeposits,
-    lockVault,
-    refusedDeposit,
-    reportedState,
-    showReport,
-    unlockVault,
-    vaultStatus,
-    type ChainReport,
-    type DepositStatus,
-    type RefusedDeposit,
-    type ShownReport,
-    type SlotAccount,
-    type VaultStatus,
-  } from "$lib/background";
-  import { shortAsset } from "$lib/asset";
+  import { totalAcrossChains } from "@ecx/wallet";
+  import { lockVault, unlockVault, vaultStatus, type VaultStatus } from "$lib/background";
+  import Actions from "$lib/Actions.svelte";
+  import AssetRows from "$lib/AssetRows.svelte";
+  import ChainMark from "$lib/ChainMark.svelte";
+  import { chainMark, Chains, onTheWay } from "$lib/chains.svelte";
+  import Deposits from "$lib/Deposits.svelte";
   import Icon from "$lib/Icon.svelte";
   import Mark from "$lib/Mark.svelte";
   import TopBar from "$lib/TopBar.svelte";
+  import { amountText, unit } from "$lib/unit.svelte";
 
   let status = $state<VaultStatus | undefined>(undefined);
-  let accounts = $state<SlotAccount[] | undefined>(undefined);
-  /** eCash's own receive address, and what its server reports. */
-  let l1Address = $state<{ chain: string; address: string } | undefined>(undefined);
-  let l1Report = $state<ShownReport | undefined>(undefined);
-  /** Per Slot: what its Sidechain Server reports (the last report while refreshing), or why it couldn't be read. */
-  let reports = $state<Record<number, ShownReport>>({});
-  /** Per Slot: its pending Deposits, or why their status couldn't be read. */
-  let deposits = $state<Record<number, DepositStatus[] | { error: string }>>({});
-  /** Per Slot: its last Deposit that failed after approval (the popup that asked may have closed). */
-  let refused = $state<Record<number, RefusedDeposit | null>>({});
+  let chains = $state<Chains | undefined>(undefined);
   let password = $state("");
   let error = $state("");
   let busy = $state(false);
+  let tab = $state<"assets" | "activity">("assets");
+  /** Chains whose section in Assets is folded away. */
+  let folded = $state<Record<string, boolean>>({});
+  let actions = $state<Actions | undefined>(undefined);
 
   const vaultState = $derived(
     status === undefined ? undefined : !status.exists ? "onboarding" : status.unlocked ? "unlocked" : "locked",
@@ -47,76 +27,27 @@
 
   vaultStatus().then((s) => (status = s));
 
-  // The account screen: derived in the background whenever the wallet is (or becomes) unlocked.
+  // The account screen: read in the background whenever the wallet is (or becomes) unlocked.
   $effect(() => {
     if (vaultState !== "unlocked") {
-      accounts = undefined;
-      l1Address = undefined;
-      l1Report = undefined;
+      chains = undefined;
       return;
     }
-    l1Account().then(
-      ({ addresses }) => (l1Address = addresses[0]),
-      (e) => (error = (e as Error).message),
-    );
-    showReport(l1Cached, l1Reported, (shown) => (l1Report = shown));
-    listAccounts().then(
-      (a) => {
-        accounts = a;
-        for (const { slot } of a) {
-          showReport(() => cachedState(slot), () => reportedState(slot), (shown) => (reports[slot] = shown));
-          loadDeposits(slot);
-        }
-      },
-      (e) => (error = (e as Error).message),
-    );
+    const next = new Chains();
+    chains = next;
+    next.load();
   });
 
-  function loadDeposits(slot: number) {
-    refusedDeposit(slot).then(
-      (r) => (refused[slot] = r),
-      () => (refused[slot] = null),
-    );
-    listDeposits(slot).then(
-      (d) => (deposits[slot] = d),
-      (e) => (deposits[slot] = { error: (e as Error).message }),
-    );
-  }
-
-  async function dismissRefused(slot: number) {
-    await dismissRefusedDeposit(slot).catch((e) => (error = (e as Error).message));
-    refused[slot] = null;
-  }
-
-  async function dismiss(slot: number, txid: string) {
-    await dismissDeposit(txid).catch((e) => (error = (e as Error).message));
-    loadDeposits(slot);
-  }
-
-  /** Each asset's confirmed amount ("0" if it only has unconfirmed coins), and what's unconfirmed, if any. */
-  function assets(report: ChainReport): { asset: string; amount: string; unconfirmed?: string }[] {
-    const pending = new Map(report.unconfirmed.map((u) => [u.asset, u.amount]));
-    const confirmed = report.balances.map(({ asset, amount }) => ({ asset, amount, unconfirmed: pending.get(asset) }));
-    const onlyPending = report.unconfirmed.filter((u) => !report.balances.some((b) => b.asset === u.asset));
-    return [...confirmed, ...onlyPending.map(({ asset, amount }) => ({ asset, amount: "0", unconfirmed: amount }))];
-  }
-  const readAt = (report: ChainReport) => new Date(report.readAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-  /** Where a Deposit stands, in words. */
-  function depositState(d: DepositStatus): string {
-    switch (d.state) {
-      case "confirming":
-        return `${d.confirmations} / 100 confirmations on eCash`;
-      case "awaitingCredit":
-        return `Waiting for the ${d.chainName} chain's operator to credit it (not automatic)`;
-      case "credited":
-        return `Credited, as reported by ${d.creditServer}`;
-      case "notFound":
-        return `${d.server} doesn't know this transaction: it may have lost the race for the Treasury, or been dropped`;
-      case "unavailable":
-        return `Status unavailable: ${d.error}`;
-    }
-  }
+  const list = $derived(chains?.list ?? []);
+  const main = $derived(list.find((c) => c.info.id === "l1"));
+  const slots = $derived(list.filter((c) => c.info.id !== "l1"));
+  /** The main chain's coin: how every ECX total and Deposit is written. */
+  const ecx = $derived(main?.info.assets ?? []);
+  const total = $derived(totalAcrossChains(list.map((c) => ({ name: c.info.name, assets: c.info.assets, report: c.shown.report }))));
+  const deposits = $derived(slots.flatMap((s) => (Array.isArray(s.deposits) ? s.deposits : [])));
+  const inFlight = $derived(onTheWay(deposits));
+  /** The network the whole wallet is on, shown once by its name ("betanet" as BETANET). */
+  const network = $derived(main?.info.network);
 
   async function act(action: () => Promise<VaultStatus>) {
     busy = true;
@@ -132,120 +63,9 @@
   }
 </script>
 
-{#snippet unit(asset: string)}
-  {#if asset === ""}
-    <span class="muted small">sats</span>
-  {:else}
-    <span class="muted small">asset <code title={asset}>{shortAsset(asset)}</code></span>
-  {/if}
-{/snippet}
-
-{#snippet reported(shown: ShownReport | undefined)}
-  {@const report = shown?.report}
-  {#if shown?.error !== undefined}
-    <p class="error" data-balance-error>
-      {report ? "Couldn't refresh the balance" : "Balance unavailable"}: {shown.error}
-    </p>
-  {/if}
-  {#if report === undefined}
-    {#if shown?.error === undefined}
-      <p class="loading small"><span class="spinner"></span>Asking the Sidechain Server for your balance…</p>
-    {/if}
-  {:else}
-    <ul class="balances">
-      {#each assets(report) as { asset, amount, unconfirmed } (asset)}
-        <li data-balance data-asset={asset}>
-          <strong class="amount">{amount}</strong>
-          {@render unit(asset)}
-        </li>
-        {#if unconfirmed !== undefined}
-          <li class="unconfirmed muted small" data-unconfirmed data-asset={asset}>
-            +{unconfirmed}{asset === "" ? " sats" : ""} unconfirmed
-          </li>
-        {/if}
-      {:else}
-        <li class="muted" data-no-balance>Nothing reported.</li>
-      {/each}
-    </ul>
-    <p class="reported" data-reported-by>
-      Reported by {report.server}. This wallet doesn't verify it.
-    </p>
-    {#if shown?.refreshing || shown?.error !== undefined}
-      <p class="muted small" data-read-at>
-        {#if shown?.refreshing}<span class="spinner"></span>{/if}
-        Last read at {readAt(report)}{shown?.refreshing ? "; refreshing…" : "."}
-      </p>
-    {/if}
-  {/if}
-{/snippet}
-
-{#snippet pendingDeposits(slot: number)}
-  {@const list = deposits[slot]}
-  {@const failed = refused[slot]}
-  {#if failed}
-    <div class="error small refused" role="alert">
-      <div class="stack">
-        <span data-deposit-refused>Your Deposit of {failed.value} sats failed: {failed.reason}</span>
-        <a href="#/deposit/{slot}" data-deposit-retry>Try again</a>
-      </div>
-      <button class="close" aria-label="Close" title="Close" onclick={() => dismissRefused(slot)} data-deposit-refused-close>×</button>
-    </div>
-  {/if}
-  {#if list !== undefined && "error" in list}
-    <p class="error small" data-deposits-error>Deposits unavailable: {list.error}</p>
-  {:else if list !== undefined && list.length > 0}
-    <div class="deposits">
-      <h2>Deposits from eCash</h2>
-      <ul class="stack">
-        {#each list as d (d.txid)}
-          <li class="deposit" data-deposit={d.txid} data-deposit-state={d.state}>
-            <div class="deposit-head">
-              <strong>{d.value} sats</strong>
-              {#if d.state === "notFound" || d.state === "unavailable"}
-                <!-- Only for a stuck Deposit: the transaction is unaffected, the wallet just stops following it. -->
-                <button class="small-button" onclick={() => dismiss(slot, d.txid)} data-deposit-stop-tracking>Stop tracking</button>
-              {/if}
-            </div>
-            <span class="small" data-deposit-status>{depositState(d)}</span>
-            <code class="small txid" title="Transaction id on eCash" data-deposit-txid>{d.txid}</code>
-            {#if d.state === "awaitingCredit"}
-              <details data-claim>
-                <summary>Show claim details</summary>
-                <p class="muted small">
-                  Anyone running the chain's node can credit it with <code>importdrivechaindeposit</code> and these arguments:
-                </p>
-                <dl class="claim">
-                  <dt>txid</dt><dd><code data-claim-txid>{d.claim.txid}</code></dd>
-                  <dt>vout</dt><dd><code data-claim-vout>{d.claim.vout}</code></dd>
-                  <dt>Block hash</dt><dd><code data-claim-block>{d.claim.blockHash}</code></dd>
-                  <dt>Address</dt><dd><code data-claim-address>{d.claim.address}</code></dd>
-                  <dt>Value (sats)</dt><dd><code data-claim-value>{d.claim.value}</code></dd>
-                </dl>
-              </details>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    </div>
-  {/if}
-{/snippet}
-
-{#snippet receiveAddress(address: string)}
-  <div class="receive">
-    <h2>Receive address</h2>
-    <code data-receive-address>{address}</code>
-  </div>
-{/snippet}
-
-{#snippet lockButton()}
-  <button class="small-button" disabled={busy} onclick={() => act(lockVault)} data-lock>
-    <Icon name="lock" size={16} /> Lock
-  </button>
-{/snippet}
-
 <main class="screen" data-wallet-home data-wallet-ready={status ? true : undefined} data-vault-state={vaultState}>
   {#if vaultState === "onboarding"}
-    <div class="hero">
+    <div class="welcome">
       <Mark size={56} />
       <h1>ECX Wallet</h1>
       <p>Set up your wallet. One Master Mnemonic (a 12- or 24-word phrase) controls your funds on eCash and its sidechains.</p>
@@ -276,62 +96,114 @@
       <button class="primary block" type="submit" disabled={busy} data-unlock>Unlock</button>
     </form>
   {:else if vaultState === "unlocked"}
-    <TopBar title="ECX Wallet" actions={lockButton} />
-    <p class="muted small status"><span class="dot"></span>Your wallet is unlocked. It locks itself after 15 minutes without use.</p>
-    {#if l1Address !== undefined}
-      <section class="card" data-account="l1" data-refreshing={l1Report?.refreshing !== false ? "" : undefined}>
-        <div class="account-head">
-          <h2>eCash</h2>
-          <span class="chip" data-account-chain>{l1Address.chain}</span>
-        </div>
-        {@render reported(l1Report)}
-        <a class="button block" href="#/history/l1" data-history-link><Icon name="history" /> History</a>
-        {@render receiveAddress(l1Address.address)}
-      </section>
-    {/if}
-    {#each accounts ?? [] as account (account.slot)}
-      {#each account.addresses.slice(0, 1) as { chain, address } (address)}
-        {@const report = reports[account.slot]}
+    <header class="wallet-head">
+      <Mark size={30} />
+      <span class="title">ECX Wallet{#if network}<span class="net-tag" data-network>{network}</span>{/if}</span>
+      <button class="icon-button" disabled={busy} aria-label="Lock" title="Lock" onclick={() => act(lockVault)} data-lock>
+        <Icon name="lock" />
+      </button>
+    </header>
+
+    <section class="hero" data-total-ready={list.length > 0 && list.every((c) => !c.shown.refreshing) ? "" : undefined}>
+      <span class="muted tiny">{list.length > 1 ? "Total across chains" : "Balance"}</span>
+      <button class="big" onclick={() => unit.toggle()} title="Show amounts in {unit.value === "ecx" ? "sats" : "ECX"}" data-total data-unit={unit.value}>
+        {amountText(total.amount, "", ecx)}
+      </button>
+      {#if total.unconfirmed !== "0"}
+        <span class="pill pending" data-total-unconfirmed>+{amountText(total.unconfirmed, "", ecx)} unconfirmed</span>
+      {/if}
+      {#if inFlight !== "0"}
+        <button class="pill on-the-way" onclick={() => (tab = "activity")} data-on-the-way>
+          +{amountText(inFlight, "", ecx)} in Deposits on the way
+        </button>
+      {/if}
+      {#if total.unavailable.length > 0}
+        <span class="pill bad" data-unavailable>{total.unavailable.join(", ")} unavailable, not counted</span>
+      {/if}
+    </section>
+
+    <Actions chains={list} bind:this={actions} />
+
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected={tab === "assets"} onclick={() => (tab = "assets")} data-tab="assets">Assets</button>
+      <button role="tab" aria-selected={tab === "activity"} onclick={() => (tab = "activity")} data-tab="activity">
+        Activity{#if deposits.length > 0}<span class="count" title="Deposits in progress">{deposits.length}</span>{/if}
+      </button>
+    </div>
+
+    <!-- Both panels stay in the page, the hidden one hidden: each chain's state is read once. -->
+    <div class="panel" role="tabpanel" hidden={tab !== "assets"}>
+      {#each list as c (c.info.id)}
+        {@const subtotal = c.shown.report?.balances.find((b) => b.asset === c.info.assets.find((a) => a.ecx)?.id)}
         <section
-          class="card"
-          data-account={account.slot}
-          data-refreshing={report?.refreshing !== false ? "" : undefined}
-          data-deposits-ready={deposits[account.slot] !== undefined && refused[account.slot] !== undefined ? "" : undefined}
+          class="chain"
+          data-account={c.info.id}
+          data-refreshing={c.shown.refreshing ? "" : undefined}
+          data-server={c.shown.report?.server}
+          data-deposits-ready={c.info.id === "l1" || (c.deposits !== undefined && c.refused !== undefined) ? "" : undefined}
         >
-          <div class="account-head">
-            <h2>Slot {account.slot}</h2>
-            <span class="chip" data-account-chain>{chain}</span>
+          <div class="chain-head">
+            <a class="chain-name" href="#/chain/{c.info.id}" data-chain-link>
+              <ChainMark {...chainMark(c.info)} size={24} />
+              <strong>{c.info.name}</strong>
+            </a>
+            <span class="grow"></span>
+            {#if c.shown.refreshing}<span class="spinner small-spinner" title="Refreshing"></span>{/if}
+            {#if subtotal}<span class="small subtotal" data-subtotal>{amountText(subtotal.amount, subtotal.asset, c.info.assets)}</span>{/if}
+            <button
+              class="fold"
+              class:up={!folded[c.info.id]}
+              aria-label={folded[c.info.id] ? `Show ${c.info.name}` : `Hide ${c.info.name}`}
+              aria-expanded={!folded[c.info.id]}
+              onclick={() => (folded[c.info.id] = !folded[c.info.id])}
+            >
+              <Icon name="chevron" size={16} />
+            </button>
           </div>
-          {@render reported(report)}
-          {@render pendingDeposits(account.slot)}
-          {#if report?.report !== undefined && report.error === undefined}
-            <a class="button primary block" href="#/send/{account.slot}" data-send-link><Icon name="send" /> Send</a>
-          {/if}
-          <a class="button block" href="#/deposit/{account.slot}" data-deposit-link><Icon name="deposit" /> Deposit from eCash</a>
-          <a class="button block" href="#/history/{account.slot}" data-history-link><Icon name="history" /> History</a>
-          {@render receiveAddress(address)}
+          <div hidden={folded[c.info.id]}>
+            <AssetRows view={c} onretry={() => chains?.retry(c.info.id)} onreceive={() => actions?.receive()} />
+          </div>
         </section>
       {/each}
-    {/each}
+      {#if list.length > 0}
+        <p class="note">Balances are as each chain's server reports them. This wallet doesn't verify them.</p>
+      {/if}
+      <a class="card nav-row" href="#/grants" data-grants-link>
+        <Icon name="grants" />
+        <span class="grow">
+          <strong class="small">Grants</strong>
+          <span class="muted tiny">Sites you've let use your wallet</span>
+        </span>
+        <Icon name="forward" size={16} />
+      </a>
+    </div>
+
+    <div class="panel" role="tabpanel" hidden={tab !== "activity"}>
+      <Deposits {slots} {ecx} onchange={(slot) => chains?.readDeposits(slot)} />
+      <section class="transactions">
+        <h2>Transactions</h2>
+        <ul>
+          {#each list as c (c.info.id)}
+            <li>
+              <a class="nav-row" href="#/history/{c.info.id}" data-history-link={c.info.id}>
+                <ChainMark {...chainMark(c.info)} size={24} />
+                <span class="grow small">{c.info.name}</span>
+                <Icon name="forward" size={16} />
+              </a>
+            </li>
+          {/each}
+        </ul>
+      </section>
+    </div>
   {/if}
 
-  {#if error}
-    <p class="error" role="alert" data-error>{error}</p>
-  {/if}
-
-  {#if status?.exists}
-    <a class="card nav-row" href="#/grants" data-grants-link>
-      <span class="stack-tight">
-        <strong>Grants</strong>
-        <span class="muted small">Sites you've let use your wallet</span>
-      </span>
-      <Icon name="forward" />
-    </a>
+  {#if error || chains?.error}
+    <p class="error" role="alert" data-error>{error || chains?.error}</p>
   {/if}
 </main>
 
 <style>
-  .hero {
+  .welcome {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -339,7 +211,7 @@
     padding: 24px 8px 8px;
     text-align: center;
   }
-  .hero h1 {
+  .welcome h1 {
     font-size: 1.6rem;
   }
   .unlock {
@@ -356,112 +228,200 @@
     padding: 14px;
     border-radius: 50%;
     background: var(--surface-2);
-    color: var(--accent);
+    color: var(--accent-text);
   }
-  .status {
+  .wallet-head {
     display: flex;
     align-items: center;
     gap: 8px;
+    min-height: 36px;
   }
-  .dot {
-    width: 8px;
-    height: 8px;
+  .title {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 700;
+    font-size: 1.05rem;
+    white-space: nowrap;
+  }
+  /* The network, while it isn't the real one: a quiet label, uppercase and tracked as eCash's brand does. */
+  .net-tag {
+    padding: 1px 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--muted);
+    font-size: 0.6rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    line-height: 1.4;
+    text-transform: uppercase;
+  }
+  .icon-button {
+    width: 34px;
+    min-height: 34px;
+    padding: 0;
+    border: none;
     border-radius: 50%;
-    background: var(--ok);
-    flex: none;
+    background: none;
+    color: var(--muted);
   }
-  .account-head {
+  .hero {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .balances {
-    display: flex;
-    flex-direction: column;
     gap: 6px;
+    text-align: center;
   }
-  .balances li {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-  }
-  .amount {
-    font-size: 1.6rem;
-  }
-  .balances li.unconfirmed {
-    margin-top: -6px;
-  }
-  .receive {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding-top: 12px;
-    border-top: 1px solid var(--border);
-  }
-  .receive code {
-    padding: 10px 12px;
-    border-radius: var(--radius-sm);
-    background: var(--surface-2);
-    user-select: all;
-  }
-  .deposits {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding-top: 12px;
-    border-top: 1px solid var(--border);
-  }
-  .deposit {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .deposit-head,
-  .refused {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .refused {
-    align-items: flex-start;
-  }
-  .refused .close {
-    flex: none;
-    padding: 0 4px;
+  .big {
+    min-height: 0;
+    padding: 0 6px;
     border: none;
     background: none;
-    color: inherit;
-    font-size: 1.2rem;
-    line-height: 1;
-    cursor: pointer;
+    color: var(--text);
+    font-size: 2rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.15;
   }
-  .txid {
-    overflow-wrap: anywhere;
-  }
-  .claim {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 2px 10px;
+  .pill {
+    min-height: 0;
+    padding: 2px 10px;
+    border: none;
+    border-radius: 999px;
+    background: var(--surface-2);
     font-size: 0.8rem;
+    font-weight: 600;
   }
-  .claim dd {
-    overflow-wrap: anywhere;
+  .pill.pending {
+    background: var(--pending-bg);
+    color: var(--pending);
+  }
+  .pill.on-the-way {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--accent-text);
+  }
+  .pill.on-the-way:hover {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  .pill.bad {
+    background: var(--danger-bg);
+    color: var(--danger);
+  }
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+  }
+  .tabs button {
+    flex: 1;
+    min-height: 40px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: none;
+    color: var(--muted);
+  }
+  .tabs button[aria-selected="true"] {
+    border-bottom-color: var(--accent);
+    color: var(--accent-text);
+  }
+  .count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    margin-left: 6px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 0.7rem;
+  }
+  .panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: -6px;
+  }
+  .panel[hidden] {
+    display: none;
+  }
+  .chain {
+    display: flex;
+    flex-direction: column;
+  }
+  .chain-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+  }
+  .chain-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text);
+    text-decoration: none;
+  }
+  .chain-name:hover {
+    color: var(--accent-text);
+  }
+  .grow {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .subtotal {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .small-spinner {
+    width: 12px;
+    height: 12px;
+  }
+  .fold {
+    width: 28px;
+    min-height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: var(--muted);
+    transition: transform 0.15s;
+  }
+  .fold.up {
+    transform: rotate(180deg);
+  }
+  .note {
+    padding: 4px 8px;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--muted);
+    font-size: 0.75rem;
+    font-style: italic;
+    text-align: center;
   }
   .nav-row {
     flex-direction: row;
     align-items: center;
-    justify-content: space-between;
+    gap: 12px;
     color: var(--text);
     text-decoration: none;
   }
-  .nav-row:hover {
+  a.nav-row:hover {
     background: var(--surface-2);
   }
-  .stack-tight {
+  .transactions ul {
     display: flex;
     flex-direction: column;
+  }
+  .transactions .nav-row {
+    display: flex;
+    min-height: 48px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
   }
 </style>

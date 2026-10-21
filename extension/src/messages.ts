@@ -38,6 +38,11 @@ export type BackgroundMessage =
   | { kind: "grants.revoke"; origin: string }
   // Accounts (receive addresses per Slot): accepted only from the wallet's own pages.
   | { kind: "accounts.list" }
+  // How the wallet shows each chain (its Chain Entry's name, description and assets): wallet pages only.
+  | { kind: "chains.list" }
+  // Display settings: wallet pages only.
+  | { kind: "settings.unit" }
+  | { kind: "settings.setUnit"; unit: string }
   | { kind: "l1.account" }
   | { kind: "l1.reported" }
   // The last reports this session, to show while the above refresh them: wallet pages only.

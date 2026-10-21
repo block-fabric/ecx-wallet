@@ -58,7 +58,21 @@ export interface NetworkEntry<P = unknown> {
   sidechainServer: SidechainServerEntry;
   /** Official App origins. */
   officialApps: string[];
+  /** The assets the wallet names on this network; any other shows as an unknown asset. */
+  assets: AssetEntry[];
   params: P;
+}
+
+/** An asset the wallet shows by name (docs/adr/0005). */
+export interface AssetEntry {
+  /** Lowercase display hex; `NATIVE_COIN` for the root's coin. */
+  id: string;
+  ticker: string;
+  name: string;
+  /** Places after the point in one whole unit; amounts are reported in base units. */
+  decimals: number;
+  /** The network's ECX, which the wallet adds up across chains. At most one per network. */
+  ecx?: boolean;
 }
 
 /**
@@ -68,7 +82,10 @@ export interface NetworkEntry<P = unknown> {
 export interface ChainEntry<P = unknown> {
   /** The chain's Slot under its parent; absent for the root. */
   slot?: number;
+  /** The name the wallet shows ("Main chain", "Elements+"). */
   name: string;
+  /** One line on what the chain is for. */
+  description: string;
   networks: Record<string, NetworkEntry<P>>;
 }
 

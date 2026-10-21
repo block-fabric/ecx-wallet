@@ -21,7 +21,9 @@ export {
   createChainModules,
   createKeyRouting,
   createL1Module,
+  describeChain,
   type Accounts,
+  type ChainDescription,
   type ChainModules,
   type KeyedChain,
   type KeyRouting,
@@ -35,6 +37,7 @@ export {
   loadL1Module,
   type Account,
   type AssetAmount,
+  type AssetEntry,
   type ClearView,
   type DangerousMode,
   type Decoded,
@@ -109,3 +112,5 @@ export {
   type DepositStore,
   type PendingDeposit,
 } from "./deposit";
+export { formatAmount, totalAcrossChains, type TotalPart } from "./amounts";
+export { createSettings, UNITS, type Settings, type Unit } from "./settings";

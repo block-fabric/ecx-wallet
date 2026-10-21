@@ -3,7 +3,7 @@
 //! Address fixtures were computed independently of this crate, in the LWK 0.19.0 probe used for
 //! the spec's research notes, from the Slot 24 Starter of "abandon … about" with no passphrase
 //! (itself a BitWindow `DeriveStarter` vector, see core/vault/tests/vault.rs).
-use ecx_elements::chain_entry::CHAIN_ENTRY_JSON;
+use ecx_elements::chain_entry::{check_chain_entry, CHAIN_ENTRY_JSON};
 use ecx_elements::{chain_entry, declare, derive_account, ChainEntry, ServerApi};
 
 /// The Slot 24 Starter of "abandon … about", no passphrase.
@@ -99,6 +99,23 @@ fn betanet_is_a_child_of_ecash_betanet_identified_by_its_genesis() {
     assert_eq!(network.parent.as_deref(), Some("ecash:betanet"));
     // Elements isn't a fork: the identity block is its own genesis.
     assert_eq!((network.identity_block.height, network.identity_block.hash.as_str()), (0, network.params.genesis_hash.as_str()));
+}
+
+#[test]
+fn betanet_names_its_policy_asset_as_its_ecx() {
+    let network = &chain_entry().networks["betanet"];
+    assert_eq!(chain_entry().name, "Elements+");
+    let ecx = network.ecx_asset().expect("betanet names its ECX");
+    assert_eq!(ecx.id, network.params.policy_asset);
+    assert_eq!((ecx.ticker.as_str(), ecx.name.as_str(), ecx.decimals), ("ECX", "eCash on Elements+", 8));
+}
+
+#[test]
+fn a_chain_entry_whose_ecx_isnt_the_policy_asset_is_refused() {
+    let mut entry: serde_json::Value = serde_json::from_str(CHAIN_ENTRY_JSON).unwrap();
+    entry["networks"]["betanet"]["assets"][0]["id"] = "11".repeat(32).into();
+    let entry: ChainEntry = serde_json::from_value(entry).unwrap();
+    assert!(check_chain_entry(&entry).unwrap_err().contains("policy asset"));
 }
 
 /// The shipped Chain Entry with betanet's `sidechainServer` replaced.

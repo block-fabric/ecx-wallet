@@ -25,10 +25,10 @@ const L1_ACCOUNT_KEY = vault.l1AccountKey(ABANDON, "");
 describe("the bundled Chain Entries", () => {
   const entries = [l1.chainEntry(), elements.chainEntry()];
 
-  test("each network has exactly one root, eCash, with neither a Slot nor a parent", () => {
+  test("each network has exactly one root, the main chain (eCash), with neither a Slot nor a parent", () => {
     for (const name of ["betanet"]) {
       const roots = entries.filter((e) => e.slot === undefined && e.networks[name]?.parent === undefined);
-      assert.deepEqual(roots.map((e) => e.name), ["eCash"]);
+      assert.deepEqual(roots.map((e) => e.name), ["Main chain"]);
     }
     assert.equal(l1.chainEntry().networks.betanet.chain, "ecash:betanet");
   });

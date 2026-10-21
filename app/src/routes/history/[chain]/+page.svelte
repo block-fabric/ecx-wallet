@@ -1,13 +1,28 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { cachedHistory, reportedHistory, showReport, type ChainHistory, type HistoryEntry, type ShownReport } from "$lib/background";
+  import {
+    cachedHistory,
+    listChains,
+    reportedHistory,
+    showReport,
+    type ChainHistory,
+    type ChainInfo,
+    type HistoryEntry,
+    type ShownReport,
+  } from "$lib/background";
   import { shortAsset } from "$lib/asset";
   import Icon from "$lib/Icon.svelte";
   import TopBar from "$lib/TopBar.svelte";
+  import { amountText } from "$lib/unit.svelte";
 
-  /** `l1` for eCash, else a Slot. */
+  /** `l1` for the main chain, else a Slot. */
   const slot = page.params.chain === "l1" ? undefined : Number(page.params.chain);
-  const title = slot === undefined ? "eCash history" : `Slot ${slot} history`;
+  /** Every chain's Chain Entry word: this one's names its assets, a Deposit's names its target. */
+  let chains = $state<ChainInfo[]>([]);
+  listChains().then((c) => (chains = c), () => {});
+  const info = $derived(chains.find((c) => c.id === (slot ?? "l1")));
+  const title = $derived(info ? `${info.name} transactions` : "Transactions");
+  const nameOf = (target: number) => chains.find((c) => c.id === target)?.name ?? `Slot ${target}`;
   /** What the chain's server reports (this session's last while refreshing), or why it couldn't be read. */
   let shown = $state<ShownReport<ChainHistory>>({ refreshing: true });
 
@@ -16,7 +31,6 @@
   const readAt = (history: ChainHistory) => new Date(history.readAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const minedAt = (time: number) => new Date(time * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
   const shortTxid = (txid: string) => `${txid.slice(0, 8)}…${txid.slice(-8)}`;
-  const signed = (amount: string) => (amount.startsWith("-") ? `−${amount.slice(1)}` : `+${amount}`);
 
   function copy(txid: string) {
     navigator.clipboard.writeText(txid).catch(() => {});
@@ -24,9 +38,10 @@
 </script>
 
 {#snippet netAmount({ asset, amount }: { asset: string; amount: string })}
+  {@const named = info?.assets.some((a) => a.id === asset)}
   <span class="amount" class:out={amount.startsWith("-")} data-history-amount data-asset={asset}>
-    {signed(amount)}
-    {#if asset === ""}sats{:else}<span class="muted small">asset <code title={asset}>{shortAsset(asset)}</code></span>{/if}
+    {amount.startsWith("-") ? "" : "+"}{amountText(amount, asset, info?.assets ?? [])}
+    {#if !named}<span class="muted small">Unknown asset <code title={asset}>{shortAsset(asset)}</code></span>{/if}
   </span>
 {/snippet}
 
@@ -47,7 +62,7 @@
       {/if}
     </div>
     {#if entry.depositTo !== undefined}
-      <span class="small" data-history-label>Deposit to Slot {entry.depositTo}</span>
+      <span class="small" data-history-label>Deposit to {nameOf(entry.depositTo)}</span>
     {:else if entry.toSelf}
       <span class="small" data-history-label>Fee, to yourself</span>
     {/if}
@@ -72,7 +87,7 @@
 {/snippet}
 
 <main class="screen" data-screen-ready>
-  <TopBar {title} back="#/" />
+  <TopBar {title} back="#/chain/{page.params.chain}" />
 
   <section class="card" data-history data-refreshing={shown.refreshing ? "" : undefined}>
     {#if shown.error !== undefined}

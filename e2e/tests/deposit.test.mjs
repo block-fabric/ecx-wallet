@@ -94,7 +94,7 @@ async function readDepositView(approval) {
   });
 }
 
-/** The Slot 24 card's pending Deposits, once loaded. */
+/** The pending Deposits on home's Activity tab, once Slot 24's are loaded. */
 async function readDeposits(session) {
   const page = await session.openPage("index.html#/");
   await page.waitForSelector('[data-account="24"][data-deposits-ready]', { timeout: 20_000 });
@@ -172,7 +172,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       assert.match(shown.dangerous[0], /only come back through a Withdrawal/);
       assert.match(shown.dangerous[0], /isn't automatic/);
       assert.equal(shown.depositAmount, "50000");
-      assert.equal(shown.deposit, `Deposit 50000 sats to Slot 24 (Elements). 50000 sats credited to ${RECEIVE_0} after 100 blocks, once the operator imports it.`);
+      assert.equal(shown.deposit, `Deposit 50000 sats to Slot 24 (Elements+). 50000 sats credited to ${RECEIVE_0} after 100 blocks, once the operator imports it.`);
       assert.equal(shown.creditedToYou, true);
       assert.match(shown.treasury, /Treasury: 100000 → 150000 sats/);
       assert.deepEqual(shown.inputs, ["Input 0: 100000 sats (Slot 24's Treasury: spent and recreated)", "Input 1: 250000 sats (yours: you sign it)"]);
@@ -205,21 +205,21 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       assert.ok(requests.includes("/fee-estimates"));
     });
 
-    test("the Slot 24 card follows it, showing its txid: confirmations, then the operator's import with the claim, then credited", async () => {
+    test("home's Activity tab follows it, showing its txid: confirmations, then the operator's import with the claim, then credited", async () => {
       assert.deepEqual(
         (await readDeposits(session)).map(({ txid, shownTxid, stopTracking, state, status }) => ({ txid, shownTxid, stopTracking, state, status })),
-        [{ txid: depositTxid, shownTxid: depositTxid, stopTracking: false, state: "confirming", status: "0 / 100 confirmations on eCash" }],
+        [{ txid: depositTxid, shownTxid: depositTxid, stopTracking: false, state: "confirming", status: "0 / 100 confirmations on the main chain" }],
       );
 
       const broadcast = L1.txs.find((t) => parseTx(t.hex).txid === depositTxid);
       Object.assign(broadcast, { confirmed: true, blockHeight: 970950, blockHash: "ab".repeat(32) });
       L1.tipHeight = 970999;
-      assert.equal((await readDeposits(session))[0].status, "50 / 100 confirmations on eCash");
+      assert.equal((await readDeposits(session))[0].status, "50 / 100 confirmations on the main chain");
 
       L1.tipHeight = 971049;
       const [waiting] = await readDeposits(session);
       assert.equal(waiting.state, "awaitingCredit");
-      assert.equal(waiting.status, "Waiting for the Elements chain's operator to credit it (not automatic)");
+      assert.equal(waiting.status, "Waiting for the Elements+ operator to credit it (not automatic)");
       assert.deepEqual(waiting.claim, { txid: depositTxid, vout: "0", block: "ab".repeat(32), address: RECEIVE_0, value: "50000" });
 
       // Another amount at the address isn't the credit.
@@ -294,6 +294,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       assert.deepEqual({ txid: dropped.txid, state: dropped.state, stopTracking: dropped.stopTracking }, { txid, state: "notFound", stopTracking: true });
       const home = await session.openPage("index.html#/");
       await home.waitForSelector(`[data-deposit="${txid}"] [data-deposit-stop-tracking]`, { timeout: 20_000 });
+      await home.click('[data-tab="activity"]');
       assert.equal(await home.$eval("[data-deposit-stop-tracking]", (e) => e.textContent.trim()), "Stop tracking");
       await home.click("[data-deposit-stop-tracking]");
       await home.waitForFunction((t) => document.querySelector(`[data-deposit="${t}"]`) === null, { timeout: 10_000 }, txid);
@@ -361,9 +362,10 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     await approval.click("[data-approve]");
 
     const home = await session.openPage("index.html#/");
-    await home.waitForSelector('[data-account="24"] [data-deposit-refused]', { timeout: 20_000 });
+    await home.waitForSelector("[data-deposit-refused]", { timeout: 20_000 });
+    await home.click('[data-tab="activity"]');
     const refused = await home.$eval("[data-deposit-refused]", (e) => e.textContent.replace(/\s+/g, " ").trim());
-    assert.match(refused, /^Your Deposit of 5000 sats failed: .*min relay fee not met.* Nothing was sent\./);
+    assert.match(refused, /^Your Deposit of 0.00005 ECX failed: .*min relay fee not met.* Nothing was sent\./);
     assert.equal(await home.$eval("[data-deposit-retry]", (e) => [e.textContent.trim(), e.getAttribute("href")].join(" → ")), "Try again → #/deposit/24");
     await home.click("[data-deposit-refused-close]");
     await home.waitForFunction(() => document.querySelector("[data-deposit-refused]") === null, { timeout: 5_000 });

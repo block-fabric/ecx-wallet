@@ -81,7 +81,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     L1.txs = [];
   });
 
-  test("eCash's History shows a received transaction: +N sats, when it confirmed, and its txid, labelled as reported by the server", async () => {
+  test("The main chain's History shows a received transaction: +N ECX, when it confirmed, and its txid, labelled as reported by the server", async () => {
     const received = tx("c0", [{ value: 40000, script: addressScript(L1_RECEIVE_0) }, { value: 9000, script: FOREIGN }]);
     L1.txs = [received];
     const shown = await readHistory(session, "l1");
@@ -91,7 +91,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     const [entry] = shown.entries;
     assert.equal(entry.txid, received.txid);
     assert.equal(entry.state, "confirmed");
-    assert.deepEqual(entry.amounts, ["+40000 sats"], "only what reached the wallet's address");
+    assert.deepEqual(entry.amounts, ["+0.0004 ECX"], "only what reached the wallet's address");
     assert.equal(entry.time, new Date(1792000000 * 1000).toISOString(), "the block's time");
     assert.equal(entry.shownTxid, received.txid);
     assert.equal(shown.more, undefined, "nothing older left out");
@@ -106,8 +106,8 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     L1.txs = [funding, spend];
     const shown = await readHistory(session, "l1");
     assert.deepEqual(shown.entries.map((e) => [e.txid, e.amounts]), [
-      [spend.txid, ["−31000 sats"]],
-      [funding.txid, ["+50000 sats"]],
+      [spend.txid, ["−0.00031 ECX"]],
+      [funding.txid, ["+0.0005 ECX"]],
     ]);
     assert.equal(shown.entries[0].label, undefined);
   });
@@ -121,7 +121,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     L1.txs = [funding, consolidation];
     const [entry] = (await readHistory(session, "l1")).entries;
     assert.equal(entry.txid, consolidation.txid);
-    assert.deepEqual(entry.amounts, ["−1000 sats"]);
+    assert.deepEqual(entry.amounts, ["−0.00001 ECX"]);
     assert.equal(entry.label, "Fee, to yourself");
   });
 
@@ -140,9 +140,9 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     L1.txs = [funding, oldTreasury, deposit, withdrawal];
     const shown = await readHistory(session, "l1");
     assert.deepEqual(shown.entries.map((e) => [e.txid, e.amounts, e.label]), [
-      [withdrawal.txid, ["+15000 sats"], undefined],
-      [deposit.txid, ["−41000 sats"], "Deposit to Slot 24"],
-      [funding.txid, ["+50000 sats"], undefined],
+      [withdrawal.txid, ["+0.00015 ECX"], undefined],
+      [deposit.txid, ["−0.00041 ECX"], "Deposit to Elements+"],
+      [funding.txid, ["+0.0005 ECX"], undefined],
     ]);
   });
 
@@ -202,10 +202,10 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       assert.equal(shown.error, undefined);
       assert.deepEqual(shown.entries.map((e) => e.txid), [spendTxid, receiveTxid]);
       const [out, into] = shown.entries;
-      assert.deepEqual(out.amounts.map((a) => a.split(" ")[0]), ["−100300"]);
+      assert.deepEqual(out.amounts, ["−0.001003 ECX"]);
       assert.equal(out.hidden, undefined);
-      assert.deepEqual(into.amounts.map((a) => a.split(" ")[0]), ["+150000", "+7"]);
-      assert.match(into.amounts[0], /asset 5836dcc0…4eccb2c8$/);
+      assert.deepEqual(into.amounts.map((a) => a.split(" ")[0]), ["+0.0015", "+7"]);
+      assert.match(into.amounts[1], /Unknown asset 11111111…11111111$/, "an asset the Chain Entry doesn't name");
       assert.equal(into.hidden, "+ confidential amounts not shown");
     } finally {
       delete ESPLORA.addressTxs;
@@ -218,7 +218,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     );
     const shown = await readHistory(session, "l1");
     assert.equal(shown.entries.length, 25, "Esplora's latest 25");
-    assert.deepEqual(shown.entries[0].amounts, ["+1025 sats"]);
+    assert.deepEqual(shown.entries[0].amounts, ["+0.00001025 ECX"]);
     assert.equal(shown.more, "Older transactions may not be shown.");
   });
 
@@ -253,12 +253,10 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     }
   });
 
-  test("each home card links to its chain's History", async () => {
+  test("home's Activity tab links to each chain's History", async () => {
     const page = await session.openPage("index.html#/");
-    await page.waitForSelector('[data-account="24"] [data-history-link]', { timeout: 10_000 });
-    const links = await page.$$eval("[data-account]", (cards) =>
-      cards.map((card) => [card.getAttribute("data-account"), card.querySelector("[data-history-link]")?.getAttribute("href")]),
-    );
+    await page.waitForSelector('[data-history-link="24"]', { timeout: 10_000 });
+    const links = await page.$$eval("[data-history-link]", (links) => links.map((a) => [a.getAttribute("data-history-link"), a.getAttribute("href")]));
     await homeSettled(page);
     await page.close();
     assert.deepEqual(links, [
