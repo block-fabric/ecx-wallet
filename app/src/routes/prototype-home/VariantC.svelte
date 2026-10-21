@@ -2,8 +2,8 @@
   // PROTOTYPE, throw away. Variant C, "B, folded": B, but each chain's section in Assets shows the
   // chain's ECX subtotal and folds away, pending Deposits head Activity as "In progress" (no banner
   // above the tabs; the Activity tab counts them), and Activity is grouped by day.
-  // Adding a chain: an Add a chain strip at the end of Assets, one card per chain this version
-  // supports, each added with one tap.
+  // Adding a chain: a "More chains" section at the end of Assets unfolds in place to every chain
+  // this version supports beyond eCash, each with an on/off switch.
   import Mark from "$lib/Mark.svelte";
   import type { HistoryEntry } from "$lib/background";
   import { shortAsset } from "$lib/asset";
@@ -26,8 +26,24 @@
 
   let { chains: baseChains }: { chains: ProtoChain[] } = $props();
   let added = $state<ProtoChain[]>([]);
-  const chains = $derived([...baseChains, ...added]);
-  const addable = $derived(MORE_CHAINS.filter((m) => !added.some((c) => c.id === m.slot)));
+  /** Shipped chains switched off under More chains. */
+  let hidden = $state<Record<string, boolean>>({});
+  const chains = $derived([...baseChains.filter((c) => !hidden[c.id]), ...added]);
+  /** Every chain this version supports beyond eCash, and whether it's on. */
+  const optional = $derived([
+    ...baseChains
+      .filter((c) => c.id !== "l1")
+      .map((c) => ({ id: c.id, name: c.name, chain: c.chain, mark: "E+", blurb: "Assets and confidential transfers", on: !hidden[c.id] })),
+    ...MORE_CHAINS.map((m) => ({ id: m.slot, name: m.name, chain: m.chain, mark: m.mark, blurb: m.blurb, on: added.some((c) => c.id === m.slot) })),
+  ]);
+  const offCount = $derived(optional.filter((o) => !o.on).length);
+  /** The More chains section is unfolded. */
+  let moreOpen = $state(false);
+  function toggle(id: ProtoChain["id"]) {
+    if (baseChains.some((c) => c.id === id)) hidden[id] = !hidden[id];
+    else if (added.some((c) => c.id === id)) added = added.filter((c) => c.id !== id);
+    else added = [...added, addedChain(MORE_CHAINS.find((m) => m.slot === id)!)];
+  }
 
   let tab = $state<"home" | "activity" | "grants">("home");
   /** The chain drilled into, on the Home tab. */
@@ -317,22 +333,31 @@
           </section>
         {/each}
         <p class="reported-inline">Balances are as each chain's server reports them. This wallet doesn't verify them.</p>
-        <section class="col add-strip">
-          <h2>Add a chain</h2>
-          {#if addable.length}
-            <div class="add-cards">
-              {#each addable as m (m.slot)}
-                <button class="add-card" onclick={() => (added = [...added, addedChain(m)])}>
-                  <span class="chain-avatar slot" style:width="30px" style:height="30px">{m.mark}</span>
-                  <strong class="small">{m.name}</strong>
-                  <span class="muted tiny">{m.blurb}</span>
-                  <span class="add-plus"><ProtoIcon name="plus" size={14} /> Add</span>
-                </button>
+        <section class="more-chains" class:open={moreOpen}>
+          <button class="more-head" aria-expanded={moreOpen} onclick={() => (moreOpen = !moreOpen)}>
+            <span class="more-icon"><ProtoIcon name="plus" size={14} /></span>
+            <span class="col grow">
+              <strong>More chains</strong>
+              <span class="muted tiny">{offCount ? `${offCount} more available` : "All on"}</span>
+            </span>
+            <span class="fold" class:up={moreOpen}><ProtoIcon name="chevron" size={16} /></span>
+          </button>
+          {#if moreOpen}
+            <ul>
+              {#each optional as o (o.id)}
+                <li class="more-row">
+                  <span class="chain-avatar slot" style:width="28px" style:height="28px">{o.mark}</span>
+                  <span class="col grow">
+                    <strong class="small">{o.name}</strong>
+                    <span class="muted tiny">{o.blurb}</span>
+                  </span>
+                  <button class="switch-toggle" class:on={o.on} role="switch" aria-checked={o.on} aria-label="Show {o.name}" onclick={() => toggle(o.id)}><span></span></button>
+                </li>
               {/each}
-            </div>
-            <p class="muted tiny">The chains this version of the wallet supports. New ones come with wallet updates.</p>
-          {:else}
-            <p class="muted small">You've added every chain this version of the wallet supports. New ones come with wallet updates.</p>
+            </ul>
+            <p class="muted tiny more-note">
+              The chains this version of the wallet supports; new ones come with wallet updates. Turning one off only hides it: your funds on it stay where they are.
+            </p>
           {/if}
         </section>
       {:else}
@@ -773,40 +798,87 @@
   .no-assets {
     padding: 10px 12px;
   }
-  .add-strip {
-    gap: 8px;
-    margin-top: 4px;
-  }
-  .add-cards {
+  .more-chains {
     display: flex;
-    gap: 8px;
-    margin: 0 -16px;
-    padding: 2px 16px 4px;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .add-card {
-    flex: 0 0 116px;
     flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-    min-height: 0;
-    padding: 10px;
+    border: 1px solid var(--border);
     border-radius: var(--radius);
+  }
+  .more-chains.open {
+    background: var(--surface);
+  }
+  .more-head {
+    justify-content: flex-start;
+    gap: 10px;
+    min-height: 52px;
+    padding: 8px 12px;
+    border: none;
+    border-radius: var(--radius);
+    background: none;
     font-weight: 400;
     text-align: left;
   }
-  .add-card .tiny {
-    line-height: 1.3;
-  }
-  .add-plus {
+  .more-icon {
     display: flex;
     align-items: center;
-    gap: 4px;
-    margin-top: 4px;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
     color: var(--accent);
-    font-size: 0.8rem;
-    font-weight: 600;
+  }
+  .more-head .fold {
+    display: flex;
+    color: var(--muted);
+    transition: transform 0.15s;
+  }
+  .more-head .fold.up {
+    transform: rotate(180deg);
+  }
+  .more-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+  }
+  .more-note {
+    padding: 8px 12px 12px;
+    border-top: 1px solid var(--border);
+  }
+  .switch-toggle {
+    position: relative;
+    flex: none;
+    width: 40px;
+    min-height: 0;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: var(--border);
+  }
+  .switch-toggle span {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    transition: left 0.15s;
+  }
+  .switch-toggle.on {
+    background: var(--accent);
+  }
+  .switch-toggle.on span {
+    left: 19px;
+  }
+  .switch-toggle:hover {
+    background: var(--muted);
+  }
+  .switch-toggle.on:hover {
+    background: var(--accent-hover);
   }
   .count {
     display: inline-flex;
