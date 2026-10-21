@@ -46,7 +46,8 @@ Slot under it gets its Starter. `wallet/src/accounts.ts` checks the entry before
 Slot's Starter (and nothing else) to that Slot's Chain Module, and `accounts.l1ReceiveAddresses()`
 hands the L1 Account Key to `l1.wasm` (BIP84 P2WPKH, `bc1q…`). Each module runs in its own lazily
 instantiated WASM instance. Home's Receive sheet shows them when unlocked (`l1.account` and
-`accounts.list` messages; the main chain's comes first); the Provider's `getAddresses({ slot })` returns
+`accounts.list` messages; the main chain's comes first), each with Copy and a QR code (`qrMatrix`,
+the bundled `qrcode-generator`; `e2e/tests/qr.test.mjs` scans one back with jsQR); the Provider's `getAddresses({ slot })` returns
 `[{ chain, address }]` to an origin whose Grant covers the method and the Slot (4100 otherwise, or
 while locked).
 

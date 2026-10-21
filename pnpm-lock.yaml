@@ -62,6 +62,9 @@ importers:
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
+      jsqr:
+        specifier: 1.4.0
+        version: 1.4.0
       puppeteer-core:
         specifier: 25.14.0
         version: 25.14.0
@@ -88,6 +91,10 @@ importers:
   stub-server: {}
 
   wallet:
+    dependencies:
+      qrcode-generator:
+        specifier: 2.0.4
+        version: 2.0.4
     devDependencies:
       typescript:
         specifier: 5.9.3
@@ -599,6 +606,9 @@ packages:
   is-reference@3.0.3:
     resolution: {integrity: sha512-ixkJoqQvAP88E6wLydLGGqCJsrFUnqoH6HnaczB8XmDH1oaWU+xxdptvikTgaEhtZ53Ky6YXiBuUI2WXLMCwjw==}
 
+  jsqr@1.4.0:
+    resolution: {integrity: sha512-dxLob7q65Xg2DvstYkRpkYtmKm2sPJ9oFhrhmudT1dZvNFFTlroai3AWSpLey/w5vMcLBXRgOJsbXpdN9HzU/A==}
+
   kleur@4.1.5:
     resolution: {integrity: sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ==}
     engines: {node: '>=6'}
@@ -647,6 +657,9 @@ packages:
   puppeteer-core@25.14.0:
     resolution: {integrity: sha512-LQitnes3tBeVbdZ7V/4iwJPLZGgkl9uBVK0W7YYMh68j/3Y9eNuvj4yl+Fdo7zN0SuajOMrhd7aPj3DifK8k6A==}
     engines: {node: '>=22.12.0'}
+
+  qrcode-generator@2.0.4:
+    resolution: {integrity: sha512-mZSiP6RnbHl4xL2Ap5HfkjLnmxfKcPWpWe/c+5XxCuetEenqmNFf1FH/ftXPCtFG5/TDobjsjz6sSNL0Sr8Z9g==}
 
   readdirp@4.1.2:
     resolution: {integrity: sha512-GDhwkLfywWL2s6vEjyhri+eXmfH6j1L7JE27WhqLeYzoh/A3DBaYGEj2H/HFZCn/kMfim73FXxEJTw06WtxQwg==}
@@ -1139,6 +1152,8 @@ snapshots:
     dependencies:
       '@types/estree': 1.0.9
 
+  jsqr@1.4.0: {}
+
   kleur@4.1.5: {}
 
   locate-character@3.0.0: {}
@@ -1182,6 +1197,8 @@ snapshots:
       - proxy-agent
       - utf-8-validate
       - yauzl
+
+  qrcode-generator@2.0.4: {}
 
   readdirp@4.1.2: {}
 
