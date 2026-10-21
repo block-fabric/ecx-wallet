@@ -12,7 +12,7 @@ import { createKeyRouting, type ChainModules, type Keys } from "./accounts";
 import { cacheKey, type SessionCache } from "./cache";
 import { ChainModuleRefusal, NATIVE_COIN, type ChainEntry, type ClearView, type DepositCredit, type L1AccountKey, type L1Module, type NetworkEntry } from "./chain-module";
 import { ErrorCode, ProviderRpcError } from "./errors";
-import { QUERIES_AT_ONCE, type EsploraClient } from "./esplora";
+import { feeRate, QUERIES_AT_ONCE, type EsploraClient } from "./esplora";
 import { WATCHED_CHANGE_ADDRESSES, WATCHED_RECEIVE_ADDRESSES } from "./pull-path";
 import { rejected, type SignPrompt, type SigningApproval } from "./signing";
 import { SidechainServerError } from "./sidechain-server";
@@ -23,13 +23,6 @@ export const CONFIRMATIONS_TO_CREDIT = 100;
 
 /** Who the approval window names for a Deposit: the wallet itself asks. */
 export const DEPOSIT_REQUESTER = "This wallet (Deposit from the main chain)";
-
-/** The fee rate's confirmation target, in blocks. */
-const FEE_TARGET = "6";
-/** sat/vB when the server has no estimate for the target. */
-const FALLBACK_FEE_RATE = 1;
-/** sat/vB the rate never goes below (besides the server's own 1008-block floor). */
-const MIN_FEE_RATE = 0.1;
 
 /** A broadcast Deposit the wallet keeps an eye on, until it is credited or the user stops tracking it. */
 export interface PendingDeposit {
@@ -104,13 +97,6 @@ export interface DepositDeps extends Keys, ChainModules {
 
 /** A refusal the user reads where they asked for the Deposit. */
 const refusal = (message: string) => new ProviderRpcError(ErrorCode.InvalidParams, message);
-
-/** The fee rate, in sats per 1000 vB: the 6-block estimate, never below the 1008-block one or 0.1. */
-export function feeRate(estimates: Record<string, number> | undefined): number {
-  const target = estimates?.[FEE_TARGET] ?? FALLBACK_FEE_RATE;
-  const floor = Math.max(estimates?.["1008"] ?? 0, MIN_FEE_RATE);
-  return Math.ceil(Math.max(target, floor) * 1000);
-}
 
 /**
  * Checks the Clear View is the Deposit that was asked for (one Deposit, to `slot`, of `amount`,

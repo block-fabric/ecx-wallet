@@ -22,7 +22,7 @@ export interface Binding {
 
 export interface Declaration {
   binding: Binding;
-  /** Optional capabilities: `depositDestination` (a Slot's), `buildDeposit` (L1's). */
+  /** Optional capabilities: `depositDestination` and `buildTransfer` (a Slot's), `buildDeposit` (L1's). */
   capabilities: string[];
 }
 
@@ -208,8 +208,10 @@ export type RefusalCode =
   /** L1: the spend isn't replay-marked (docs/adr/0004). */
   | "noReplayMarker"
   | "invalidAccountKey"
-  /** L1 `buildDeposit`: the coins don't cover the amount and its fee. */
-  | "insufficientFunds";
+  /** `buildDeposit`, `buildTransfer`: the coins don't cover the amounts and the fee. */
+  | "insufficientFunds"
+  /** `buildTransfer`: an amount, or change that can't go to the fee, is below what the chain relays. */
+  | "dust";
 
 /** A module refused to decode or sign a request. */
 export class ChainModuleRefusal extends Error {
@@ -248,6 +250,40 @@ export interface ChainModule<K extends ChainKey = Starter> {
   sign(payload: string, key: K): string;
   /** Only if `declare()` lists `depositDestination` (throws otherwise). */
   depositDestination(key: K): DepositDestination;
+  /**
+   * Only if `declare()` lists `buildTransfer`: an unsigned transfer (base64) and the coins it
+   * spends. Throws ChainModuleRefusal (`insufficientFunds`, `dust`, `confidential`, …).
+   */
+  buildTransfer(order: ModuleTransferOrder, key: K): BuiltTransfer;
+  /** A signed payload → the raw transaction (hex) and its txid. Throws ChainModuleRefusal. */
+  finalize(payload: string): { tx: string; txid: string };
+}
+
+/** What to send, and what to build it from (a Chain Module's `TransferOrder`). */
+export interface ModuleTransferOrder {
+  /** The account's explicit coins to choose from: confirmed or trusted, none held back. */
+  coins: { txid: string; vout: number; asset: string; value: string; chain: 0 | 1; index: number }[];
+  outputs: TransferOutput[];
+  /** Sats per 1000 vbytes. */
+  feeRate: number;
+  changeIndex: number;
+}
+
+/** One payment of a transfer. `to` is tagged so scripts and data can join addresses later. */
+export interface TransferOutput {
+  /** Hex asset id. */
+  asset: string;
+  /** Base units, as a decimal string. */
+  amount: string;
+  to: { address: string };
+}
+
+/** A transfer `buildTransfer` built. */
+export interface BuiltTransfer {
+  /** Base64, unsigned. */
+  pset: string;
+  /** The coins it spends. */
+  spent: { txid: string; vout: number }[];
 }
 
 /** What to deposit, and what to build it from (the L1 module's `DepositOrder`). */
@@ -274,8 +310,6 @@ export interface L1Module extends ChainModule<L1AccountKey> {
   txid(tx: string): string;
   /** An unsigned M5 (base64 PSBT). Throws ChainModuleRefusal (e.g. `insufficientFunds`). */
   buildDeposit(order: DepositOrder, key: L1AccountKey): string;
-  /** A signed PSBT → the raw transaction (hex) and its txid. Throws ChainModuleRefusal. */
-  finalize(payload: string): { tx: string; txid: string };
 }
 
 /** Turns a module's JSON error result into a ChainModuleRefusal. */
@@ -310,6 +344,8 @@ function chainModuleOf<K extends ChainKey>(m: CoreModule): ChainModule<K> {
     decode: (payload, key) => refusals(() => json<Decoded>("decode", payload, key)),
     sign: (payload, key) => refusals(() => m.callText("sign", payload, key)),
     depositDestination: (key) => json<DepositDestination>("deposit_destination", key),
+    buildTransfer: (order, key) => refusals(() => json<BuiltTransfer>("build_transfer", JSON.stringify(order), key)),
+    finalize: (payload) => refusals(() => json<{ tx: string; txid: string }>("finalize", payload)),
   };
 }
 
@@ -322,6 +358,5 @@ export async function loadL1Module(bytes: BufferSource): Promise<L1Module> {
     treasuryScript: (slot) => m.callText("treasury_script", slot),
     txid: (tx) => m.callText("txid", tx),
     buildDeposit: (order, key) => refusals(() => json<{ psbt: string }>("build_deposit", JSON.stringify(order), key).psbt),
-    finalize: (payload) => refusals(() => json<{ tx: string; txid: string }>("finalize", payload)),
   };
 }

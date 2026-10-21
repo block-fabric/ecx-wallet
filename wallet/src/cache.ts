@@ -24,4 +24,6 @@ export const cacheKey = {
    * page shows it instead, until closed or the next Deposit is sent.
    */
   depositRefused: (slot: number) => `${CACHE_PREFIX}deposit-refused:${slot}`,
+  /** The Slot's last Send that failed after the user approved it, for the same reason. */
+  sendRefused: (slot: number) => `${CACHE_PREFIX}send-refused:${slot}`,
 };

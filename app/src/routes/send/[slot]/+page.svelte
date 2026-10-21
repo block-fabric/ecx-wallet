@@ -2,31 +2,46 @@
   import { page } from "$app/state";
   import { parseAmount } from "@ecx/wallet";
   import { shortAsset } from "$lib/asset";
-  import { listChains, reportedState, startSend, type ChainInfo, type SendResult, type SlotReport } from "$lib/background";
+  import { listChains, spendable, startSend, type AssetAmount, type ChainInfo, type SendResult } from "$lib/background";
+  import Icon from "$lib/Icon.svelte";
   import TopBar from "$lib/TopBar.svelte";
   import { amountText, unit } from "$lib/unit.svelte";
 
   const slot = Number(page.params.slot);
   let info = $state<ChainInfo | undefined>(undefined);
-  listChains().then((c) => (info = c.find((i) => i.id === slot)), () => {});
   const assets = $derived(info?.assets ?? []);
-  const entry = $derived(assets.find((a) => a.id === asset));
-  /** What the amount is typed in: ECX in the chosen unit, another named asset in its own, else base units. */
-  const amountUnit = $derived(entry === undefined ? "base units" : entry.ecx && unit.value === "sats" ? "sats" : entry.ticker);
-  let report = $state<SlotReport | undefined>(undefined);
+
+  /** One recipient, as typed. */
+  interface Row {
+    id: number;
+    asset: string;
+    amount: string;
+    address: string;
+  }
+
+  let available = $state<AssetAmount[] | undefined>(undefined);
   let loaded = $state(false);
-  let asset = $state("");
-  let amount = $state("");
-  let destination = $state("");
+  let nextId = 0;
+  let rows = $state<Row[]>([]);
   let busy = $state(false);
   let done = $state<SendResult | undefined>(undefined);
+  let copied = $state(false);
   let error = $state("");
 
-  // The assets to send are the ones the Sidechain Server reports a balance of.
-  reportedState(slot).then(
-    (r) => {
-      report = r;
-      asset = r.balances[0]?.asset ?? "";
+  /** A new row starts on the chain's ECX if the wallet can spend any, else the first spendable asset. */
+  const newRow = (): Row => ({
+    id: nextId++,
+    asset: (available?.find((a) => entryOf(a.asset)?.ecx) ?? available?.[0])?.asset ?? "",
+    amount: "",
+    address: "",
+  });
+
+  // The assets to send are the ones the wallet can spend now, named as the Chain Entry names them.
+  Promise.all([listChains().catch(() => []), spendable(slot)]).then(
+    ([chains, s]) => {
+      info = chains.find((i) => i.id === slot);
+      available = s;
+      rows = [newRow()];
       loaded = true;
     },
     (e) => {
@@ -35,19 +50,68 @@
     },
   );
 
+  const entryOf = (asset: string) => assets.find((a) => a.id === asset);
+  /** What an amount is typed in: ECX in the chosen unit, another named asset in its own, else base units. */
+  function unitOf(asset: string): string {
+    const entry = entryOf(asset);
+    return entry === undefined ? "base units" : entry.ecx && unit.value === "sats" ? "sats" : entry.ticker;
+  }
+  const nameOf = (asset: string) => entryOf(asset)?.ticker ?? `Unknown asset ${shortAsset(asset)}`;
+
+  /** A row's amount in base units; 0 while it doesn't parse (the Send refuses it then). */
+  function baseUnits(r: Row): bigint {
+    try {
+      return BigInt(parseAmount(r.amount, entryOf(r.asset), unit.value));
+    } catch {
+      return 0n;
+    }
+  }
+  /** Assets the rows add up to more of than the wallet can spend. The module's own check still decides. */
+  const overspent = $derived.by(() => {
+    if (available === undefined) return [];
+    const totals = new Map<string, bigint>();
+    for (const r of rows) totals.set(r.asset, (totals.get(r.asset) ?? 0n) + baseUnits(r));
+    return [...totals].filter(([asset, total]) => total > BigInt(available!.find((a) => a.asset === asset)?.amount ?? "0")).map(([asset]) => asset);
+  });
+
+  function remove(id: number) {
+    rows = rows.filter((r) => r.id !== id);
+  }
+
   async function submit(e: SubmitEvent) {
     e.preventDefault();
-    busy = true;
     error = "";
     done = undefined;
+    let outputs;
     try {
-      done = await startSend({ slot, asset, amount: parseAmount(amount, entry, unit.value), destination: destination.trim() });
+      outputs = rows.map((r, i) => {
+        try {
+          return { asset: r.asset, amount: parseAmount(r.amount, entryOf(r.asset), unit.value), to: { address: r.address.trim() } };
+        } catch (err) {
+          throw new Error(rows.length > 1 ? `Recipient ${i + 1}: ${(err as Error).message}` : (err as Error).message);
+        }
+      });
+    } catch (err) {
+      error = (err as Error).message;
+      return;
+    }
+    busy = true;
+    try {
+      done = await startSend(slot, outputs);
     } catch (err) {
       error = (err as Error).message;
     } finally {
       busy = false;
     }
   }
+
+  function copyTxid(txid: string) {
+    navigator.clipboard.writeText(txid).catch(() => {});
+    copied = true;
+    setTimeout(() => (copied = false), 1500);
+  }
+
+  const shortTxid = (txid: string) => `${txid.slice(0, 10)}…${txid.slice(-8)}`;
 </script>
 
 <main class="screen" data-screen-ready={loaded ? "" : undefined}>
@@ -57,43 +121,98 @@
     <p class="loading"><span class="spinner"></span>Loading…</p>
   {/if}
 
-  {#if report}
+  {#if done}
+    <div class="success sent" role="status" data-send-done>
+      <strong>Sent</strong>
+      {#if done.txid}
+        <span class="txid">
+          Transaction <code data-send-txid={done.txid}>{shortTxid(done.txid)}</code>
+          <button type="button" class="copy" aria-label="Copy the transaction id" title="Copy" onclick={() => copyTxid(done!.txid!)} data-copy-txid>
+            <Icon name={copied ? "check" : "copy"} size={16} />
+          </button>
+        </span>
+      {:else}
+        <span>Submitted to {done.server}{done.accepted ? "" : ", which didn't accept it"}.</span>
+      {/if}
+      <a class="link" href="#/chain/{slot}/activity" data-send-activity>See it in Activity</a>
+    </div>
+  {:else if available}
     <form class="stack" onsubmit={submit}>
-      <div class="card">
-        <label>
-          Asset
-          <select bind:value={asset} data-send-asset>
-            {#each report.balances as balance (balance.asset)}
-              {@const named = assets.find((a) => a.id === balance.asset)}
-              <option value={balance.asset}>
-                {named ? named.ticker : `Unknown asset ${shortAsset(balance.asset)}`} ({amountText(balance.amount, balance.asset, assets)} reported)
-              </option>
-            {/each}
-          </select>
-        </label>
-        <label>
-          Amount ({amountUnit})
-          <input inputmode="decimal" bind:value={amount} data-send-amount />
-        </label>
-        <label>
-          Destination address
-          <input class="mono" bind:value={destination} autocomplete="off" spellcheck="false" data-send-destination />
-        </label>
-      </div>
-      <p class="reported">
-        The Sidechain Server at <strong data-server>{report.server}</strong> builds the transaction. You review
-        exactly what it built, decoded by this wallet, before anything is signed.
+      {#each rows as row, i (row.id)}
+        <div class="card" data-send-row={i}>
+          {#if rows.length > 1}
+            <div class="row-head">
+              <strong class="small">Recipient {i + 1}</strong>
+              <button type="button" class="copy" aria-label="Remove recipient {i + 1}" title="Remove" onclick={() => remove(row.id)} data-send-remove>
+                <Icon name="close" size={16} />
+              </button>
+            </div>
+          {/if}
+          <label>
+            Asset
+            <select bind:value={row.asset} data-send-asset>
+              {#each available as a (a.asset)}
+                <option value={a.asset}>{nameOf(a.asset)} ({amountText(a.amount, a.asset, assets)} spendable)</option>
+              {/each}
+            </select>
+          </label>
+          <label>
+            Amount ({unitOf(row.asset)})
+            <input inputmode="decimal" bind:value={row.amount} data-send-amount />
+          </label>
+          <label>
+            Destination address
+            <input class="mono" bind:value={row.address} autocomplete="off" spellcheck="false" data-send-destination />
+          </label>
+        </div>
+      {/each}
+      <button type="button" class="small-button add" onclick={() => (rows = [...rows, newRow()])} disabled={available.length === 0} data-send-add>
+        <Icon name="plus" size={16} />Add recipient
+      </button>
+      {#each overspent as asset (asset)}
+        <p class="error" role="alert" data-send-overspent>These recipients add up to more {nameOf(asset)} than the wallet can spend.</p>
+      {/each}
+      <p class="muted small">
+        Spendable is confirmed, plus change from your own sends. You review exactly what will be sent, decoded by this
+        wallet, before anything is signed.
       </p>
-      <button class="primary block" type="submit" disabled={busy || !asset} data-send-submit>Review and send</button>
+      <button class="primary block" type="submit" disabled={busy || available.length === 0} data-send-submit>Review and send</button>
     </form>
-    {#if busy}<p class="loading small" data-send-waiting><span class="spinner"></span>Waiting for the Sidechain Server and your approval…</p>{/if}
+    {#if busy}<p class="loading small" data-send-waiting><span class="spinner"></span>Waiting for your approval…</p>{/if}
   {/if}
 
-  {#if done}
-    <p class="success" role="status" data-send-done>
-      Signed and submitted to {done.server}{done.accepted ? "" : ", which didn't accept it"}.
-      {#if done.txid}Transaction <code>{done.txid}</code>.{/if}
-    </p>
-  {/if}
   {#if error}<p class="error" role="alert" data-error>{error}</p>{/if}
 </main>
+
+<style>
+  .row-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .add {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .sent {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .txid {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .copy {
+    width: 32px;
+    min-height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: inherit;
+  }
+</style>

@@ -82,7 +82,7 @@ fn declare_reports_the_betanet_slot_24_binding_for_psets() {
     assert_eq!(d.binding.chain, "ecash:betanet-s24");
     assert_eq!(d.binding.format, "pset");
     assert_eq!(d.binding.payload_versions, vec!["1".to_string()]);
-    assert_eq!(d.capabilities, ["depositDestination"]);
+    assert_eq!(d.capabilities, ["depositDestination", "buildTransfer"]);
 }
 
 #[test]

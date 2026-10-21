@@ -65,7 +65,8 @@ the extension build turns those URLs into `host_permissions` and CSP `connect-sr
   It then sums the explicit outputs (`/address/:a/utxo`) of the first 20 receive and 20 change
   addresses per asset, confirmed and unconfirmed apart (eCash's outputs have no asset: they're its
   coin, `NATIVE_COIN`, shown in sats). electrs already leaves out outputs its mempool spends, so a
-  Deposit's coin leaves the confirmed balance at once and its change shows as unconfirmed. Send isn't available over Esplora yet (#28); eCash's one spend is a Deposit (below).
+  Deposit's coin leaves the confirmed balance at once and its change shows as unconfirmed. Over
+  Esplora the wallet builds its own Send (below); eCash's one spend is a Deposit (below).
 - `ecx-v0`, the Standard Sidechain API (`standard-sidechain-api.ts`, `stub-server/README.md`):
   registers the descriptor and first 20 receive addresses before every call. Its Send has the
   server build the transfer; the Signing Request goes through the same validation, Chain Module
@@ -122,6 +123,20 @@ Deposit that failed after approval (below). Nothing else a Deposit is
 built from is cached: its coins, Treasury, fee rate and confirmations are always read fresh. Esplora
 lookups run 20 at once (`QUERIES_AT_ONCE`). Tests that change a server's chain lock and unlock first
 (`relock(session)` in the harness).
+
+Send (`wallet/src/send.ts`, #28; docs/adr/0006): `#/send/<slot>` (`send.start`, `send.spendable`)
+takes one or more recipients, any mix of assets, each `{ asset, amount, to: { address } }`. A Slot's
+Send button shows when its server speaks `/v1` or its module declares `buildTransfer`. Over Esplora
+the wallet gathers the Spendable coins (confirmed, plus outputs of trusted unconfirmed transactions,
+less held ones), the first unused change address (else `/1/19`) and the fee rate, and
+`elements.wasm`'s `build_transfer` builds the PSET (largest first, dust change to the fee,
+confidential destinations refused). Its Clear View goes to the approval window as "This wallet
+(Send on <chain>)"; then `sign`, `finalize` and `POST /tx`. The coins it spent are held in
+`storage.local` (`held:<txid>`) until it confirms, or until the server hasn't known it for 6 blocks.
+The result shows its txid and links to the chain's Activity tab (`#/chain/<slot>/activity`). As for
+Deposit, the popup that asked closes when the approval window opens, so a Send that fails after
+approval is kept for the session (`send.refused`) and shown in the Activity feed with "Try again"
+until closed. Over `/v1` the server builds instead (above).
 
 Deposit (`wallet/src/deposit.ts`, #31; docs/adr/0004): home's "Deposit to" sheet, or a Slot's
 own screen, opens `#/deposit/<slot>` (`deposit.start`). The Slot's Chain Module says what the Deposit is credited to

@@ -12,6 +12,7 @@ import {
   createL1Module,
   createProviderHandler,
   createPullPath,
+  createSends,
   createSettings,
   describeChain,
   sidechainServer,
@@ -23,11 +24,16 @@ import {
   ProviderRpcError,
   VaultError,
   type ApprovalPrompt,
+  type ChainEntry,
+  type NetworkEntry,
   type ConnectAnswer,
   type ConnectPrompt,
   type TurnOnPrompt,
   type DepositStore,
   type Grant,
+  type HeldSpend,
+  type HeldStore,
+  type TransferOutput,
   type GrantStore,
   type KeyValueStore,
   type PendingDeposit,
@@ -149,6 +155,24 @@ const depositStore: DepositStore = {
   },
   async remove(txid) {
     await chrome.storage.local.remove(`${DEPOSIT_PREFIX}${txid}`);
+  },
+};
+
+// Coins a broadcast Send spent, held back from later Sends until it confirms (wallet/src/send.ts).
+const HELD_PREFIX = "held:";
+
+const heldStore: HeldStore = {
+  async list() {
+    const all = await chrome.storage.local.get(null);
+    return Object.entries(all)
+      .filter(([key]) => key.startsWith(HELD_PREFIX))
+      .map(([, held]) => held as HeldSpend);
+  },
+  async put(held) {
+    await chrome.storage.local.set({ [`${HELD_PREFIX}${held.txid}`]: held });
+  },
+  async remove(txid) {
+    await chrome.storage.local.remove(`${HELD_PREFIX}${txid}`);
   },
 };
 
@@ -309,6 +333,13 @@ const pullPath = createPullPath({
   cache: sessionCache,
 });
 
+/** A client for a network's default server, which speaks Esplora. */
+const esplora = (entry: ChainEntry, network: NetworkEntry) =>
+  esploraClient(
+    { url: network.sidechainServer.url, identityBlock: network.identityBlock, chainName: entry.name, cache: sessionCache },
+    (...args) => fetch(...args),
+  );
+
 // Deposits: the L1 module builds the M5 from the wallet's own coins, over eCash's Esplora.
 const deposits = createDeposits({
   ...keys,
@@ -316,15 +347,14 @@ const deposits = createDeposits({
   l1Module,
   openSigningApproval,
   isUnlocked: signing.isUnlocked,
-  esplora: (entry, network) =>
-    esploraClient(
-      { url: network.sidechainServer.url, identityBlock: network.identityBlock, chainName: entry.name, cache: sessionCache },
-      (...args) => fetch(...args),
-    ),
+  esplora,
   store: depositStore,
   cache: sessionCache,
   now: () => Date.now(),
 });
+
+// The wallet's own Send: over Esplora the Slot's module builds it; a `/v1` server builds its own.
+const sends = createSends({ ...keys, chainModule, l1Module, pullPath, esplora, openSigningApproval, isUnlocked: signing.isUnlocked, held: heldStore, cache: sessionCache, now: () => Date.now() });
 
 /** The requester's web origin as the browser reports it for a content-script message. */
 function requesterOrigin(sender: chrome.runtime.MessageSender): string | undefined {
@@ -429,13 +459,21 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
       return (await (message.slot === undefined ? pullPath.cachedL1History() : pullPath.cachedHistory(await onSlot(message.slot)))) ?? null;
     case "send.start":
-      // The wallet's own Send: resolves once the server accepted the signed payload.
+      // The wallet's own Send: resolves once broadcast, or once a `/v1` server accepted it.
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
-      return pullPath.send(await onSlot(message.slot), {
-        asset: String(message.asset ?? ""),
-        amount: String(message.amount ?? ""),
-        destination: String(message.destination ?? ""),
-      });
+      return sends.send(await onSlot(message.slot), { outputs: Array.isArray(message.outputs) ? (message.outputs as TransferOutput[]) : [] });
+    case "send.spendable":
+      // What a Send on the Slot can spend now, per asset.
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      return sends.spendable(await onSlot(message.slot));
+    case "send.refused":
+      // The Slot's last Send that failed after approval, for the Activity feed: its page may be gone.
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      return (await sends.refused(supportedSlot(message.slot))) ?? null;
+    case "send.dismissRefused":
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      await sends.dismissRefused(supportedSlot(message.slot));
+      return null;
     case "deposit.start":
       // Resolves once the M5 is broadcast (after the user's approval).
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");

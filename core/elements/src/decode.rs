@@ -87,9 +87,13 @@ pub enum RefusalCode {
     MissingInputFields,
     /// The Starter handed in isn't one (a wallet bug, not the requester's).
     InvalidStarter,
+    /// `build_transfer`: the coins don't cover the amounts and the fee.
+    InsufficientFunds,
+    /// `build_transfer`: an amount, or change that can't go to the fee, is below what Elements relays.
+    Dust,
 }
 
-fn refuse(code: RefusalCode, message: impl Into<String>) -> Refusal {
+pub(crate) fn refuse(code: RefusalCode, message: impl Into<String>) -> Refusal {
     Refusal { code, message: message.into() }
 }
 

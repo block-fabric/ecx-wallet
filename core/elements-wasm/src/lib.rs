@@ -70,3 +70,19 @@ pub unsafe extern "C" fn sign(payload: *const u8, payload_len: usize, starter: *
         ecx_elements::sign(p, s).map_err(refusal)
     }))
 }
+
+/// Transfer order (JSON) + Slot 24 Starter → `{ pset }` (base64, unsigned) as JSON, or a refusal
+/// (`insufficientFunds`, `dust`, `confidential`, …).
+#[no_mangle]
+pub unsafe extern "C" fn build_transfer(order: *const u8, order_len: usize, starter: *const u8, starter_len: usize) -> i32 {
+    ret_text(text(order, order_len).and_then(|o| {
+        let s = text(starter, starter_len)?;
+        ecx_elements::build_transfer(o, s).map_err(refusal).and_then(|b| json(&b))
+    }))
+}
+
+/// Signed base64 PSET → `{ tx, txid }` (the raw transaction, hex) as JSON, or a refusal.
+#[no_mangle]
+pub unsafe extern "C" fn finalize(payload: *const u8, payload_len: usize) -> i32 {
+    ret_text(text(payload, payload_len).and_then(|p| ecx_elements::finalize(p).map_err(refusal).and_then(|f| json(&f))))
+}

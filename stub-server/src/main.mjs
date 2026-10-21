@@ -28,9 +28,7 @@ const stub =
           state: { [ADDRESS]: { balances: [{ asset: policyAsset, amount: "150000" }], history: [] } },
           transfers: [
             {
-              asset: policyAsset,
-              amount: "120000",
-              destination: "elements1qepkhlwlq2qjggg89d5quqx8z59vz9mr2h6j4pc",
+              outputs: [{ asset: policyAsset, amount: "120000", to: { address: "elements1qepkhlwlq2qjggg89d5quqx8z59vz9mr2h6j4pc" } }],
               payload: psets.clear.payload,
             },
           ],

@@ -9,7 +9,9 @@
 //! - [`check`] refuses, without the Starter, what the wallet must never sign;
 //! - [`decode`] refuses what the wallet must never sign, and otherwise returns a Clear View (if the
 //!   Decoder fully understands the request) or Blind with the facts it can prove;
-//! - [`sign`] signs only the inputs that re-derive to the Starter, changing nothing else.
+//! - [`sign`] signs only the inputs that re-derive to the Starter, changing nothing else;
+//! - [`build_transfer`] builds the wallet's own Send from the account's coins (the `buildTransfer`
+//!   capability), and [`finalize`] turns the signed PSET into the transaction to broadcast.
 //!
 //! The module holds nothing between calls and receives only its own Slot's Starter. Every
 //! per-network value comes from Slot 24's Chain Entry (`chain-entry.json`), never from constants.
@@ -23,6 +25,7 @@ mod deposit;
 pub mod chain_entry;
 mod ownership;
 mod sign;
+mod transfer;
 
 pub use account::{derive_account, Account, AddressEntry};
 pub use chain_entry::{chain_entry, ChainEntry, NetworkEntry, ServerApi, SidechainServerEntry};
@@ -30,6 +33,7 @@ pub use clear::{ClearInput, ClearOutput, ClearView, DangerousMode, Destination};
 pub use deposit::{deposit_destination, DepositDestination};
 pub use decode::{check, decode, AssetAmount, Decoded, OwnedInput, Refusal, RefusalCode, VerifiableFacts};
 pub use sign::sign;
+pub use transfer::{build_transfer, finalize, Built, Coin, Finalized, Payment, PaymentTo, Spent, TransferOrder};
 
 /// No ambient randomness inside the module: any code path that reaches getrandom fails loudly.
 #[cfg(target_arch = "wasm32")]
@@ -68,7 +72,7 @@ pub fn declare() -> Declaration {
             format: "pset".into(),
             payload_versions: vec!["1".into()],
         },
-        capabilities: vec!["depositDestination".into()],
+        capabilities: vec!["depositDestination".into(), "buildTransfer".into()],
     }
 }
 

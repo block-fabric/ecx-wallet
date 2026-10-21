@@ -56,7 +56,10 @@ export type BackgroundMessage =
   | { kind: "history.reported"; slot?: number }
   | { kind: "history.cached"; slot?: number }
   // The wallet's own Send (pull path): wallet pages only.
-  | { kind: "send.start"; slot: number; asset: string; amount: string; destination: string }
+  | { kind: "send.start"; slot: number; outputs: { asset: string; amount: string; to: { address: string } }[] }
+  | { kind: "send.spendable"; slot: number }
+  | { kind: "send.refused"; slot: number }
+  | { kind: "send.dismissRefused"; slot: number }
   // Deposit from the main chain to a Slot, and the Slot's pending Deposits: wallet pages only.
   | { kind: "deposit.start"; slot: number; amount: string }
   | { kind: "deposit.list"; slot: number }

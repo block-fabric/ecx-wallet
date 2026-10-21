@@ -123,8 +123,11 @@ The server needs the descriptor, not only addresses, to build transfers the wall
 ### 3. Build a transfer: `POST /v1/watch/{watchId}/transfers`
 
 ```json
-{ "asset": "5836dcc0…b2c8", "amount": "120000", "destination": "elements1qepkhlwlq2qjggg89d5quqx8z59vz9mr2h6j4pc" }
+{ "outputs": [{ "asset": "5836dcc0…b2c8", "amount": "120000", "to": { "address": "elements1qepkhlwlq2qjggg89d5quqx8z59vz9mr2h6j4pc" } }] }
 ```
+
+`outputs` holds one or more payments, paid in this order. `to` is an object so that kinds other than
+`address` can be added later; a server refuses (`400`) a kind it doesn't know.
 
 **200**: a Signing Request:
 
@@ -153,8 +156,8 @@ The server needs the descriptor, not only addresses, to build transfers the wall
 | `hints` | Optional, untrusted. The wallet only ever shows them tagged "Reported by <server URL>", next to its own decoding. They never replace it. |
 
 `422 cannotBuild` when the transfer can't be built (insufficient funds, bad destination…), with a
-message the user can act on. The stub builds nothing: it matches `(asset, amount, destination)`
-exactly against its fixture table and answers `422` for anything else.
+message the user can act on. The stub builds nothing: it matches `outputs` exactly against its
+fixture table and answers `422` for anything else.
 
 #### Building a Signing Request the wallet will sign (Elements, draft 1)
 
@@ -201,7 +204,7 @@ The stub only records the submission (`submissions()`) and returns no `txid`.
   - `state` maps an address to `{ balances, unconfirmed?, history }`, and a watch's state sums its
     registered addresses (it sends `unconfirmed` only if one of them has it);
   - `transfers` is the fixture table:
-    `[{ asset, amount, destination, payload, expiresIn?, hints? }]`.
+    `[{ outputs, payload, expiresIn?, hints? }]`.
   - It returns `{ listen(port, host), close(), registrations(), submissions() }`. The last two let
     tests observe the server without test-only HTTP routes.
 - `pnpm --filter @ecx/stub-server start -- ecx-v0` runs it on the e2e build's Slot 24 server URL

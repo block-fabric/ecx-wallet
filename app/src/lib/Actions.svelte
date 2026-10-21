@@ -18,8 +18,8 @@
   let qrFor = $state<ChainView["info"]["id"] | undefined>(undefined);
 
   const slots = $derived(chains.filter((c) => c.info.id !== "l1"));
-  /** A Slot's Send needs a fresh balance from its server. */
-  const canSend = (c: ChainView) => c.info.id !== "l1" && c.shown.report !== undefined && c.shown.error === undefined;
+  /** A Slot's Send needs the wallet to be able to send there, and a fresh balance from its server. */
+  const canSend = (c: ChainView) => c.info.sends && c.shown.report !== undefined && c.shown.error === undefined;
   const receiving = $derived(focus ? [focus] : chains);
 
   function copy(address: string) {
@@ -41,7 +41,7 @@
 <nav class="actions">
   {#if focus === undefined}
     <button class="action" onclick={() => (open = "send")} data-send-action><span class="circle"><Icon name="send" /></span>Send</button>
-  {:else if focus.info.id !== "l1"}
+  {:else if focus.info.sends}
     <a class="action" class:off={!canSend(focus)} href="#/send/{focus.info.id}" aria-disabled={!canSend(focus)} data-send-link>
       <span class="circle"><Icon name="send" /></span>Send
     </a>
@@ -71,7 +71,7 @@
             <span class="grow">
               <strong>{c.info.name}</strong>
               {#if !canSend(c)}
-                <span class="muted tiny">{c.info.id === "l1" ? "Sending here isn't built yet" : "Needs a fresh balance from its server"}</span>
+                <span class="muted tiny">{c.info.sends ? "Needs a fresh balance from its server" : "Sending here isn't built yet"}</span>
               {/if}
             </span>
             <Icon name="forward" size={16} />
