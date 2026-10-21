@@ -2,6 +2,7 @@
   import ChainMark from "$lib/ChainMark.svelte";
   import { chainMark, type ChainView } from "$lib/chains.svelte";
   import Icon from "$lib/Icon.svelte";
+  import QrCode from "$lib/QrCode.svelte";
   import Sheet from "$lib/Sheet.svelte";
 
   /**
@@ -13,6 +14,8 @@
   let open = $state<"send" | "receive" | "deposit" | undefined>(undefined);
   /** The address just copied, to tick its button. */
   let copied = $state<string | undefined>(undefined);
+  /** The chain whose QR code (and full address) the Receive sheet shows unfolded, if any. */
+  let qrFor = $state<ChainView["info"]["id"] | undefined>(undefined);
 
   const slots = $derived(chains.filter((c) => c.info.id !== "l1"));
   /** A Slot's Send needs a fresh balance from its server. */
@@ -25,10 +28,14 @@
     setTimeout(() => (copied = copied === address ? undefined : copied), 1500);
   }
 
-  /** Opens the Receive sheet: the home page's "Receive on X" links use it too. */
-  export function receive() {
+  /** Opens the Receive sheet, with `chain`'s QR code unfolded: the "Receive on X" links use it too. */
+  export function receive(chain?: ChainView["info"]["id"]) {
+    qrFor = chain;
     open = "receive";
   }
+
+  /** An address too long for a row, by its two ends. */
+  const shortAddress = (address: string) => (address.length > 24 ? `${address.slice(0, 12)}…${address.slice(-8)}` : address);
 </script>
 
 <nav class="actions">
@@ -39,7 +46,7 @@
       <span class="circle"><Icon name="send" /></span>Send
     </a>
   {/if}
-  <button class="action" onclick={() => (open = "receive")} data-receive-action><span class="circle"><Icon name="receive" /></span>Receive</button>
+  <button class="action" onclick={() => receive(focus?.info.id)} data-receive-action><span class="circle"><Icon name="receive" /></span>Receive</button>
   {#if focus !== undefined && focus.info.id !== "l1"}
     <a class="action" href="#/deposit/{focus.info.id}" data-deposit-link><span class="circle"><Icon name="deposit" /></span>Deposit</a>
   {:else}
@@ -97,23 +104,39 @@
     <p class="muted tiny">Each chain has its own address. Only send a chain's assets to its own address.</p>
     <ul class="addresses">
       {#each receiving as c (c.info.id)}
-        <li class="address-row" data-account={c.info.id}>
+        {@const showing = qrFor === c.info.id}
+        <li class="address-row" class:showing data-account={c.info.id}>
           <div class="address-head">
             <ChainMark {...chainMark(c.info)} size={28} />
             <span class="grow">
               <strong class="small">{c.info.name}</strong>
-              <span class="mono muted tiny" data-account-chain>{c.info.chain}</span>
+              {#if c.address}
+                <code class="tiny muted" title={c.address} data-short-address>{shortAddress(c.address)}</code>
+              {:else}
+                <span class="loading tiny"><span class="spinner"></span>Deriving the address…</span>
+              {/if}
             </span>
             {#if c.address}
+              <button
+                class="copy"
+                class:on={showing}
+                aria-label="{showing ? 'Hide' : 'Show'} the QR code for {c.info.name}"
+                aria-expanded={showing}
+                title="QR code"
+                onclick={() => (qrFor = showing ? undefined : c.info.id)}
+                data-qr-toggle
+              >
+                <Icon name="qr" size={16} />
+              </button>
               <button class="copy" aria-label="Copy {c.info.name} address" title="Copy address" onclick={() => copy(c.address!)} data-copy-address>
                 <Icon name={copied === c.address ? "check" : "copy"} size={16} />
               </button>
             {/if}
           </div>
-          {#if c.address}
+          {#if showing && c.address}
+            <div class="qr"><QrCode text={c.address} /></div>
             <code class="address" data-receive-address>{c.address}</code>
-          {:else}
-            <p class="loading tiny"><span class="spinner"></span>Deriving the address…</p>
+            <p class="muted tiny only">Only for {c.info.name} (<span class="mono" data-account-chain>{c.info.chain}</span>).</p>
           {/if}
         </li>
       {/each}
@@ -188,6 +211,19 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+  }
+  .address-row.showing {
+    border-color: var(--accent);
+  }
+  .copy.on {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--accent-text);
+  }
+  .qr {
+    align-self: center;
+  }
+  .only {
+    text-align: center;
   }
   .address-row {
     display: flex;

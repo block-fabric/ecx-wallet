@@ -6,5 +6,6 @@
   "description": "Target-agnostic wallet logic: Grants, Provider request handling, (later) Vault orchestration, Signing Request validation and routing, Chain Module WASM instantiation.",
   "exports": { ".": "./src/index.ts" },
   "scripts": { "typecheck": "tsc --noEmit -p ." },
+  "dependencies": { "qrcode-generator": "2.0.4" },
   "devDependencies": { "typescript": "5.9.3" }
 }

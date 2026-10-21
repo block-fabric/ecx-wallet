@@ -67,7 +67,7 @@
     </div>
 
     <div class="panel" role="tabpanel" hidden={tab !== "assets"} data-account={view.info.id} data-refreshing={view.shown.refreshing ? "" : undefined}>
-      <AssetRows {view} onretry={() => chains.retry(id)} onreceive={() => actions?.receive()} />
+      <AssetRows {view} onretry={() => chains.retry(id)} onreceive={() => actions?.receive(id)} />
       {#if view.shown.report}
         <p class="reported" data-reported-by>Reported by {view.shown.report.server}. This wallet doesn't verify it.</p>
       {/if}

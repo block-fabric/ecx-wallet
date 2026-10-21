@@ -122,6 +122,10 @@ try {
 
   page = await open("#/", "[data-balance]");
   await shot(page, "05-home-unlocked");
+  await page.click("[data-receive-action]");
+  await page.click('[data-receive-sheet] [data-account="24"] [data-qr-toggle]');
+  await page.waitForSelector("[data-qr]");
+  await shot(page, "05-receive");
   await page.close();
 
   page = await openWalletPage(session, "#/send/24");

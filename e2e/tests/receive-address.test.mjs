@@ -5,7 +5,7 @@
 // core/elements/tests/elements.rs), so seeing it proves the address came from the Slot 24 Starter.
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { BROWSERS, launchWallet, openTestApp, serveTestApp, setUpWallet, WALLET_PASSWORD } from "../harness.mjs";
+import { BROWSERS, launchWallet, openTestApp, openWalletPage, serveTestApp, setUpWallet, WALLET_PASSWORD } from "../harness.mjs";
 
 const SLOT_24_ADDRESS = "elements1qew44aehkjstjm56ng2rjrz57vwxh5g9su6dlpm";
 /** BIP84's own vector for "abandon … about", m/84'/0'/0'/0/0 (bip-0084.mediawiki). */
@@ -46,24 +46,49 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     await app?.close();
   });
 
-  test("Receive shows the Slot 24 receive address in elements… encoding", async () => {
+  /** Unfolds `account`'s row in the Receive sheet; returns what it shows. */
+  async function unfold(page, account) {
+    const row = `[data-receive-sheet] [data-account="${account}"]`;
+    await page.waitForSelector(`${row} [data-qr-toggle]`, { timeout: 20_000 });
+    await page.click(`${row} [data-qr-toggle]`);
+    await page.waitForSelector(`${row} [data-qr]`);
+    return page.$eval(row, (e) => ({
+      short: e.querySelector("[data-short-address]").textContent.trim(),
+      address: e.querySelector("[data-receive-address]").textContent.trim(),
+      qr: e.querySelector("[data-qr]").getAttribute("data-qr"),
+      chain: e.querySelector("[data-account-chain]").textContent.trim(),
+      unfolded: [...document.querySelectorAll("[data-receive-sheet] [data-qr]")].length,
+    }));
+  }
+
+  test("Receive shows the Slot 24 receive address in elements… encoding, and its QR code", async () => {
     const page = await openReceive(session);
-    const card = '[data-receive-sheet] [data-account="24"]';
-    await page.waitForSelector(`${card} [data-receive-address]`, { timeout: 20_000 });
-    assert.equal(await page.$eval(`${card} [data-receive-address]`, (e) => e.textContent.trim()), SLOT_24_ADDRESS);
-    assert.match(await page.$eval(`${card} [data-account-chain]`, (e) => e.textContent), /ecash:betanet-s24/);
+    const shown = await unfold(page, "24");
+    assert.equal(shown.address, SLOT_24_ADDRESS);
+    assert.equal(shown.qr, SLOT_24_ADDRESS, "the QR code is of the address shown (tests/qr.test scans one back)");
+    assert.equal(shown.short, "elements1qew…9su6dlpm", "the row shows its two ends");
+    assert.equal(shown.chain, "ecash:betanet-s24");
     await page.close();
   });
 
-  test("Receive shows the main chain's receive address, BIP84's m/84'/0'/0'/0/0, above the Slots", async () => {
+  test("Receive shows the main chain's receive address, BIP84's m/84'/0'/0'/0/0, above the Slots; one QR code at a time", async () => {
     const page = await openReceive(session);
-    const card = '[data-receive-sheet] [data-account="l1"]';
-    await page.waitForSelector(`${card} [data-receive-address]`, { timeout: 20_000 });
-    assert.equal(await page.$eval(`${card} [data-receive-address]`, (e) => e.textContent.trim()), L1_ADDRESS);
-    assert.match(await page.$eval(`${card} [data-account-chain]`, (e) => e.textContent), /^ecash:betanet$/);
-    await page.waitForSelector('[data-receive-sheet] [data-account="24"]', { timeout: 20_000 });
-    const order = await page.$$eval("[data-receive-sheet] [data-account]", (cards) => cards.map((c) => c.getAttribute("data-account")));
+    await unfold(page, "24");
+    const shown = await unfold(page, "l1");
+    assert.equal(shown.address, L1_ADDRESS);
+    assert.equal(shown.qr, L1_ADDRESS);
+    assert.equal(shown.chain, "ecash:betanet");
+    assert.equal(shown.unfolded, 1, "unfolding one folds the other");
+    const order = await page.$$eval("[data-receive-sheet] [data-account]", (rows) => rows.map((r) => r.getAttribute("data-account")));
     assert.deepEqual(order, ["l1", "24"]);
+    await page.close();
+  });
+
+  test("a chain's own screen opens Receive on its QR code", async () => {
+    const page = await openWalletPage(session, "#/chain/24");
+    await page.click("[data-receive-action]");
+    await page.waitForSelector('[data-receive-sheet] [data-account="24"] [data-qr]', { timeout: 20_000 });
+    assert.deepEqual(await page.$$eval("[data-receive-sheet] [data-account]", (rows) => rows.map((r) => r.getAttribute("data-account"))), ["24"]);
     await page.close();
   });
 

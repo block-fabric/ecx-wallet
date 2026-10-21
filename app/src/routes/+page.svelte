@@ -166,7 +166,7 @@
             </button>
           </div>
           <div hidden={folded[c.info.id]}>
-            <AssetRows view={c} onretry={() => chains?.retry(c.info.id)} onreceive={() => actions?.receive()} />
+            <AssetRows view={c} onretry={() => chains?.retry(c.info.id)} onreceive={() => actions?.receive(c.info.id)} />
           </div>
         </section>
       {/each}

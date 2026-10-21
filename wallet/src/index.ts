@@ -114,3 +114,4 @@ export {
 } from "./deposit";
 export { formatAmount, parseAmount, totalAcrossChains, type TotalPart } from "./amounts";
 export { createSettings, UNITS, type Settings, type Unit } from "./settings";
+export { qrMatrix } from "./qr";
