@@ -3,6 +3,8 @@
   // the big balance switches every ECX amount between ECX and sats, a chain's screen is laid out
   // like home (hero, actions, Assets / Activity with its own Deposits and days), and the auto-lock
   // note is the header's subtitle.
+  // Adding a chain: a Manage chains row at the end of Assets opens a screen of every chain this
+  // version supports, each with an on/off switch (eCash always on).
   import Mark from "$lib/Mark.svelte";
   import type { HistoryEntry } from "$lib/background";
   import { shortAsset } from "$lib/asset";
@@ -17,12 +19,29 @@
     readAt,
     shortAddress,
     when,
+    MORE_CHAINS,
+    addedChain,
     type ProtoChain,
   } from "./fixtures";
 
-  let { chains }: { chains: ProtoChain[] } = $props();
+  let { chains: baseChains }: { chains: ProtoChain[] } = $props();
+  let added = $state<ProtoChain[]>([]);
+  /** Shipped chains switched off on the Manage chains screen. */
+  let hidden = $state<Record<string, boolean>>({});
+  const chains = $derived([...baseChains.filter((c) => !hidden[c.id]), ...added]);
+  /** Every chain this version supports, and whether it's on. */
+  const manageable = $derived([
+    ...baseChains.map((c) => ({ id: c.id, name: c.name, chain: c.chain, mark: c.id === "l1" ? "e" : "E+", blurb: c.id === "l1" ? "The main chain" : "Assets and confidential transfers", on: !hidden[c.id], root: c.id === "l1" })),
+    ...MORE_CHAINS.map((m) => ({ id: m.slot, name: m.name, chain: m.chain, mark: m.mark, blurb: m.blurb, on: added.some((c) => c.id === m.slot), root: false })),
+  ]);
+  function toggle(id: ProtoChain["id"]) {
+    const base = baseChains.find((c) => c.id === id);
+    if (base) hidden[id] = !hidden[id];
+    else if (added.some((c) => c.id === id)) added = added.filter((c) => c.id !== id);
+    else added = [...added, addedChain(MORE_CHAINS.find((m) => m.slot === id)!)];
+  }
 
-  let tab = $state<"home" | "activity" | "grants">("home");
+  let tab = $state<"home" | "activity" | "grants" | "chains">("home");
   /** The chain drilled into, on the Home tab. */
   let open = $state<ProtoChain["id"] | undefined>(undefined);
   let chainTab = $state<"assets" | "activity">("assets");
@@ -116,7 +135,7 @@
 
 {#snippet avatar(c: ProtoChain, size = 36)}
   <span class="chain-avatar" class:slot={c.id !== "l1"} style:width="{size}px" style:height="{size}px">
-    {c.id === "l1" ? "e" : "E+"}
+    {c.mark ?? (c.id === "l1" ? "e" : "E+")}
   </span>
 {/snippet}
 
@@ -347,12 +366,22 @@
                     </span>
                   </button>
                 </li>
+              {:else}
+                {#if !c.shown.error}<li class="muted small no-assets">No assets yet.</li>{/if}
               {/each}
             </ul>
             {/if}
           </section>
         {/each}
         <p class="reported-inline">Balances are as each chain's server reports them. This wallet doesn't verify them.</p>
+        <button class="manage-chains" onclick={() => (tab = "chains")}>
+          <span class="manage-icon"><ProtoIcon name="plus" size={16} /></span>
+          <span class="col grow">
+            <strong class="small">Manage chains</strong>
+            <span class="muted tiny">{manageable.filter((m) => m.on).length} of {manageable.length} on · add or hide chains</span>
+          </span>
+          <ProtoIcon name="forward" size={16} />
+        </button>
       {:else}
         <div class="filters">
           <button class:on={activityChain === "all"} onclick={() => (activityChain = "all")}>All</button>
@@ -363,6 +392,29 @@
         {@render activityPanel(deposits, feed, true)}
         <p class="reported-inline">Reported by each chain's server. This wallet doesn't verify it.</p>
       {/if}
+    {:else if tab === "chains"}
+      <header>
+        <button class="icon" aria-label="Back" onclick={() => (tab = "home")}><ProtoIcon name="back" /></button>
+        <span class="title">Chains</span>
+      </header>
+      <p class="muted small">Turn on the chains you use. Turning one off only hides it: your funds on it stay where they are.</p>
+      <ul class="manage-list">
+        {#each manageable as m (m.id)}
+          <li class="manage-row">
+            <span class="chain-avatar" class:slot={!m.root} style:width="32px" style:height="32px">{m.mark}</span>
+            <span class="col grow">
+              <strong class="small">{m.name}</strong>
+              <span class="muted tiny">{m.blurb} · <span class="mono">{m.chain}</span></span>
+            </span>
+            {#if m.root}
+              <span class="muted tiny">Always on</span>
+            {:else}
+              <button class="switch-toggle" class:on={m.on} role="switch" aria-checked={m.on} aria-label="Show {m.name}" onclick={() => toggle(m.id)}><span></span></button>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+      <p class="muted tiny">These are the chains this version of the wallet supports. New chains come with wallet updates.</p>
     {:else}
       <header>
         <button class="icon" aria-label="Back" onclick={() => (tab = "home")}><ProtoIcon name="back" /></button>
@@ -857,6 +909,72 @@
     border-color: var(--text);
     background: var(--text);
     color: var(--bg);
+  }
+  .no-assets {
+    padding: 10px 12px;
+  }
+  .manage-chains {
+    justify-content: flex-start;
+    gap: 12px;
+    min-height: 56px;
+    padding: 8px 12px;
+    border-radius: var(--radius);
+    font-weight: 400;
+    text-align: left;
+  }
+  .manage-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+  }
+  .manage-list {
+    display: flex;
+    flex-direction: column;
+  }
+  .manage-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .switch-toggle {
+    position: relative;
+    flex: none;
+    width: 40px;
+    min-height: 0;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: var(--border);
+  }
+  .switch-toggle span {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    transition: left 0.15s;
+  }
+  .switch-toggle.on {
+    background: var(--accent);
+  }
+  .switch-toggle.on span {
+    left: 19px;
+  }
+  .switch-toggle:hover {
+    background: var(--muted);
+  }
+  .switch-toggle.on:hover {
+    background: var(--accent-hover);
   }
   .count {
     display: inline-flex;

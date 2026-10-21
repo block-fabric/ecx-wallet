@@ -2,6 +2,8 @@
   // PROTOTYPE, throw away. Variant C, "B, folded": B, but each chain's section in Assets shows the
   // chain's ECX subtotal and folds away, pending Deposits head Activity as "In progress" (no banner
   // above the tabs; the Activity tab counts them), and Activity is grouped by day.
+  // Adding a chain: an Add a chain strip at the end of Assets, one card per chain this version
+  // supports, each added with one tap.
   import Mark from "$lib/Mark.svelte";
   import type { HistoryEntry } from "$lib/background";
   import { shortAsset } from "$lib/asset";
@@ -17,10 +19,15 @@
     shortAddress,
     shortTxid,
     when,
+    MORE_CHAINS,
+    addedChain,
     type ProtoChain,
   } from "./fixtures";
 
-  let { chains }: { chains: ProtoChain[] } = $props();
+  let { chains: baseChains }: { chains: ProtoChain[] } = $props();
+  let added = $state<ProtoChain[]>([]);
+  const chains = $derived([...baseChains, ...added]);
+  const addable = $derived(MORE_CHAINS.filter((m) => !added.some((c) => c.id === m.slot)));
 
   let tab = $state<"home" | "activity" | "grants">("home");
   /** The chain drilled into, on the Home tab. */
@@ -104,7 +111,7 @@
 
 {#snippet avatar(c: ProtoChain, size = 36)}
   <span class="chain-avatar" class:slot={c.id !== "l1"} style:width="{size}px" style:height="{size}px">
-    {c.id === "l1" ? "e" : "E+"}
+    {c.mark ?? (c.id === "l1" ? "e" : "E+")}
   </span>
 {/snippet}
 
@@ -302,12 +309,32 @@
                     </span>
                   </button>
                 </li>
+              {:else}
+                {#if !c.shown.error}<li class="muted small no-assets">No assets yet.</li>{/if}
               {/each}
             </ul>
             {/if}
           </section>
         {/each}
         <p class="reported-inline">Balances are as each chain's server reports them. This wallet doesn't verify them.</p>
+        <section class="col add-strip">
+          <h2>Add a chain</h2>
+          {#if addable.length}
+            <div class="add-cards">
+              {#each addable as m (m.slot)}
+                <button class="add-card" onclick={() => (added = [...added, addedChain(m)])}>
+                  <span class="chain-avatar slot" style:width="30px" style:height="30px">{m.mark}</span>
+                  <strong class="small">{m.name}</strong>
+                  <span class="muted tiny">{m.blurb}</span>
+                  <span class="add-plus"><ProtoIcon name="plus" size={14} /> Add</span>
+                </button>
+              {/each}
+            </div>
+            <p class="muted tiny">The chains this version of the wallet supports. New ones come with wallet updates.</p>
+          {:else}
+            <p class="muted small">You've added every chain this version of the wallet supports. New ones come with wallet updates.</p>
+          {/if}
+        </section>
       {:else}
         <div class="filters">
           <button class:on={activityChain === "all"} onclick={() => (activityChain = "all")}>All</button>
@@ -742,6 +769,44 @@
     border-color: var(--text);
     background: var(--text);
     color: var(--bg);
+  }
+  .no-assets {
+    padding: 10px 12px;
+  }
+  .add-strip {
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .add-cards {
+    display: flex;
+    gap: 8px;
+    margin: 0 -16px;
+    padding: 2px 16px 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .add-card {
+    flex: 0 0 116px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    min-height: 0;
+    padding: 10px;
+    border-radius: var(--radius);
+    font-weight: 400;
+    text-align: left;
+  }
+  .add-card .tiny {
+    line-height: 1.3;
+  }
+  .add-plus {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 4px;
+    color: var(--accent);
+    font-size: 0.8rem;
+    font-weight: 600;
   }
   .count {
     display: inline-flex;

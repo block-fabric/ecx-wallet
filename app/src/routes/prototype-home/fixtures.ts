@@ -32,7 +32,35 @@ export interface ProtoChain {
   deposits?: DepositStatus[];
   /** Slots only: its Send needs a fresh report. */
   canSend: boolean;
+  /** What its icon says; eCash's "e" and Elements+'s "E+" when missing. */
+  mark?: string;
 }
+
+/**
+ * Made up: chains this release could ship Chain Entries for that the wallet doesn't show yet.
+ * Adding one is turning it on, not describing it: new chains only come with wallet updates.
+ */
+export const MORE_CHAINS = [
+  { slot: 9, name: "Thunder", chain: "ecash:betanet-s9", blurb: "Fast, cheap payments", mark: "T" },
+  { slot: 2, name: "BitNames", chain: "ecash:betanet-s2", blurb: "Names you can own", mark: "B" },
+  { slot: 13, name: "zSide", chain: "ecash:betanet-s13", blurb: "Private transfers", mark: "z" },
+];
+export type MoreChain = (typeof MORE_CHAINS)[number];
+
+/** A chain just added: its server reports nothing yet. */
+export const addedChain = (more: MoreChain): ProtoChain => ({
+  id: more.slot,
+  name: more.name,
+  chain: more.chain,
+  address: `tex1q${more.name.toLowerCase()}0000000000000000000000000000000`,
+  shown: {
+    refreshing: false,
+    report: { chain: more.chain, server: `${more.name.toLowerCase()}.sidechain.example`, balances: [], unconfirmed: [], readAt: Date.now() },
+  },
+  history: [],
+  canSend: false,
+  mark: more.mark,
+});
 
 const now = Date.now();
 const ago = (minutes: number) => Math.floor((now - minutes * 60_000) / 1000);

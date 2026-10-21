@@ -2,6 +2,7 @@
   // PROTOTYPE, throw away. Variant A, "B, fresh and addressed": B, but under the total a quiet
   // line says when the balances were read (with a refresh button, and a spinner while a chain
   // refreshes), and a chain's screen shows its address with Copy under its name.
+  // Adding a chain: a dashed row at the end of Assets opens a sheet of the chains this version supports.
   import Mark from "$lib/Mark.svelte";
   import type { HistoryEntry } from "$lib/background";
   import { shortAsset } from "$lib/asset";
@@ -16,10 +17,15 @@
     readAt,
     shortAddress,
     when,
+    MORE_CHAINS,
+    addedChain,
     type ProtoChain,
   } from "./fixtures";
 
-  let { chains }: { chains: ProtoChain[] } = $props();
+  let { chains: baseChains }: { chains: ProtoChain[] } = $props();
+  let added = $state<ProtoChain[]>([]);
+  const chains = $derived([...baseChains, ...added]);
+  const addable = $derived(MORE_CHAINS.filter((m) => !added.some((c) => c.id === m.slot)));
 
   let tab = $state<"home" | "activity" | "grants">("home");
   /** The chain drilled into, on the Home tab. */
@@ -34,6 +40,8 @@
   let copied = $state(false);
   let homeTab = $state<"assets" | "activity">("assets");
   let menu = $state(false);
+  /** The Add a chain sheet. */
+  let adding = $state(false);
   /** Activity's chain filter. */
   let activityChain = $state<ProtoChain["id"] | "all">("all");
   /** How every ECX amount is shown; tapping the big balance switches it. */
@@ -121,7 +129,7 @@
 
 {#snippet avatar(c: ProtoChain, size = 36)}
   <span class="chain-avatar" class:slot={c.id !== "l1"} style:width="{size}px" style:height="{size}px">
-    {c.id === "l1" ? "e" : "E+"}
+    {c.mark ?? (c.id === "l1" ? "e" : "E+")}
   </span>
 {/snippet}
 
@@ -372,12 +380,17 @@
                     </span>
                   </button>
                 </li>
+              {:else}
+                {#if !c.shown.error}<li class="muted small no-assets">No assets yet.</li>{/if}
               {/each}
             </ul>
             {/if}
           </section>
         {/each}
         <p class="reported-inline">Balances are as each chain's server reports them. This wallet doesn't verify them.</p>
+        {#if addable.length}
+          <button class="add-chain" onclick={() => (adding = true)}><ProtoIcon name="plus" size={16} /> Add a chain</button>
+        {/if}
       {:else}
         <div class="filters">
           <button class:on={activityChain === "all"} onclick={() => (activityChain = "all")}>All</button>
@@ -397,6 +410,34 @@
     {/if}
   </div>
 
+  {#if adding}
+    <div class="scrim" role="presentation" onclick={() => (adding = false)}></div>
+    <div class="sheet" role="dialog" aria-label="Add a chain">
+      <div class="between">
+        <strong>Add a chain</strong>
+        <button class="icon" aria-label="Close" onclick={() => (adding = false)}><ProtoIcon name="close" /></button>
+      </div>
+      <ul class="addable">
+        {#each addable as m (m.slot)}
+          <li class="addable-row">
+            <span class="chain-avatar slot" style:width="32px" style:height="32px">{m.mark}</span>
+            <span class="col grow">
+              <strong class="small">{m.name}</strong>
+              <span class="muted tiny">{m.blurb} · <span class="mono">{m.chain}</span></span>
+            </span>
+            <button
+              class="small-button primary"
+              onclick={() => {
+                added = [...added, addedChain(m)];
+                if (addable.length === 1) adding = false;
+              }}>Add</button
+            >
+          </li>
+        {/each}
+      </ul>
+      <p class="muted tiny">These are the chains this version of the wallet supports. New chains come with wallet updates.</p>
+    </div>
+  {/if}
   {#if receiving || picking || inspecting}
     <div class="scrim" role="presentation" onclick={() => ((receiving = undefined), (picking = false), (inspecting = undefined))}></div>
   {/if}
@@ -912,6 +953,31 @@
   }
   .my-address code {
     font-size: 0.78rem;
+  }
+  .no-assets {
+    padding: 10px 12px;
+  }
+  .add-chain {
+    gap: 8px;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    background: none;
+    color: var(--accent);
+  }
+  .add-chain:hover {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 6%, transparent);
+  }
+  .addable {
+    display: flex;
+    flex-direction: column;
+  }
+  .addable-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
   }
   .count {
     display: inline-flex;
