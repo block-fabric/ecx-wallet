@@ -40,6 +40,8 @@ export type BackgroundMessage =
   | { kind: "accounts.list" }
   // How the wallet shows each chain (its Chain Entry's name, description and assets): wallet pages only.
   | { kind: "chains.list" }
+  // Turns a sidechain on or off (the main chain is always on): wallet pages only.
+  | { kind: "chains.setOn"; slot: number; on: boolean }
   // Display settings: wallet pages only.
   | { kind: "settings.unit" }
   | { kind: "settings.setUnit"; unit: string }

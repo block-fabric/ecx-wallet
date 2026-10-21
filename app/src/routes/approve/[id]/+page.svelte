@@ -66,6 +66,8 @@
     const named = assets.some((n) => n.id === a.asset);
     return named ? amountText(a.amount, a.asset, assets) : `${amountText(a.amount, a.asset, assets)} (Unknown asset ${shortAsset(a.asset)})`;
   }
+  /** Slots by their chains' names ("Elements+"), as the Chain Entries name them. */
+  const chainNames = (slots: number[]) => slots.map((s) => chains.find((c) => c.id === s)?.name ?? `Slot ${s}`).join(", ");
   /** Sats of the main chain's coin. */
   const coin = (sats: string | number) => amountText(String(sats), "", coinAssets);
 
@@ -163,6 +165,11 @@
       </ul>
     </section>
 
+    {#if prompt.turnsOn?.length}
+      <p class="notice" data-turns-on>
+        <Icon name="plus" /><span>Approving also turns on {chainNames(prompt.turnsOn)}, which you have off, so it shows in your wallet.</span>
+      </p>
+    {/if}
     <p class="notice"><Icon name="shield" /><span>It will not be able to sign anything without asking you each time.</span></p>
 
     <label class="opt-in" class:on={blindOptIn}>
@@ -178,6 +185,22 @@
       <button class={blindOptIn ? "danger-button" : "primary"} data-approve disabled={busy} onclick={() => decide(true)}>
         Approve Grant
       </button>
+    </div>
+  </main>
+{:else if prompt.kind === "turnOn"}
+  <main class="screen" data-approval-ready data-turn-on>
+    <div class="title">
+      <h1>Turn on {chainNames(prompt.slots)}?</h1>
+      <p class="muted small">This site asks to use a chain you have off:</p>
+    </div>
+    {@render requester(prompt.origin)}
+    <p class="notice">
+      <Icon name="plus" />
+      <span>Turning it on shows it in your wallet and lets the wallet read it from its server. You can turn it off again in Chains.</span>
+    </p>
+    <div class="decision">
+      <button data-reject disabled={busy} onclick={() => decide(false)}>Keep it off</button>
+      <button class="primary" data-approve disabled={busy} onclick={() => decide(true)}>Turn on</button>
     </div>
   </main>
 {:else if prompt.kind === "unlock"}

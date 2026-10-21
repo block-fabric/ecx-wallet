@@ -10,12 +10,21 @@ export type { SignPrompt, SigningApproval } from "./signing";
 export interface ConnectPrompt extends Scope {
   /** The requester's web origin as the browser reported it. */
   origin: string;
+  /** Slots in the scope whose chain is off: approving turns them on. */
+  turnsOn?: number[];
+}
+
+/** An app asks for chains the user has off: approving turns them on (they stay hidden until then). */
+export interface TurnOnPrompt {
+  origin: string;
+  slots: number[];
 }
 
 /** What an approval window shows: a connect prompt, an unlock first, or a Signing Request. */
 export type ApprovalPrompt =
   | ({ kind: "connect" } & ConnectPrompt)
   | { kind: "unlock"; origin: string; chain: string }
+  | ({ kind: "turnOn" } & TurnOnPrompt)
   | ({ kind: "sign" } & SignPrompt);
 
 /** The user's answer to a connect prompt. */
@@ -31,6 +40,10 @@ export interface ProviderDeps extends SigningDeps {
   askToConnect(prompt: ConnectPrompt): Promise<ConnectAnswer>;
   /** The Slot's receive addresses (only called for a supported Slot while unlocked). */
   receiveAddresses(slot: number): Promise<SlotAddress[]>;
+  /** Which sidechains the user has on. A request for one that's off turns it on, once they approve. */
+  chains: { isOn(slot: number): Promise<boolean>; turnOn(slot: number): Promise<void> };
+  /** Asks the user to turn chains on for a request; false if they refuse or close the window. */
+  askToTurnOn(prompt: TurnOnPrompt): Promise<boolean>;
 }
 
 /**
@@ -38,15 +51,34 @@ export interface ProviderDeps extends SigningDeps {
  * origin the browser reported for it. All Grant decisions are made here.
  */
 export function createProviderHandler(deps: ProviderDeps) {
-  const { grants, askToConnect, supportedSlots, isUnlocked, receiveAddresses } = deps;
+  const { grants, askToConnect, supportedSlots, isUnlocked, receiveAddresses, chains, askToTurnOn } = deps;
+
+  /** The supported Slots among `slots` whose chain is off. */
+  async function off(slots: number[]): Promise<number[]> {
+    const supported = slots.filter((s) => supportedSlots.includes(s));
+    const on = await Promise.all(supported.map((s) => chains.isOn(s)));
+    return supported.filter((_, i) => !on[i]);
+  }
+
+  /** Before a request reaches a chain that's off: the user approves turning it on, or it's rejected. */
+  async function turnOn(origin: string, slots: number[]): Promise<void> {
+    const offSlots = await off(slots);
+    if (offSlots.length === 0) return;
+    if (!(await askToTurnOn({ origin, slots: offSlots }))) throw rejected();
+    for (const slot of offSlots) await chains.turnOn(slot);
+  }
 
   async function connect(origin: string, params: unknown): Promise<Scope> {
     const scope = parseScope(params);
     const existing = await grants.get(origin);
     if (!covers(existing, scope)) {
-      const answer = await askToConnect({ origin, ...scope });
+      const turnsOn = await off(scope.slots);
+      const answer = await askToConnect({ origin, ...scope, ...(turnsOn.length > 0 ? { turnsOn } : {}) });
       if (!answer.approved) throw rejected();
       await grants.put(widen(await grants.get(origin), origin, scope, answer.blindSigning));
+      for (const slot of turnsOn) await chains.turnOn(slot);
+    } else {
+      await turnOn(origin, scope.slots);
     }
     const grant = (await grants.get(origin))!;
     return { slots: grant.slots, methods: grant.methods, ...(grant.blindSigning ? { blindSigning: true } : {}) };
@@ -66,6 +98,7 @@ export function createProviderHandler(deps: ProviderDeps) {
       throw new ProviderRpcError(ErrorCode.ChainDisconnected, `This wallet has no Chain Module for Slot ${slot}.`);
     }
     if (!(await isUnlocked())) throw new ProviderRpcError(ErrorCode.Unauthorized, "The wallet is locked.");
+    await turnOn(origin, [slot]);
     return receiveAddresses(slot);
   }
 
@@ -87,6 +120,7 @@ export function createProviderHandler(deps: ProviderDeps) {
       throw new ProviderRpcError(ErrorCode.Unauthorized, `${origin} has no Grant for Slot ${request.slot}; call connect first.`);
     }
     const module = await chainModuleFor(deps, request);
+    await turnOn(origin, [request.slot]);
 
     // 5-7, then Blind (only with the Grant's opt-in) or Clear, approval and signing.
     return reviewAndSign(deps, {

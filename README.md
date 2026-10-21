@@ -83,7 +83,12 @@ optional `unconfirmed` list. Above the sections, one total across chains adds up
 show apart, never in it. The Chain Entry also names the chain ("Main chain", "Elements+") and its
 assets (`chains.list`); any other asset shows as "Unknown asset". Every ECX amount follows one
 unit, ECX or sats (`formatAmount`; `settings.unit`, kept in `storage.local`), switched by tapping
-the total. The Send screen is `#/send/<slot>` (`send.start`), for Slots only, picked from home's
+the total. Sidechains start off (`settings.chainOn`, per chain id in `storage.local`): the
+Chains screen (`#/chains`, `chains.setOn`) turns them on; off, a chain is hidden, left out of the
+total, Send and Receive, and the background refuses to read it (`<name> is turned off.`), though
+its Deposits in progress still show. A Provider request for a chain that's off turns it on only
+once the user approves: in the connect prompt ("Approving also turns on …"), or else in a
+`turnOn` prompt first; refused, 4001. The Send screen is `#/send/<slot>` (`send.start`), for Slots only, picked from home's
 "Send from" sheet.
 
 History (#33): home's Activity tab and each chain's screen link to `#/history/<chain>` (`l1` or the Slot), which reads the

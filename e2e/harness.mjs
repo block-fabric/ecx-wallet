@@ -400,8 +400,11 @@ export async function openWalletPage(session, route) {
 export const ABANDON = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 export const WALLET_PASSWORD = "correct horse battery";
 
-/** Imports `phrase` (no passphrase) under `password` and waits until the wallet is unlocked. */
-export async function setUpWallet(session, { phrase = ABANDON, password = WALLET_PASSWORD } = {}) {
+/**
+ * Imports `phrase` (no passphrase) under `password`, waits until the wallet is unlocked, and turns on
+ * the sidechains in `on` (sidechains start off; most tests use Slot 24's).
+ */
+export async function setUpWallet(session, { phrase = ABANDON, password = WALLET_PASSWORD, on = [24] } = {}) {
   const page = await session.openPage("index.html#/import");
   await page.waitForSelector("[data-wallet-ready]", { timeout: 10_000 });
   await page.type("[data-import-phrase]", phrase);
@@ -410,25 +413,33 @@ export async function setUpWallet(session, { phrase = ABANDON, password = WALLET
   await page.click("[data-submit]");
   await page.waitForSelector('[data-vault-state="unlocked"]');
   await homeSettled(page);
+  for (const slot of on) await turnOnChain(page, slot);
   await page.close();
 }
 
+/** Turns a sidechain on, as the Chains screen does, from any open wallet page. */
+export async function turnOnChain(page, slot, on = true) {
+  const answer = await page.evaluate((m) => chrome.runtime.sendMessage(m), { kind: "chains.setOn", slot, on });
+  if (!answer.ok) throw new Error(answer.error.message);
+}
+
 /**
- * Waits until the unlocked home page's requests have settled: both account cards (eCash and Slot
- * 24) shown, each with its fresh balance (not this session's last one, shown while refreshing) or
- * why there is none, and Slot 24's with its Deposits. Close
+ * Waits until the unlocked home page's requests have settled: a section for each chain that's on,
+ * each with its fresh balance (not this session's last one, shown while refreshing) or why there
+ * is none, and each Slot's with its Deposits. Close
  * the page only after: a reply to a closed page makes Firefox log, and each request derives a key,
  * which counts as Vault activity.
  */
 export async function homeSettled(page) {
   await page.waitForFunction(
     () => {
+      if (document.querySelector("[data-chains-ready]") === null) return false;
       const cards = [...document.querySelectorAll("[data-account]")];
       const settled = (card) =>
         !card.hasAttribute("data-refreshing") &&
         card.querySelector("[data-balance], [data-no-balance], [data-balance-error]") !== null &&
         (card.getAttribute("data-account") === "l1" || card.hasAttribute("data-deposits-ready"));
-      return cards.length === 2 && cards.every(settled);
+      return cards.length > 0 && cards.every(settled);
     },
     { timeout: 20_000 },
   );

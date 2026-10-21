@@ -41,7 +41,10 @@
 
   const list = $derived(chains?.list ?? []);
   const main = $derived(list.find((c) => c.info.id === "l1"));
-  const slots = $derived(list.filter((c) => c.info.id !== "l1"));
+  /** Every Slot, on or off: their Deposits in progress show either way. */
+  const slots = $derived(chains?.slots ?? []);
+  /** Chains this release supports, on or off. */
+  const supported = $derived(chains?.all ?? []);
   /** The main chain's coin: how every ECX total and Deposit is written. */
   const ecx = $derived(main?.info.assets ?? []);
   const total = $derived(totalAcrossChains(list.map((c) => ({ name: c.info.name, assets: c.info.assets, report: c.shown.report }))));
@@ -64,7 +67,13 @@
   }
 </script>
 
-<main class="screen" data-wallet-home data-wallet-ready={status ? true : undefined} data-vault-state={vaultState}>
+<main
+  class="screen"
+  data-wallet-home
+  data-wallet-ready={status ? true : undefined}
+  data-vault-state={vaultState}
+  data-chains-ready={chains?.all !== undefined ? "" : undefined}
+>
   {#if vaultState === "onboarding"}
     <div class="welcome">
       <Mark size={56} />
@@ -172,6 +181,14 @@
       {/each}
       {#if list.length > 0}
         <p class="note">Balances are as each chain's server reports them. This wallet doesn't verify them.</p>
+        <a class="card nav-row manage" href="#/chains" data-manage-chains>
+          <span class="manage-icon"><Icon name="plus" size={16} /></span>
+          <span class="grow">
+            <strong class="small">Manage chains</strong>
+            <span class="muted tiny">{list.length} of {supported.length} on · turn chains on or off</span>
+          </span>
+          <Icon name="forward" size={16} />
+        </a>
       {/if}
     </div>
 
@@ -418,6 +435,20 @@
   }
   a.nav-row:hover {
     background: var(--surface-2);
+  }
+  .manage {
+    display: flex;
+    padding: 10px 14px;
+  }
+  .manage-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--accent-text);
   }
   .transactions ul {
     display: flex;
