@@ -112,6 +112,8 @@
   });
 
   const named = (asset: string) => ASSET_NAMES[asset];
+  /** The network the whole wallet is on, while it isn't the real one: shown once, by the wallet's name. */
+  const network = $derived(baseChains.find((c) => c.id === "l1")?.network);
   /** Activity's sections: not yet confirmed, then one per day. */
   function daysOf(items: typeof feed) {
     const out: { day: string; items: typeof feed }[] = [];
@@ -243,7 +245,7 @@
         <button class="icon" aria-label="Back" onclick={() => (open = undefined)}><ProtoIcon name="back" /></button>
         {@render avatar(detail, 26)}
         <span class="col title-block">
-          <span class="title name-line">{detail.name}{#if detail.network}<span class="net-tag">{detail.network}</span>{/if}</span>
+          <span class="title name-line">{detail.name}</span>
           <span class="mono muted tiny">{detail.chain}</span>
         </span>
       </header>
@@ -306,7 +308,7 @@
       <header>
         <Mark size={30} />
         <span class="col title-block">
-          <span class="title">ECX Wallet</span>
+          <span class="title name-line">ECX Wallet{#if network}<span class="net-tag">{network}</span>{/if}</span>
           <span class="lock-sub" title="The wallet locks itself after 15 minutes without use"><span class="dot"></span>Locks in {lockIn}</span>
         </span>
         <button class="icon" aria-label="Lock" title="Lock"><ProtoIcon name="lock" /></button>
@@ -346,7 +348,7 @@
               <button class="chain-name" onclick={() => ((open = c.id), (chainTab = "assets"))}>
                 {@render avatar(c, 24)}
                 <span class="col">
-                  <span class="name-line"><strong>{c.name}</strong>{#if c.network}<span class="net-tag">{c.network}</span>{/if}</span>
+                  <span class="name-line"><strong>{c.name}</strong></span>
                 </span>
               </button>
               <span class="grow"></span>
@@ -427,7 +429,7 @@
               {#if m.root}<EcashLogo size={19} />{:else}{m.mark}{/if}
             </span>
             <span class="col grow">
-              <span class="name-line"><strong class="small">{m.name}</strong>{#if m.network}<span class="net-tag">{m.network}</span>{/if}</span>
+              <span class="name-line"><strong class="small">{m.name}</strong></span>
               <span class="muted tiny">{m.blurb} · <span class="mono">{m.chain}</span></span>
             </span>
             {#if m.root}
@@ -1070,7 +1072,7 @@
     background: var(--surface);
     box-shadow: var(--shadow);
   }
-  /* A network that isn't the real one yet: a quiet metadata label (uppercase, tracked, as eCash's brand does). */
+  /* The wallet's network while it isn't the real one: a quiet metadata label (uppercase, tracked, as eCash's brand does). */
   .name-line {
     display: flex;
     align-items: center;

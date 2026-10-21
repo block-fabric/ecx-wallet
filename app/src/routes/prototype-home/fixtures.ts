@@ -34,7 +34,7 @@ export interface ProtoChain {
   canSend: boolean;
   /** What its icon says; eCash's "e" and Elements+'s "E+" when missing. */
   mark?: string;
-  /** A network that isn't the real one yet, shown as a tag by the name. */
+  /** The network, while it isn't the real one yet; the wallet shows the main chain's in its header. */
   network?: string;
 }
 
