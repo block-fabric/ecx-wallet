@@ -1,7 +1,7 @@
 <script lang="ts">
-  // PROTOTYPE, throw away. Variant A, "C, quieter Activity": C, but Activity rows are one line
-  // each (no txid; tapping one opens a sheet with its details), and the hero counts Deposits on
-  // their way between chains, which have left eCash but aren't on Elements+ yet.
+  // PROTOTYPE, throw away. Variant A, "B, calmer": B, but what's pending (unconfirmed, and
+  // Deposits on the way) is one line under the balance that opens Activity, the unit is also a
+  // choice in the ⋮ menu, and Receive lists every chain's address at once, each with Copy and QR.
   import Mark from "$lib/Mark.svelte";
   import type { HistoryEntry } from "$lib/background";
   import { shortAsset } from "$lib/asset";
@@ -14,6 +14,7 @@
     grouped,
     kindOf,
     readAt,
+    shortAddress,
     when,
     type ProtoChain,
   } from "./fixtures";
@@ -24,20 +25,23 @@
   /** The chain drilled into, on the Home tab. */
   let open = $state<ProtoChain["id"] | undefined>(undefined);
   let chainTab = $state<"assets" | "activity">("assets");
-  /** The Receive sheet, and for which chain. */
-  let receiving = $state<ProtoChain["id"] | undefined>(undefined);
+  /** The Receive sheet, and whose QR code it shows, if any. */
+  let receiving = $state<{ qr?: ProtoChain["id"] } | undefined>(undefined);
+  /** The address just copied, to tick its button. */
+  let copiedAddress = $state<string | undefined>(undefined);
   /** The Send sheet's chain picker. */
   let picking = $state(false);
   let copied = $state(false);
   let homeTab = $state<"assets" | "activity">("assets");
   let menu = $state(false);
+  /** How every ECX amount is shown; tapping the big balance switches it. */
+  let unit = $state<"ecx" | "sats">("ecx");
   /** The transaction whose details sheet is open. */
   let inspecting = $state<{ chain: ProtoChain; entry: HistoryEntry } | undefined>(undefined);
   /** Chains whose section in Assets is folded away. */
   let folded = $state<Record<string, boolean>>({});
 
   const detail = $derived(chains.find((c) => c.id === open));
-  const receiveChain = $derived(chains.find((c) => c.id === receiving));
   const deposits = $derived(chains.flatMap((c) => c.deposits ?? []));
   /** Sats that left eCash in a Deposit and aren't credited yet: in neither chain's balance. */
   const inFlight = $derived(
@@ -69,15 +73,15 @@
 
   const named = (asset: string) => ASSET_NAMES[asset];
   /** Activity's sections: not yet confirmed, then one per day. */
-  const days = $derived.by(() => {
+  function daysOf(items: typeof feed) {
     const out: { day: string; items: typeof feed }[] = [];
-    for (const item of feed) {
+    for (const item of items) {
       const day = item.entry.time === undefined ? "Not yet confirmed" : dayOf(item.entry.time);
       if (out.at(-1)?.day !== day) out.push({ day, items: [] });
       out.at(-1)!.items.push(item);
     }
     return out;
-  });
+  }
   function dayOf(seconds: number): string {
     const date = new Date(seconds * 1000);
     if (date.toDateString() === new Date().toDateString()) return "Today";
@@ -86,10 +90,16 @@
   }
   const timeOf = (seconds: number) => new Date(seconds * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
+  /** An ECX amount in base units, in the chosen unit. */
+  const ecxAmount = (sats: string) => (unit === "ecx" ? `${coins(sats, 8)} ECX` : `${grouped(sats)} sats`);
+  /** The same amount in the other unit, for under the big balance. */
+  const otherUnit = (sats: string) => (unit === "ecx" ? `${grouped(sats)} sats` : `${coins(sats, 8)} ECX`);
   function amountIn(asset: string, amount: string): string {
     const name = named(asset);
-    return name ? `${coins(amount, name.decimals)} ${name.ticker}` : grouped(amount);
+    return name ? ecxAmount(amount) : grouped(amount);
   }
+  /** A number in an asset row, whose name already says the asset. */
+  const bare = (asset: string, amount: string) => (named(asset) && unit === "ecx" ? coins(amount, 8) : grouped(amount));
   /** A chain's ECX, for its row. */
   const ecxOf = (c: ProtoChain) => assetsOf(c.shown).find((a) => named(a.asset)?.ticker === "ECX");
 
@@ -117,7 +127,7 @@
         <button class="action" onclick={() => (picking = true)}><span class="circle"><ProtoIcon name="send" /></span>Send</button>
       {/if}
     {/if}
-    <button class="action" onclick={() => (receiving = c?.id ?? "l1")}><span class="circle"><ProtoIcon name="receive" /></span>Receive</button>
+    <button class="action" onclick={() => (receiving = { qr: c?.id })}><span class="circle"><ProtoIcon name="receive" /></span>Receive</button>
     <a class="action" href="#/deposit/24"><span class="circle"><ProtoIcon name="deposit" /></span>Deposit</a>
   </nav>
 {/snippet}
@@ -147,6 +157,45 @@
   </li>
 {/snippet}
 
+{#snippet activityPanel(list: typeof deposits, entries: typeof feed, showChain: boolean)}
+    {#if list.length}
+      <section class="col day">
+        <h2>In progress</h2>
+        <ul>
+          {#each list as d (d.txid)}
+            <li class="row">
+              <span class="activity-icon deposit"><ProtoIcon name="deposit" size={16} /></span>
+              <div class="col grow">
+                <div class="between">
+                  <strong class="small">Deposit to {d.chainName}</strong>
+                  <strong class="small">{ecxAmount(d.value)}</strong>
+                </div>
+                {#if d.state === "confirming"}
+                  <div class="bar"><span style:width="{d.confirmations}%"></span></div>
+                {/if}
+                <span class="tiny" class:muted={d.state !== "notFound"} class:err={d.state === "notFound"}>{depositState(d)}</span>
+                {#if d.state === "notFound" || d.state === "unavailable"}
+                  <button class="small-button stop">Stop tracking</button>
+                {/if}
+              </div>
+            </li>
+          {/each}
+        </ul>
+        <p class="muted tiny">Deposits wait 100 eCash blocks, then the chain's operator credits them. Withdrawals take months.</p>
+      </section>
+    {/if}
+    {#each daysOf(entries) as { day, items } (day)}
+      <section class="col day">
+        <h2>{day}</h2>
+        <ul>
+          {#each items as { chain, entry } (entry.txid)}
+            {@render activityRow(chain, entry, showChain, true)}
+          {/each}
+        </ul>
+      </section>
+    {/each}
+{/snippet}
+
 <div class="c">
   <div class="content">
     {#if tab === "home" && detail}
@@ -157,11 +206,11 @@
         <span class="chip">{detail.chain}</span>
       </header>
 
-      {@const main = assetsOf(detail.shown)[0]}
+      {@const main = ecxOf(detail)}
       <section class="hero">
         {#if main}
-          <div class="big">{amountIn(main.asset, main.amount)}</div>
-          {#if named(main.asset)}<div class="muted small">{grouped(main.amount)} sats</div>{/if}
+          <button class="big switch" onclick={() => (unit = unit === "ecx" ? "sats" : "ecx")}>{ecxAmount(main.amount)}</button>
+          <div class="muted small">{otherUnit(main.amount)}</div>
           {#if main.unconfirmed}<span class="pill warn">+{grouped(main.unconfirmed)} sats unconfirmed</span>{/if}
         {:else}
           <div class="big muted">—</div>
@@ -169,36 +218,18 @@
         {#if detail.shown.error}
           <p class="error small">{detail.shown.report ? "Couldn't refresh the balance" : "Balance unavailable"}: {detail.shown.error}</p>
         {/if}
-        {#if detail.shown.report}
-          <p class="reported-inline">Reported by {detail.shown.report.server}. This wallet doesn't verify it.</p>
-          {#if detail.shown.refreshing}
-            <p class="muted tiny line"><span class="spinner"></span>Last read at {readAt(detail.shown.report.readAt)}; refreshing…</p>
-          {/if}
+        {#if detail.shown.refreshing && detail.shown.report}
+          <p class="muted tiny line"><span class="spinner"></span>Last read at {readAt(detail.shown.report.readAt)}; refreshing…</p>
         {/if}
       </section>
 
       {@render actions(detail)}
 
-      {#if detail.deposits?.length}
-        <section class="card deposits">
-          <h2>Deposits from eCash</h2>
-          {#each detail.deposits as d (d.txid)}
-            <div class="col">
-              <div class="between">
-                <strong>{grouped(d.value)} sats</strong>
-                {#if d.state === "notFound" || d.state === "unavailable"}<button class="small-button">Stop tracking</button>{/if}
-              </div>
-              {#if d.state === "confirming"}<div class="bar"><span style:width="{d.confirmations}%"></span></div>{/if}
-              <span class="small" class:err={d.state === "notFound"}>{depositState(d)}</span>
-            </div>
-          {/each}
-          <p class="muted tiny">A Deposit takes 100 eCash blocks, then the chain's operator credits it. Withdrawals back take months.</p>
-        </section>
-      {/if}
-
       <div class="tabs" role="tablist">
         <button role="tab" class:on={chainTab === "assets"} onclick={() => (chainTab = "assets")}>Assets</button>
-        <button role="tab" class:on={chainTab === "activity"} onclick={() => (chainTab = "activity")}>Activity</button>
+        <button role="tab" class:on={chainTab === "activity"} onclick={() => (chainTab = "activity")}>
+          Activity{#if detail.deposits?.length}<span class="count" title="Deposits in progress">{detail.deposits.length}</span>{/if}
+        </button>
       </div>
       {#if chainTab === "assets"}
         <ul>
@@ -211,44 +242,58 @@
                 <span class="muted tiny">{#if name}{name.name}{:else}<code title={asset}>{shortAsset(asset)}</code>{/if}</span>
               </span>
               <span class="col end">
-                <strong>{name ? coins(amount, name.decimals) : grouped(amount)}</strong>
-                {#if unconfirmed}<span class="tiny warn-text">+{grouped(unconfirmed)} unconf.</span>{/if}
+                <strong>{bare(asset, amount)}</strong>
+                {#if unconfirmed}<span class="tiny warn-text">+{grouped(unconfirmed)} sats unconfirmed</span>{/if}
               </span>
             </li>
           {:else}
             <li class="muted small empty">{detail.shown.error ? "Can't show assets while the balance is unavailable." : "Nothing reported."}</li>
           {/each}
         </ul>
+        {#if detail.shown.report}
+          <p class="reported-inline">Reported by {detail.shown.report.server}. This wallet doesn't verify it.</p>
+        {/if}
       {:else}
-        <ul>
-          {#each detail.history as entry (entry.txid)}
-            {@render activityRow(detail, entry, false, false)}
-          {/each}
-        </ul>
+        {@render activityPanel(detail.deposits ?? [], detail.history.map((entry) => ({ chain: detail, entry })), false)}
+        {#if detail.shown.report}
+          <p class="reported-inline">Reported by {detail.shown.report.server}. This wallet doesn't verify it.</p>
+        {/if}
       {/if}
     {:else if tab === "home"}
       <header>
-        <Mark size={26} />
-        <span class="title">ECX Wallet</span>
+        <Mark size={30} />
+        <span class="col title-block">
+          <span class="title">ECX Wallet</span>
+          <span class="lock-sub"><span class="dot"></span>Unlocked · locks after 15 minutes idle</span>
+        </span>
         <button class="icon" aria-label="Lock" title="Lock"><ProtoIcon name="lock" /></button>
         <button class="icon" aria-label="More" onclick={() => (menu = !menu)}><ProtoIcon name="more" /></button>
         {#if menu}
           <div class="menu card">
             <button class="menu-row" onclick={() => ((tab = "grants"), (menu = false))}><ProtoIcon name="grants" /> Grants</button>
             <button class="menu-row"><ProtoIcon name="lock" /> Lock now</button>
+            <div class="menu-units">
+              <span class="small">Amounts in</span>
+              <div class="segmented">
+                <button class:on={unit === "ecx"} onclick={() => (unit = "ecx")}>ECX</button>
+                <button class:on={unit === "sats"} onclick={() => (unit = "sats")}>sats</button>
+              </div>
+            </div>
           </div>
         {/if}
       </header>
-      <p class="lock-note"><span class="dot"></span>Unlocked. Locks itself after 15 minutes without use.</p>
 
       <section class="hero">
         <span class="muted tiny">Total across chains</span>
-        <div class="big">{coins(total.sats, 8)} ECX</div>
-        <div class="muted small">{grouped(total.sats)} sats</div>
-        {#if total.unconfirmed !== "0"}<span class="pill warn">+{grouped(total.unconfirmed)} sats unconfirmed</span>{/if}
-        {#if inFlight}
-          <button class="pill flight" onclick={() => (homeTab = "activity")}>
-            +{coins(inFlight.toString(), 8)} ECX in Deposits on the way
+        <button class="big switch" onclick={() => (unit = unit === "ecx" ? "sats" : "ecx")} title="Show amounts in {unit === "ecx" ? "sats" : "ECX"}">
+          {ecxAmount(total.sats)}
+        </button>
+        <div class="muted small">{otherUnit(total.sats)}</div>
+        {#if total.unconfirmed !== "0" || inFlight}
+          <button class="pending" onclick={() => (homeTab = "activity")} title="See it in Activity">
+            {#if total.unconfirmed !== "0"}<span class="warn-text">+{grouped(total.unconfirmed)} sats unconfirmed</span>{/if}
+            {#if total.unconfirmed !== "0" && inFlight}<span class="muted">·</span>{/if}
+            {#if inFlight}<span class="flight-text">+{ecxAmount(inFlight.toString())} in Deposits</span>{/if}
           </button>
         {/if}
         {#if total.missing.length}
@@ -279,7 +324,7 @@
               </button>
               <span class="grow"></span>
               {#if c.shown.refreshing}<span class="spinner"></span>{/if}
-              {#if ecx}<span class="small subtotal">{coins(ecx.amount, 8)} ECX</span>{/if}
+              {#if ecx}<span class="small subtotal">{ecxAmount(ecx.amount)}</span>{/if}
               <button
                 class="fold"
                 class:up={!folded[c.id]}
@@ -305,7 +350,7 @@
                       <span class="muted tiny">{#if name}{name.name}{:else}<code title={asset}>{shortAsset(asset)}</code>{/if}</span>
                     </span>
                     <span class="col end">
-                      <strong>{name ? coins(amount, name.decimals) : grouped(amount)}</strong>
+                      <strong>{bare(asset, amount)}</strong>
                       {#if unconfirmed}<span class="tiny warn-text">+{grouped(unconfirmed)} sats unconfirmed</span>{/if}
                     </span>
                   </button>
@@ -317,42 +362,7 @@
         {/each}
         <p class="reported-inline">Balances are as each chain's server reports them. This wallet doesn't verify them.</p>
       {:else}
-        {#if deposits.length}
-          <section class="col day">
-            <h2>In progress</h2>
-            <ul>
-              {#each deposits as d (d.txid)}
-                <li class="row">
-                  <span class="activity-icon deposit"><ProtoIcon name="deposit" size={16} /></span>
-                  <div class="col grow">
-                    <div class="between">
-                      <strong class="small">Deposit to {d.chainName}</strong>
-                      <strong class="small">{grouped(d.value)} sats</strong>
-                    </div>
-                    {#if d.state === "confirming"}
-                      <div class="bar"><span style:width="{d.confirmations}%"></span></div>
-                    {/if}
-                    <span class="tiny" class:muted={d.state !== "notFound"} class:err={d.state === "notFound"}>{depositState(d)}</span>
-                    {#if d.state === "notFound" || d.state === "unavailable"}
-                      <button class="small-button stop">Stop tracking</button>
-                    {/if}
-                  </div>
-                </li>
-              {/each}
-            </ul>
-            <p class="muted tiny">Deposits wait 100 eCash blocks, then the chain's operator credits them. Withdrawals take months.</p>
-          </section>
-        {/if}
-        {#each days as { day, items } (day)}
-          <section class="col day">
-            <h2>{day}</h2>
-            <ul>
-              {#each items as { chain, entry } (entry.txid)}
-                {@render activityRow(chain, entry, true, true)}
-              {/each}
-            </ul>
-          </section>
-        {/each}
+        {@render activityPanel(deposits, feed, true)}
         <p class="reported-inline">Reported by each chain's server. This wallet doesn't verify it.</p>
       {/if}
     {:else}
@@ -364,7 +374,7 @@
     {/if}
   </div>
 
-  {#if receiveChain || picking || inspecting}
+  {#if receiving || picking || inspecting}
     <div class="scrim" role="presentation" onclick={() => ((receiving = undefined), (picking = false), (inspecting = undefined))}></div>
   {/if}
   {#if inspecting}
@@ -379,7 +389,7 @@
       <div class="col tx-amounts">
         {#each entry.amounts as a (a.asset)}
           <span class="big-ish" class:in={!a.amount.startsWith("-")}>{a.amount.startsWith("-") ? "" : "+"}{amountIn(a.asset, a.amount)}</span>
-          {#if named(a.asset)}<span class="muted small">{grouped(a.amount)} sats</span>{/if}
+          {#if named(a.asset)}<span class="muted small">{otherUnit(a.amount)}</span>{/if}
         {/each}
         {#if entry.hidden}<span class="muted small">Some amounts are confidential and not shown.</span>{/if}
       </div>
@@ -397,23 +407,45 @@
       {#if c.shown.report}<p class="reported-inline">Reported by {c.shown.report.server}. This wallet doesn't verify it.</p>{/if}
     </div>
   {/if}
-  {#if receiveChain}
+  {#if receiving}
     <div class="sheet" role="dialog" aria-label="Receive">
       <div class="between">
         <strong>Receive</strong>
         <button class="icon" aria-label="Close" onclick={() => (receiving = undefined)}><ProtoIcon name="close" /></button>
       </div>
-      <div class="segmented">
+      <p class="muted tiny">Each chain has its own address. Only send a chain's assets to its own address.</p>
+      <ul class="addresses">
         {#each chains as c (c.id)}
-          <button class:on={c.id === receiveChain.id} onclick={() => (receiving = c.id)}>{c.name}</button>
+          {@const showing = receiving.qr === c.id}
+          <li class="address-row" class:showing>
+            <div class="between">
+              {@render avatar(c, 28)}
+              <span class="col grow">
+                <strong class="small">{c.name}</strong>
+                <code class="tiny muted">{shortAddress(c.address)}</code>
+              </span>
+              <button class="icon small-icon" aria-label="Show QR code for {c.name}" class:on={showing} onclick={() => (receiving = { qr: showing ? undefined : c.id })}>
+                <ProtoIcon name="qr" size={16} />
+              </button>
+              <button
+                class="icon small-icon"
+                aria-label="Copy {c.name} address"
+                onclick={() => {
+                  copy(c.address);
+                  copiedAddress = c.address;
+                }}
+              >
+                <ProtoIcon name={copied && copiedAddress === c.address ? "check" : "copy"} size={16} />
+              </button>
+            </div>
+            {#if showing}
+              <div class="qr"><ProtoIcon name="qr" size={96} /><span class="tiny">QR code (library to vendor)</span></div>
+              <code class="address">{c.address}</code>
+              <p class="muted tiny center">Only for {c.name} (<span class="mono">{c.chain}</span>).</p>
+            {/if}
+          </li>
         {/each}
-      </div>
-      <div class="qr"><ProtoIcon name="qr" size={110} /><span class="tiny">QR code (library to vendor)</span></div>
-      <code class="address">{receiveChain.address}</code>
-      <button class="primary block" onclick={() => copy(receiveChain.address)}>
-        <ProtoIcon name={copied ? "check" : "copy"} />{copied ? "Copied" : "Copy address"}
-      </button>
-      <p class="muted tiny center">Only for {receiveChain.name} (<span class="mono">{receiveChain.chain}</span>).</p>
+      </ul>
     </div>
   {:else if picking}
     <div class="sheet" role="dialog" aria-label="Send from">
@@ -425,7 +457,7 @@
         {@const ecx = ecxOf(c)}
         <a class="chain-row pick" class:off={!c.canSend} href="#/send/{c.id}">
           {@render avatar(c, 30)}
-          <span class="col grow"><strong>{c.name}</strong><span class="muted tiny">{c.canSend ? (ecx ? `${coins(ecx.amount, 8)} ECX` : "") : c.id === "l1" ? "Sending on eCash isn't built yet" : "Needs a fresh balance"}</span></span>
+          <span class="col grow"><strong>{c.name}</strong><span class="muted tiny">{c.canSend ? (ecx ? ecxAmount(ecx.amount) : "") : c.id === "l1" ? "Sending on eCash isn't built yet" : "Needs a fresh balance"}</span></span>
           <ProtoIcon name="forward" size={16} />
         </a>
       {/each}
@@ -480,6 +512,33 @@
   .chain-avatar.slot {
     background: #7b4fd6;
     color: #fff;
+  }
+  .title-block {
+    flex: 1;
+    min-width: 0;
+  }
+  .title-block .title {
+    line-height: 1.2;
+  }
+  .lock-sub {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--muted);
+    font-size: 0.7rem;
+    white-space: nowrap;
+  }
+  .switch {
+    min-height: 0;
+    padding: 0 6px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text);
+    font-family: var(--font);
+  }
+  .switch:hover {
+    background: var(--surface-2);
   }
   .lock-note {
     display: flex;
@@ -762,6 +821,58 @@
     width: 24px;
     min-height: 24px;
     flex: none;
+  }
+  .pending {
+    flex-wrap: wrap;
+    gap: 2px 6px;
+    min-height: 0;
+    padding: 3px 10px;
+    border: none;
+    border-radius: 999px;
+    background: var(--surface-2);
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .flight-text {
+    color: var(--accent);
+  }
+  .pending span {
+    white-space: nowrap;
+  }
+  .menu-units {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 4px;
+    padding: 8px 10px 4px;
+    border-top: 1px solid var(--border);
+  }
+  .menu-units .segmented button {
+    min-height: 26px;
+    font-size: 0.8rem;
+  }
+  .addresses {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .address-row {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .address-row .between {
+    gap: 10px;
+  }
+  .address-row.showing {
+    border-color: var(--accent);
+  }
+  .icon.on {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--accent);
   }
   .count {
     display: inline-flex;
