@@ -35,6 +35,8 @@
   let copied = $state(false);
   let homeTab = $state<"assets" | "activity">("assets");
   let menu = $state(false);
+  /** Activity's chain filter. */
+  let activityChain = $state<ProtoChain["id"] | "all">("all");
   /** Chains whose section in Assets is folded away. */
   let folded = $state<Record<string, boolean>>({});
 
@@ -42,6 +44,7 @@
   const deposits = $derived(chains.flatMap((c) => c.deposits ?? []));
   const feed = $derived(
     chains
+      .filter((c) => activityChain === "all" || c.id === activityChain)
       .flatMap((c) => c.history.map((entry) => ({ chain: c, entry })))
       .sort((x, y) => (y.entry.time ?? Infinity) - (x.entry.time ?? Infinity)),
   );
@@ -306,6 +309,12 @@
         {/each}
         <p class="reported-inline">Balances are as each chain's server reports them. This wallet doesn't verify them.</p>
       {:else}
+        <div class="filters">
+          <button class:on={activityChain === "all"} onclick={() => (activityChain = "all")}>All</button>
+          {#each chains as c (c.id)}
+            <button class:on={activityChain === c.id} onclick={() => (activityChain = c.id)}>{c.name}</button>
+          {/each}
+        </div>
         {#if deposits.length}
           <section class="col day">
             <h2>In progress</h2>
@@ -717,6 +726,22 @@
     width: 24px;
     min-height: 24px;
     flex: none;
+  }
+  .filters {
+    display: flex;
+    gap: 6px;
+    margin-top: -4px;
+  }
+  .filters button {
+    min-height: 28px;
+    padding: 0 12px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+  }
+  .filters button.on {
+    border-color: var(--text);
+    background: var(--text);
+    color: var(--bg);
   }
   .count {
     display: inline-flex;
