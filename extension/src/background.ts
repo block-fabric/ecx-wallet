@@ -25,6 +25,7 @@ import {
   type ApprovalPrompt,
   type ConnectAnswer,
   type ConnectPrompt,
+  type TurnOnPrompt,
   type DepositStore,
   type Grant,
   type GrantStore,
@@ -230,6 +231,15 @@ async function askToConnect(prompt: ConnectPrompt): Promise<ConnectAnswer> {
   }
 }
 
+async function askToTurnOn(prompt: TurnOnPrompt): Promise<boolean> {
+  const approval = new ApprovalWindow();
+  try {
+    return (await approval.ask({ kind: "turnOn", ...prompt }))?.approved === true;
+  } finally {
+    approval.close();
+  }
+}
+
 function openSigningApproval(context: { origin: string; chain: string }): SigningApproval {
   const approval = new ApprovalWindow();
   return {
@@ -252,6 +262,25 @@ const keys = { starter: (slot: number) => vault.starter(slot), l1AccountKey: () 
 const accounts = createAccounts({ ...keys, chainModule, l1Module });
 const settings = createSettings(keyValueStore(chrome.storage.local));
 
+/** The chain a Slot's module serves (CAIP-2): the key its on/off setting is stored under. */
+const slotChain = async (slot: number) => (await chainModule(slot)!).declare().binding.chain;
+
+/** Sidechains the user has on: off until turned on, never polled while off (the main chain is always on). */
+const chainsOn = {
+  isOn: async (slot: number) => settings.chainOn(await slotChain(slot)),
+  turnOn: async (slot: number) => settings.setChainOn(await slotChain(slot), true),
+};
+
+/** A wallet page's Slot whose chain is on: nothing reads a chain the user has off. */
+async function onSlot(slot: unknown): Promise<number> {
+  const n = supportedSlot(slot);
+  if (!(await chainsOn.isOn(n))) {
+    const { name } = describeChain(await chainModule(n)!);
+    throw new ProviderRpcError(ErrorCode.ChainDisconnected, `${name} is turned off.`);
+  }
+  return n;
+}
+
 /** One review for every Signing Request, whichever path it came by. */
 const signing = {
   openSigningApproval,
@@ -266,6 +295,8 @@ const handleProviderRequest = createProviderHandler({
   ...signing,
   grants,
   askToConnect,
+  askToTurnOn,
+  chains: chainsOn,
   receiveAddresses: (slot) => accounts.receiveAddresses(slot),
 });
 
@@ -354,9 +385,18 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
       // Public: what the Chain Entries say, so the page can name chains and assets even while locked.
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
       return [
-        { id: "l1", ...describeChain(await l1Module()) },
-        ...(await Promise.all(SUPPORTED_SLOTS.map(async (slot) => ({ id: slot, ...describeChain(await chainModule(slot)!) })))),
+        { id: "l1", on: true, ...describeChain(await l1Module()) },
+        ...(await Promise.all(
+          SUPPORTED_SLOTS.map(async (slot) => ({ id: slot, on: await chainsOn.isOn(slot), ...describeChain(await chainModule(slot)!) })),
+        )),
       ];
+    case "chains.setOn": {
+      // Turning a sidechain on or off; the main chain is always on.
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      const slot = supportedSlot(message.slot);
+      await settings.setChainOn(await slotChain(slot), message.on === true);
+      return null;
+    }
     case "settings.unit":
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
       return settings.unit();
@@ -377,21 +417,21 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
       return (await pullPath.cachedL1State()) ?? null;
     case "accounts.cached":
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
-      return (await pullPath.cachedState(supportedSlot(message.slot))) ?? null;
+      return (await pullPath.cachedState(await onSlot(message.slot))) ?? null;
     case "accounts.reported":
       // What a Slot's Sidechain Server reports for the addresses the wallet watches.
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
-      return pullPath.reportedState(supportedSlot(message.slot));
+      return pullPath.reportedState(await onSlot(message.slot));
     case "history.reported":
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
-      return message.slot === undefined ? pullPath.l1History() : pullPath.history(supportedSlot(message.slot));
+      return message.slot === undefined ? pullPath.l1History() : pullPath.history(await onSlot(message.slot));
     case "history.cached":
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
-      return (await (message.slot === undefined ? pullPath.cachedL1History() : pullPath.cachedHistory(supportedSlot(message.slot)))) ?? null;
+      return (await (message.slot === undefined ? pullPath.cachedL1History() : pullPath.cachedHistory(await onSlot(message.slot)))) ?? null;
     case "send.start":
       // The wallet's own Send: resolves once the server accepted the signed payload.
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
-      return pullPath.send(supportedSlot(message.slot), {
+      return pullPath.send(await onSlot(message.slot), {
         asset: String(message.asset ?? ""),
         amount: String(message.amount ?? ""),
         destination: String(message.destination ?? ""),
@@ -399,7 +439,7 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
     case "deposit.start":
       // Resolves once the M5 is broadcast (after the user's approval).
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
-      return deposits.start(supportedSlot(message.slot), String(message.amount ?? ""));
+      return deposits.start(await onSlot(message.slot), String(message.amount ?? ""));
     case "deposit.list":
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
       return deposits.list(supportedSlot(message.slot));

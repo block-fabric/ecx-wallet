@@ -84,7 +84,7 @@
   <Sheet title="Deposit to" onclose={() => (open = undefined)} data-deposit-sheet>
     <p class="muted tiny">A Deposit moves ECX from the main chain to a sidechain.</p>
     {#if slots.length === 0}
-      <p class="muted small" data-no-sidechains>Turn on a sidechain to deposit to it.</p>
+      <p class="muted small" data-no-sidechains><a href="#/chains">Turn on a sidechain</a> to deposit to it.</p>
     {:else}
       <ul class="picks">
         {#each slots as c (c.info.id)}

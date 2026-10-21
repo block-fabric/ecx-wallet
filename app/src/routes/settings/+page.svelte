@@ -30,6 +30,13 @@
         <Icon name="forward" size={16} />
       </a>
     </li>
+    <li>
+      <a class="setting" href="#/chains" data-chains-link>
+        <Icon name="plus" />
+        <span class="grow"><strong class="small">Chains</strong><span class="muted tiny">Turn chains on or off</span></span>
+        <Icon name="forward" size={16} />
+      </a>
+    </li>
     <li class="setting">
       <Icon name="deposit" />
       <span class="grow"><strong class="small">Amounts in</strong><span class="muted tiny">Every ECX amount, everywhere</span></span>

@@ -45,6 +45,8 @@
 
   {#if locked}
     <p class="notice">The wallet is locked. <a href="#/">Unlock it</a> to see this chain.</p>
+  {:else if view && !view.info.on}
+    <p class="notice" data-chain-off>{view.info.name} is off. <a href="#/chains">Turn it on</a> to see it; your funds on it stay where they are.</p>
   {:else if view}
     <section class="hero">
       {#if ecxAsset && view.shown.report}

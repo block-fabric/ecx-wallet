@@ -5,6 +5,7 @@ export {
   type ApprovalPrompt,
   type ConnectAnswer,
   type ConnectPrompt,
+  type TurnOnPrompt,
   type ProviderDeps,
   type SigningApproval,
   type SignPrompt,

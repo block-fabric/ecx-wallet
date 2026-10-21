@@ -167,6 +167,11 @@ try {
   await approval("11-approve-blind");
   await signing;
 
+  page = await openWalletPage(session, "#/chains");
+  await page.setViewport(POPUP);
+  await shot(page, "12-chains");
+  await page.close();
+
   page = await openWalletPage(session, "#/settings");
   await page.setViewport(POPUP);
   await shot(page, "12-settings");

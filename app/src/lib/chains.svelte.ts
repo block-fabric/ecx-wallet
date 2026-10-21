@@ -33,27 +33,41 @@ export interface ChainView {
 }
 
 export class Chains {
-  list = $state<ChainView[] | undefined>(undefined);
+  /** Every chain this release supports, on or off. */
+  all = $state<ChainView[] | undefined>(undefined);
   error = $state("");
 
-  /** Reads every chain; `only` limits the reads to one (a chain's own screen), though every chain is named. */
+  /** The chains the user has on: the only ones shown, counted and read. */
+  get list(): ChainView[] | undefined {
+    return this.all?.filter((c) => c.info.on);
+  }
+
+  /** Every Slot, on or off: a Deposit in progress to a chain that's off still shows. */
+  get slots(): ChainView[] {
+    return (this.all ?? []).filter((c) => c.info.id !== "l1");
+  }
+
+  /**
+   * Reads every chain that's on, and every Slot's Deposits; `only` limits the reads to one chain (a
+   * chain's own screen), though every chain is named.
+   */
   async load(only?: ChainId) {
     try {
-      this.list = (await listChains()).map((info) => ({ info, shown: { refreshing: true } }));
+      this.all = (await listChains()).map((info) => ({ info, shown: { refreshing: true } }));
     } catch (e) {
       this.error = (e as Error).message;
       return;
     }
     this.readAddresses(only);
-    for (const { info } of this.list) {
+    for (const { info } of this.all) {
       if (only !== undefined && info.id !== only) continue;
-      this.readReport(info.id);
+      if (info.on) this.readReport(info.id);
       if (info.id !== "l1") this.readDeposits(info.id);
     }
   }
 
   get(id: ChainId): ChainView | undefined {
-    return this.list?.find((c) => c.info.id === id);
+    return this.all?.find((c) => c.info.id === id);
   }
 
   /** Asks the chain's server again. */
@@ -89,7 +103,7 @@ export class Chains {
     if (only === undefined || only === "l1") l1Account().then(({ addresses }) => this.update("l1", { address: addresses[0]?.address }), fail);
     if (only !== "l1") {
       listAccounts().then((accounts) => {
-        for (const { slot, addresses } of accounts) this.update(slot, { address: addresses[0]?.address });
+        for (const { slot, addresses } of accounts) if (this.get(slot)?.info.on) this.update(slot, { address: addresses[0]?.address });
       }, fail);
     }
   }

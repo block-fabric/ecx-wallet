@@ -125,10 +125,15 @@ export type ChainId = "l1" | number;
 /** How the wallet shows a chain, from its Chain Entry: its name, what it's for, and the assets it names. */
 export interface ChainInfo extends ChainDescription {
   id: ChainId;
+  /** The user has it on: shown, counted and read. The main chain always is. */
+  on: boolean;
 }
 
 /** eCash first, then every Slot the wallet has a Chain Module for. Works while locked. */
 export const listChains = () => send<ChainInfo[]>({ kind: "chains.list" });
+
+/** Turns a sidechain on or off. Off, it's hidden and never read; the funds on it stay where they are. */
+export const setChainOn = (slot: number, on: boolean) => send<null>({ kind: "chains.setOn", slot, on });
 
 /** How every ECX amount is shown: in ECX (the default) or in sats. */
 export const getUnit = () => send<Unit>({ kind: "settings.unit" });
