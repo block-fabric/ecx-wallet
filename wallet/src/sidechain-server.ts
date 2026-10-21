@@ -15,7 +15,10 @@ export interface WatchData {
 
 /** A server's account of a watch. Unverified by the wallet. */
 export interface ReportedState {
+  /** Confirmed and spendable, less what the server's mempool already spends. */
   balances: AssetAmount[];
+  /** What unconfirmed outputs would add once confirmed, per asset; none if nothing is pending. */
+  unconfirmed: AssetAmount[];
   history: unknown[];
 }
 

@@ -32,6 +32,7 @@ export {
   ChainModuleRefusal,
   NATIVE_COIN,
   loadChainModule,
+  loadL1Module,
   type Account,
   type AssetAmount,
   type ClearView,
@@ -49,7 +50,11 @@ export {
   type L1AccountKey,
   type Starter,
   type Declaration,
+  type DepositCredit,
+  type DepositDestination,
+  type DepositOrder,
   type DerivedAddress,
+  type L1Module,
   type NetworkEntry,
   type ServerApi,
   type SidechainServerEntry,
@@ -79,3 +84,19 @@ export {
   type SendResult,
   type SlotReport,
 } from "./pull-path";
+export { CACHE_PREFIX, cacheKey, type SessionCache } from "./cache";
+export { esploraClient, type EsploraClient, type EsploraTx, type EsploraTxStatus, type EsploraUtxo } from "./esplora";
+export { findTreasury, TreasuryError, type Treasury } from "./treasury";
+export {
+  createDeposits,
+  CONFIRMATIONS_TO_CREDIT,
+  DEPOSIT_REQUESTER,
+  feeRate,
+  type DepositClaim,
+  type DepositDeps,
+  type Deposits,
+  type DepositStatus,
+  type RefusedDeposit,
+  type DepositStore,
+  type PendingDeposit,
+} from "./deposit";

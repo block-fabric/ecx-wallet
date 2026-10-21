@@ -28,6 +28,11 @@ pub struct NetworkEntry<P> {
     pub parent: Option<String>,
     /// The block a server must have to be on this chain: the identity check (docs/adr/0003).
     pub identity_block: IdentityBlock,
+    /// The parent-chain block whose M2 activated this chain's Slot, pinned once checked. Only a
+    /// chain with a parent has one. Without it, the wallet refuses a deposit while the Slot has no
+    /// Treasury (docs/adr/0004).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub activation: Option<IdentityBlock>,
     /// The default Sidechain Server and the Server API the wallet speaks to it.
     pub sidechain_server: SidechainServerEntry,
     /// Official App origins (placeholder).
@@ -72,12 +77,25 @@ impl<P> ChainEntry<P> {
             if self.slot.is_some() != network.parent.is_some() {
                 return Err(format!("{}'s {name}: a chain has both a slot and a parent, or neither", self.name));
             }
-            if !(network.identity_block.hash.len() == 64 && network.identity_block.hash.bytes().all(|b| b.is_ascii_hexdigit())) {
+            if !is_block_hash(&network.identity_block.hash) {
                 return Err(format!("{}'s {name}: the identity block hash isn't 32 bytes of hex", self.name));
+            }
+            match &network.activation {
+                Some(_) if network.parent.is_none() => {
+                    return Err(format!("{}'s {name}: only a chain with a parent has an activation block", self.name))
+                }
+                Some(activation) if !is_block_hash(&activation.hash) => {
+                    return Err(format!("{}'s {name}: the activation block hash isn't 32 bytes of hex", self.name))
+                }
+                _ => {}
             }
         }
         Ok(())
     }
+}
+
+fn is_block_hash(hash: &str) -> bool {
+    hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 #[cfg(test)]
@@ -89,6 +107,7 @@ mod tests {
             chain: "ecash:betanet".into(),
             parent: parent.map(Into::into),
             identity_block: IdentityBlock { height: 0, hash: "00".repeat(32) },
+            activation: None,
             sidechain_server: SidechainServerEntry { api: ServerApi::Esplora, url: "https://example.invalid".into() },
             official_apps: vec![],
             params: (),
@@ -102,5 +121,18 @@ mod tests {
         assert!(entry(Some(24), Some("ecash:betanet")).check().is_ok());
         assert!(entry(Some(24), None).check().is_err());
         assert!(entry(None, Some("ecash:betanet")).check().is_err());
+    }
+
+    #[test]
+    fn only_a_chain_with_a_parent_has_an_activation_block() {
+        let activation = || Some(IdentityBlock { height: 970_715, hash: "11".repeat(32) });
+        let mut child = entry(Some(24), Some("ecash:betanet"));
+        child.networks.get_mut("betanet").unwrap().activation = activation();
+        assert!(child.check().is_ok());
+        let mut root = entry(None, None);
+        root.networks.get_mut("betanet").unwrap().activation = activation();
+        assert!(root.check().is_err());
+        child.networks.get_mut("betanet").unwrap().activation = Some(IdentityBlock { height: 1, hash: "xx".into() });
+        assert!(child.check().is_err());
     }
 }

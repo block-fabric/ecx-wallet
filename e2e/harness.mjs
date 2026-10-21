@@ -415,18 +415,40 @@ export async function setUpWallet(session, { phrase = ABANDON, password = WALLET
 
 /**
  * Waits until the unlocked home page's requests have settled: both account cards (eCash and Slot
- * 24) shown, each with its balance or why there is none. Close the page only after: a reply to a
- * closed page makes Firefox log, and each request derives a key, which counts as Vault activity.
+ * 24) shown, each with its fresh balance (not this session's last one, shown while refreshing) or
+ * why there is none, and Slot 24's with its Deposits. Close
+ * the page only after: a reply to a closed page makes Firefox log, and each request derives a key,
+ * which counts as Vault activity.
  */
 export async function homeSettled(page) {
   await page.waitForFunction(
     () => {
       const cards = [...document.querySelectorAll("[data-account]")];
-      const settled = (card) => card.querySelector("[data-balance], [data-no-balance], [data-balance-error]") !== null;
+      const settled = (card) =>
+        !card.hasAttribute("data-refreshing") &&
+        card.querySelector("[data-balance], [data-no-balance], [data-balance-error]") !== null &&
+        (card.getAttribute("data-account") === "l1" || card.hasAttribute("data-deposits-ready"));
       return cards.length === 2 && cards.every(settled);
     },
     { timeout: 20_000 },
   );
+}
+
+/**
+ * Locks the wallet from its home page and unlocks it again: the wallet forgets everything it kept
+ * for the session (passed identity checks, last balances, raw transactions), as on any lock.
+ */
+export async function relock(session, password = WALLET_PASSWORD) {
+  const page = await session.openPage("index.html#/");
+  await page.waitForSelector('[data-vault-state="unlocked"]', { timeout: 10_000 });
+  await homeSettled(page);
+  await page.click("[data-lock]");
+  await page.waitForSelector('[data-vault-state="locked"] [data-password]', { timeout: 10_000 });
+  await page.type("[data-password]", password);
+  await page.click("[data-unlock]");
+  await page.waitForSelector('[data-vault-state="unlocked"]', { timeout: 10_000 });
+  await homeSettled(page);
+  await page.close();
 }
 
 /** Opens the test app in a new tab and waits until its script is ready. */

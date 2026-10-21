@@ -2,7 +2,9 @@
 //! interface (spec #18, "Chain Module interface").
 //!
 //! - [`declare`] reports the binding the module serves;
-//! - [`derive_account`] turns the Slot 24 Starter into addresses and watch data.
+//! - [`derive_account`] turns the Slot 24 Starter into addresses and watch data;
+//! - [`deposit_destination`] says what a Deposit to Slot 24 is credited to (the
+//!   `depositDestination` capability).
 //!
 //! - [`check`] refuses, without the Starter, what the wallet must never sign;
 //! - [`decode`] refuses what the wallet must never sign, and otherwise returns a Clear View (if the
@@ -17,6 +19,7 @@ mod account;
 mod classify;
 mod clear;
 mod decode;
+mod deposit;
 pub mod chain_entry;
 mod ownership;
 mod sign;
@@ -24,6 +27,7 @@ mod sign;
 pub use account::{derive_account, Account, AddressEntry};
 pub use chain_entry::{chain_entry, ChainEntry, NetworkEntry, ServerApi, SidechainServerEntry};
 pub use clear::{ClearInput, ClearOutput, ClearView, DangerousMode, Destination};
+pub use deposit::{deposit_destination, DepositDestination};
 pub use decode::{check, decode, AssetAmount, Decoded, OwnedInput, Refusal, RefusalCode, VerifiableFacts};
 pub use sign::sign;
 
@@ -49,7 +53,7 @@ pub struct Binding {
     pub payload_versions: Vec<String>,
 }
 
-/// `declare()`'s answer: the binding plus optional capabilities (none in the skeleton).
+/// `declare()`'s answer: the binding plus optional capabilities.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Declaration {
@@ -64,7 +68,7 @@ pub fn declare() -> Declaration {
             format: "pset".into(),
             payload_versions: vec!["1".into()],
         },
-        capabilities: vec![],
+        capabilities: vec!["depositDestination".into()],
     }
 }
 

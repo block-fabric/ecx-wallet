@@ -54,9 +54,10 @@ the extension build turns those URLs into `host_permissions` and CSP `connect-sr
 - `esplora` (`esplora.ts`): checks `/block-height/H` against the Chain Entry's `identityBlock`
   (H = 0 and the genesis for Elements; eCash betanet, whose genesis is Bitcoin's, uses its fork
   block 967,680; docs/adr/0003). A mismatch is a hard error, as is a server that hasn't reached H.
-  It then sums the confirmed explicit outputs (`/address/:a/utxo`) of the first 20 receive and 20
-  change addresses per asset (eCash's outputs have no asset: they're its coin, `NATIVE_COIN`,
-  shown in sats). Send isn't available over Esplora yet (#28; on eCash, #31).
+  It then sums the explicit outputs (`/address/:a/utxo`) of the first 20 receive and 20 change
+  addresses per asset, confirmed and unconfirmed apart (eCash's outputs have no asset: they're its
+  coin, `NATIVE_COIN`, shown in sats). electrs already leaves out outputs its mempool spends, so a
+  Deposit's coin leaves the confirmed balance at once and its change shows as unconfirmed. Send isn't available over Esplora yet (#28); eCash's one spend is a Deposit (below).
 - `ecx-v0`, the Standard Sidechain API (`standard-sidechain-api.ts`, `stub-server/README.md`):
   registers the descriptor and first 20 receive addresses before every call. Its Send has the
   server build the transfer; the Signing Request goes through the same validation, Chain Module
@@ -65,8 +66,43 @@ the extension build turns those URLs into `host_permissions` and CSP `connect-sr
   After approval the wallet submits the signed PSET to the server. No bundled chain speaks it in
   v0; `e2e/tests/sidechain-servers.test.mjs` tests it in node.
 
-The home page (`l1.reported`, `accounts.reported`) shows the balance per asset, labelled "Reported
-by <server URL>"; the Send screen is `#/send/<slot>` (`send.start`), for Slots only.
+The home page (`l1.reported`, `accounts.reported`) shows the confirmed balance per asset, with a
+"+N unconfirmed" line under it when the server reports any, labelled "Reported by <server URL>".
+Unconfirmed coins are only shown: a Deposit spends confirmed ones only. The Standard Sidechain
+API reports them in an optional `unconfirmed` list. The Send screen is `#/send/<slot>`
+(`send.start`), for Slots only.
+
+Session cache (`wallet/src/cache.ts`): mostly to answer faster, the background keeps four things in
+`storage.session` (memory only), read and written only while unlocked, and forgotten on every lock:
+a server's passed identity check (once per URL, as ADR 0002 has it; a failure is never kept), the
+last balance each chain's server reported (`l1.cached`, `accounts.cached`: shown at once, marked
+"Last read at …; refreshing…" and `data-refreshing` on the card, until the fresh one arrives), and
+raw transactions, kept only once the L1 module hashes them to their txid, and each Slot's last
+Deposit that failed after approval (below). Nothing else a Deposit is
+built from is cached: its coins, Treasury, fee rate and confirmations are always read fresh. Esplora
+lookups run 20 at once (`QUERIES_AT_ONCE`). Tests that change a server's chain lock and unlock first
+(`relock(session)` in the harness).
+
+Deposit (`wallet/src/deposit.ts`, #31; docs/adr/0004): "Deposit from eCash" on a Slot card opens
+`#/deposit/<slot>` (`deposit.start`). The Slot's Chain Module says what the Deposit is credited to
+(`depositDestination`: Elements' first receive address as UTF-8, minimum 3,000 sats, credit exactly
+the value). `treasury.ts` finds the Slot's Treasury on eCash's Esplora by #15's strict exactly-one
+rule (`/scripthash/:h/utxo`, following pending M5s); with none, only a pinned `activation` in the
+Slot's Chain Entry allows a first Deposit. `l1.wasm`'s `build_deposit` builds the M5 from the
+account's confirmed coins (largest first, fee at the 6-block estimate, change to the first unused
+change address), and every input carries its previous transaction so the module checks every value
+itself. The L1 Decoder's Clear View goes to the normal approval window; then `sign`, `finalize` and
+`POST /tx`. `l1.wasm` refuses to check, decode, sign or finalize any spend without the replay marker
+(betanet's `nLockTime` 499999999, non-final `nSequence`). Pending Deposits sit in `storage.local`
+(`deposit:<txid>`) and show under the Slot card's balance (`deposit.list`), each with its txid: "n / 100"
+confirmations, then waiting for the operator's `importdrivechaindeposit` (with the claim
+arguments), then "credited" once the Slot's server reports an output of exactly the value.
+The toolbar popup closes when the approval window opens, so the Deposit screen that asked may be
+gone by the time a Deposit is sent or refused. A Deposit that fails after approval (a refused
+broadcast, say) is therefore also kept for the session (`deposit.refused`) and shown on the Slot
+card, "Your Deposit of N sats failed: <reason>" with "Try again", until closed (×) or the next
+Deposit is sent. A stuck Deposit (its server doesn't know it, or its status can't be read) offers
+"Stop tracking": the wallet forgets it, the transaction is unaffected. Healthy ones offer nothing.
 
 Signing (`signTransaction`): the Provider handler checks, in the spec's order, the envelope (unknown
 MAJOR → 4200, unknown fields ignored, expired → -32602), the Grant (Slot + method → 4100), then
@@ -131,7 +167,9 @@ default), so none reaches the public explorer; `extension-loads.test` loads the 
 `e2e/harness.mjs` exports `launchWallet(name, { build })` (`"e2e"` by default, or `"shipped"`) / `launchBrave()` / `launchFirefox()`, `setUpWallet(session)`
 (imports `ABANDON`, no passphrase, and leaves the wallet unlocked), `serveTestApp()`
 and `openTestApp(session, app, host)`, `serveEsplora(config)` (the stub Esplora server where the e2e build's Chain Entry
-names Slot 24's server, `http://127.0.0.1:24024`, so one test file using it at a time), `serveL1Esplora(config)` (the same for eCash's, `http://127.0.0.1:24000`), `serveSidechainServer(config)` (the
+names Slot 24's server, `http://127.0.0.1:24024`, so one test file using it at a time), `serveL1Esplora(config)` (the same for eCash's, `http://127.0.0.1:24000`;
+it indexes the raw transactions in `config.txs` as Esplora would and accepts broadcasts, and
+`@ecx/stub-server/bitcoin-tx` makes and parses them), `serveSidechainServer(config)` (the
 Standard Sidechain API stub on a free port), `importWallet()` (`wallet/` bundled for node), and `openWalletPage(session, "#/grants")` for a wallet screen (it waits
 for `[data-screen-ready]`; Firefox's extension UUID is pinned so its pages have a known URL). Each `<name>.localhost` host is its own origin (Grants are per
 origin). The test Sidechain App (`e2e/test-app/`) exposes `window.testApp.request(method, params)`

@@ -40,10 +40,19 @@ export type BackgroundMessage =
   | { kind: "accounts.list" }
   | { kind: "l1.account" }
   | { kind: "l1.reported" }
+  // The last reports this session, to show while the above refresh them: wallet pages only.
+  | { kind: "l1.cached" }
+  | { kind: "accounts.cached"; slot: number }
   // Pull path (what the Slot's server reports for the addresses the wallet watches): wallet pages only.
   | { kind: "accounts.reported"; slot: number }
   // The wallet's own Send (pull path): wallet pages only.
   | { kind: "send.start"; slot: number; asset: string; amount: string; destination: string }
+  // Deposit from eCash to a Slot, and the Slot's pending Deposits: wallet pages only.
+  | { kind: "deposit.start"; slot: number; amount: string }
+  | { kind: "deposit.list"; slot: number }
+  | { kind: "deposit.dismiss"; txid: string }
+  | { kind: "deposit.refused"; slot: number }
+  | { kind: "deposit.dismissRefused"; slot: number }
   // Vault: accepted only from the wallet's own pages.
   | { kind: "vault.status" }
   | { kind: "vault.generate" }

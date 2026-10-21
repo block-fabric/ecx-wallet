@@ -11,7 +11,9 @@
           "p2pkhPrefix": 0,
           "p2shPrefix": 5,
           "bechHrp": "bc"
-        }
+        },
+        "replayLockTime": 499999999,
+        "opDrivechain": "nop8"
       }
     }
   }

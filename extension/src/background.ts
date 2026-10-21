@@ -4,8 +4,11 @@
 // - every listener is registered synchronously at top level;
 // - no top-level await; WASM is fetched and instantiated lazily inside handlers.
 import {
+  CACHE_PREFIX,
   createAccounts,
   createChainModules,
+  createDeposits,
+  esploraClient,
   createL1Module,
   createProviderHandler,
   createPullPath,
@@ -20,9 +23,12 @@ import {
   type ApprovalPrompt,
   type ConnectAnswer,
   type ConnectPrompt,
+  type DepositStore,
   type Grant,
   type GrantStore,
   type KeyValueStore,
+  type PendingDeposit,
+  type SessionCache,
   type SigningApproval,
   type VaultModule,
 } from "@ecx/wallet";
@@ -67,11 +73,34 @@ const vault = createVault({
   session: keyValueStore(chrome.storage.session),
   random: (length) => crypto.getRandomValues(new Uint8Array(length)),
   now: () => Date.now(),
-  onDeadline: (deadline) => {
-    if (deadline === null) chrome.alarms.clear(AUTO_LOCK_ALARM).catch(() => {});
-    else chrome.alarms.create(AUTO_LOCK_ALARM, { when: deadline }).catch(() => {});
+  onDeadline: async (deadline) => {
+    if (deadline === null) {
+      chrome.alarms.clear(AUTO_LOCK_ALARM).catch(() => {});
+      // Awaited: once locked, nothing kept for the session is left.
+      await forgetSessionCache().catch(console.error);
+    } else chrome.alarms.create(AUTO_LOCK_ALARM, { when: deadline }).catch(() => {});
   },
 });
+
+/**
+ * What the wallet keeps for the session to answer faster: passed identity checks, the last
+ * reported balances, raw transactions (wallet/src/cache.ts). In `storage.session`, so never on
+ * disk; read and written only while unlocked, and forgotten on lock.
+ */
+const sessionCache: SessionCache = {
+  async get<T>(key: string) {
+    if (!(await vault.status()).unlocked) return undefined;
+    return (await chrome.storage.session.get(key))[key] as T | undefined;
+  },
+  async set(key, value) {
+    if ((await vault.status()).unlocked) await chrome.storage.session.set({ [key]: value });
+  },
+};
+
+async function forgetSessionCache(): Promise<void> {
+  const all = await chrome.storage.session.get(null);
+  await chrome.storage.session.remove(Object.keys(all).filter((key) => key.startsWith(CACHE_PREFIX)));
+}
 
 // The deadline is also enforced on every use; the alarm clears the key even if nothing asks.
 chrome.alarms.onAlarm.addListener((alarm) => {
@@ -97,6 +126,24 @@ const grants: GrantStore = {
     return Object.entries(all)
       .filter(([key]) => key.startsWith(GRANT_PREFIX))
       .map(([, grant]) => grant as Grant);
+  },
+};
+
+// Deposits the wallet broadcast and still watches, until credited or dismissed.
+const DEPOSIT_PREFIX = "deposit:";
+
+const depositStore: DepositStore = {
+  async list() {
+    const all = await chrome.storage.local.get(null);
+    return Object.entries(all)
+      .filter(([key]) => key.startsWith(DEPOSIT_PREFIX))
+      .map(([, deposit]) => deposit as PendingDeposit);
+  },
+  async put(deposit) {
+    await chrome.storage.local.set({ [`${DEPOSIT_PREFIX}${deposit.txid}`]: deposit });
+  },
+  async remove(txid) {
+    await chrome.storage.local.remove(`${DEPOSIT_PREFIX}${txid}`);
   },
 };
 
@@ -218,7 +265,30 @@ const handleProviderRequest = createProviderHandler({
 });
 
 // The pull path: each Slot's Sidechain Server, in the Server API its Chain Entry names.
-const pullPath = createPullPath({ ...signing, ...keys, l1Module, sidechainServer: (entry, network) => sidechainServer(entry, network) });
+const pullPath = createPullPath({
+  ...signing,
+  ...keys,
+  l1Module,
+  sidechainServer: (entry, network) => sidechainServer(entry, network, undefined, sessionCache),
+  cache: sessionCache,
+});
+
+// Deposits: the L1 module builds the M5 from the wallet's own coins, over eCash's Esplora.
+const deposits = createDeposits({
+  ...keys,
+  chainModule,
+  l1Module,
+  openSigningApproval,
+  isUnlocked: signing.isUnlocked,
+  esplora: (entry, network) =>
+    esploraClient(
+      { url: network.sidechainServer.url, identityBlock: network.identityBlock, chainName: entry.name, cache: sessionCache },
+      (...args) => fetch(...args),
+    ),
+  store: depositStore,
+  cache: sessionCache,
+  now: () => Date.now(),
+});
 
 /** The requester's web origin as the browser reports it for a content-script message. */
 function requesterOrigin(sender: chrome.runtime.MessageSender): string | undefined {
@@ -282,6 +352,13 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
     case "l1.reported":
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
       return pullPath.reportedL1State();
+    case "l1.cached":
+      // The last report this session, shown while `l1.reported` refreshes it; null if none.
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      return (await pullPath.cachedL1State()) ?? null;
+    case "accounts.cached":
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      return (await pullPath.cachedState(supportedSlot(message.slot))) ?? null;
     case "accounts.reported":
       // What a Slot's Sidechain Server reports for the addresses the wallet watches.
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
@@ -294,6 +371,25 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
         amount: String(message.amount ?? ""),
         destination: String(message.destination ?? ""),
       });
+    case "deposit.start":
+      // Resolves once the M5 is broadcast (after the user's approval).
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      return deposits.start(supportedSlot(message.slot), String(message.amount ?? ""));
+    case "deposit.list":
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      return deposits.list(supportedSlot(message.slot));
+    case "deposit.dismiss":
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      await deposits.dismiss(String(message.txid ?? ""));
+      return null;
+    case "deposit.refused":
+      // The Slot's last Deposit that failed after approval, for the home page: its page may be gone.
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      return (await deposits.refused(supportedSlot(message.slot))) ?? null;
+    case "deposit.dismissRefused":
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      await deposits.dismissRefused(supportedSlot(message.slot));
+      return null;
     case "vault.status":
     case "vault.generate":
     case "vault.create":

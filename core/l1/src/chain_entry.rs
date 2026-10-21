@@ -27,6 +27,32 @@ pub type NetworkEntry = ecx_chain_entry::NetworkEntry<L1Params>;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct L1Params {
     pub address_params: AddressParamsEntry,
+    /// The replay marker: every L1 spend carries this `nLockTime` and a non-final `nSequence` on
+    /// every input, and `sign` refuses anything else (docs/adr/0004). betanet's is 499999999
+    /// (`LOCKTIME_THRESHOLD - 1`), final on betanet only (`src/consensus/tx_verify.cpp` on the
+    /// `betanet` branch of github.com/ecash-com/bitcoin, checked 2026-10-20); mainnet's will be
+    /// 499999998 (#32).
+    pub replay_lock_time: u32,
+    /// Which NOP the network's BIP300 enforcer reads as `OP_DRIVECHAIN`, the opcode of every
+    /// Treasury script. betanet's is NOP8 (the enforcer's betanet preset, checked 2026-10-20).
+    pub op_drivechain: OpDrivechain,
+}
+
+/// `OP_DRIVECHAIN`: BIP300 specifies NOP5; eCash's networks use NOP8.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OpDrivechain {
+    Nop5,
+    Nop8,
+}
+
+impl OpDrivechain {
+    pub fn opcode(self) -> u8 {
+        match self {
+            OpDrivechain::Nop5 => 0xb4,
+            OpDrivechain::Nop8 => 0xb7,
+        }
+    }
 }
 
 /// Bitcoin Core's `base58Prefixes` and `bech32_hrp`. betanet's are `CMainParams`' on the `betanet`

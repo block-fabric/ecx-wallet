@@ -51,6 +51,7 @@ const [session, app, stub] = await Promise.all([
       [SLOT_24_ADDRESS]: [
         { txid: "aa".repeat(32), vout: 0, value: 150000, asset: POLICY_ASSET, confirmed: true },
         { txid: "bb".repeat(32), vout: 1, value: 7, asset: OTHER_ASSET, confirmed: true },
+        { txid: "cc".repeat(32), vout: 0, value: 2500, asset: POLICY_ASSET, confirmed: false },
       ],
     },
   }),

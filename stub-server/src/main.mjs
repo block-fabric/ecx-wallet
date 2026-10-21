@@ -5,6 +5,7 @@
 //   pnpm --filter @ecx/stub-server start -- ecx-v0   the Standard Sidechain API stub, on the same URL
 import { readFile } from "node:fs/promises";
 import { E2E_L1_SERVER, E2E_SIDECHAIN_SERVER } from "../../e2e/scripts/build.mjs";
+import { encodeTx, parseTx } from "./bitcoin-tx.mjs";
 import { createEsploraStub } from "./esplora.mjs";
 import { createStubServer } from "./server.mjs";
 
@@ -39,10 +40,20 @@ if (stub === undefined) throw new Error(`Unknown Server API ${api}: esplora or e
 const url = new URL(E2E_SIDECHAIN_SERVER.url);
 
 const l1Entry = JSON.parse(await readFile(new URL("core/l1/chain-entry.json", root), "utf8")).networks.betanet;
+// 250 000 sats to BIP84's m/84'/0'/0'/0/0 for "abandon … about", from a made-up input. Slot 24 has
+// no Treasury, so a Deposit is its first: the stub has Slot 24's pinned activation block.
+const funding = encodeTx({
+  inputs: [{ txid: "bb".repeat(32), vout: 0 }],
+  outputs: [{ value: 250000, script: "0014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e2" }],
+});
+const { activation } = entry;
 const l1Stub = createEsploraStub({
   identityBlock: l1Entry.identityBlock,
-  // BIP84's m/84'/0'/0'/0/0 for "abandon … about".
-  utxos: { bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu: [{ txid: "bb".repeat(32), vout: 0, value: 250000, confirmed: true }] },
+  blocks: { [activation.height]: activation.hash },
+  tipHeight: activation.height + 1000,
+  feeEstimates: { 1: 0.97, 6: 0.5, 1008: 0.1 },
+  txs: [{ hex: funding, confirmed: true }],
+  utxos: { bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu: [{ txid: parseTx(funding).txid, vout: 0, value: 250000, confirmed: true }] },
 });
 const l1Url = new URL(E2E_L1_SERVER.url);
 console.log(`stub esplora server for ${l1Entry.chain} at ${await l1Stub.listen(Number(l1Url.port), l1Url.hostname)}`);

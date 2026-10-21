@@ -90,6 +90,7 @@ The server needs the descriptor, not only addresses, to build transfers the wall
 {
   "chain": "ecash:betanet-s24",
   "balances": [{ "asset": "5836dcc0…b2c8", "amount": "150000" }],
+  "unconfirmed": [{ "asset": "5836dcc0…b2c8", "amount": "900" }],
   "history": [{ "txid": "aa…", "amounts": [{ "asset": "5836dcc0…b2c8", "amount": "150000" }] }]
 }
 ```
@@ -97,6 +98,10 @@ The server needs the descriptor, not only addresses, to build transfers the wall
 - `balances`: one entry per asset the watch holds (confirmed, spendable), each with
   `amount` ≥ `"0"`. The wallet renders one row per entry and refuses an answer whose entries aren't
   `{ asset: hex64, amount: decimal string }`.
+- `unconfirmed` (optional): per asset, what the watch's unconfirmed outputs would add
+  once confirmed. Omit assets with nothing pending. `balances` already leaves out outputs that
+  unconfirmed transactions spend, as Esplora does. The wallet shows it apart from the balance and
+  never spends it; it refuses malformed entries the same way, and reads a missing field as nothing pending.
 - `history`: transactions touching the watch, newest first. Draft 1 fixes only `txid` and
   `amounts`. The wallet doesn't show history yet.
 
@@ -180,8 +185,8 @@ The stub only records the submission (`submissions()`) and returns no `txid`.
 ## The stub
 
 - `createStubServer({ chain, state, transfers, now })` from `@ecx/stub-server` (`src/server.mjs`):
-  - `state` maps an address to `{ balances, history }`, and a watch's state sums its registered
-    addresses;
+  - `state` maps an address to `{ balances, unconfirmed?, history }`, and a watch's state sums its
+    registered addresses (it sends `unconfirmed` only if one of them has it);
   - `transfers` is the fixture table:
     `[{ asset, amount, destination, payload, expiresIn?, hints? }]`.
   - It returns `{ listen(port, host), close(), registrations(), submissions() }`. The last two let
@@ -207,7 +212,7 @@ e2e build; the e2e suite starts it with `serveEsplora(config)`.
 
 - How the wallet learns a server's identity (`info`) and how user server overrides work (spec #12;
   an override is an `{ api, url }` pair, docs/adr/0002).
-- Pagination and confirmations in `history`, plus unconfirmed balances.
+- Pagination and confirmations in `history`.
 - Fee selection in the build request.
 - Confidential transactions: View Key sharing, blinding, and `fundTransaction`.
 - How the server reports that a submission was broadcast or confirmed.

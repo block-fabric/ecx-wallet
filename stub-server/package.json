@@ -6,7 +6,8 @@
   "description": "Stub Sidechain Servers answered from fixtures: the Standard Sidechain API (reference implementation) and Esplora (the e2e build's server).",
   "exports": {
     ".": "./src/server.mjs",
-    "./esplora": "./src/esplora.mjs"
+    "./esplora": "./src/esplora.mjs",
+    "./bitcoin-tx": "./src/bitcoin-tx.mjs"
   },
   "scripts": {
     "start": "node src/main.mjs"

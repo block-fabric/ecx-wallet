@@ -5,6 +5,7 @@
 // server reports, and sends by having the server build a Signing Request that then takes the same
 // review as any other.
 import { createKeyRouting, type ChainModules, type KeyedChain, type Keys } from "./accounts";
+import { cacheKey, type SessionCache } from "./cache";
 import type { AssetAmount, ChainEntry, ChainKey, NetworkEntry, Starter } from "./chain-module";
 import { ErrorCode, ProviderRpcError } from "./errors";
 import type { SidechainServer, TransferOrder, WatchData } from "./sidechain-server";
@@ -19,6 +20,8 @@ export const WATCHED_CHANGE_ADDRESSES = 20;
 export interface PullPathDeps extends SigningDeps, Keys, ChainModules {
   /** A client for `network`'s default Sidechain Server, in the Server API its Chain Entry names. */
   sidechainServer(entry: ChainEntry, network: NetworkEntry): SidechainServer;
+  /** Where the last reported balances are kept for the session, to show while refreshing. */
+  cache?: SessionCache;
 }
 
 /** A chain with its Chain Module, its key and the Sidechain Server it talks to. */
@@ -30,7 +33,11 @@ export interface ChainReport {
   /** Who reported it. */
   server: string;
   balances: AssetAmount[];
+  /** What's on its way in, unconfirmed: shown apart, never spent. */
+  unconfirmed: AssetAmount[];
   history: unknown[];
+  /** When the server reported it, in milliseconds since the epoch. */
+  readAt: number;
 }
 
 /** A Slot's balance as its Sidechain Server reports it. */
@@ -70,8 +77,15 @@ export function createPullPath(deps: PullPathDeps) {
 
   async function reported<K extends ChainKey>(target: ChainServer<K>): Promise<ChainReport> {
     const { chain, server } = target;
-    const { balances, history } = await server.state(await watch(target));
-    return { chain, server: server.url, balances, history };
+    const { balances, unconfirmed, history } = await server.state(await watch(target));
+    const report = { chain, server: server.url, balances, unconfirmed, history, readAt: deps.now() };
+    await deps.cache?.set(cacheKey.balance(chain, server.url), report);
+    return report;
+  }
+
+  /** The last report from the chain's current server this session, if any. Derives no key. */
+  async function cached<K extends ChainKey>({ chain, server }: ChainServer<K>): Promise<ChainReport | undefined> {
+    return deps.cache?.get<ChainReport>(cacheKey.balance(chain, server.url));
   }
 
   return {
@@ -84,6 +98,15 @@ export function createPullPath(deps: PullPathDeps) {
     async reportedL1State(): Promise<ChainReport> {
       return reported(withServer(await routing.l1()));
     },
+
+    /** The Slot's last reported state this session, to show while `reportedState` refreshes it. */
+    async cachedState(slot: number): Promise<SlotReport | undefined> {
+      const report = await cached(withServer(await routing.slot(slot)));
+      return report && { slot, ...report };
+    },
+
+    /** eCash's last reported state this session, to show while `reportedL1State` refreshes it. */
+    cachedL1State: async (): Promise<ChainReport | undefined> => cached(withServer(await routing.l1())),
 
     /**
      * The wallet's own Send: the Slot's server builds the transfer; the Signing Request it returns

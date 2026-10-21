@@ -1,6 +1,7 @@
 // Typed access to a Chain Module's .wasm (elements.wasm for Slot 24, l1.wasm for eCash itself).
 // The shape follows the spec's Chain Module interface. A module returns data only and holds
-// nothing: it gets its key per call, a Slot's Starter or, for eCash, the L1 Account Key.
+// nothing: it gets its key per call, a Slot's Starter or, for eCash, the L1 Account Key. Beyond
+// the interface, a Slot's module may declare `depositDestination`, and the L1 module builds Deposits.
 import { CoreModule, CoreModuleError } from "./wasm";
 
 declare const keyKind: unique symbol;
@@ -21,7 +22,7 @@ export interface Binding {
 
 export interface Declaration {
   binding: Binding;
-  /** Optional capabilities; none in the skeleton. */
+  /** Optional capabilities: `depositDestination` (a Slot's), `buildDeposit` (L1's). */
   capabilities: string[];
 }
 
@@ -48,6 +49,11 @@ export interface NetworkEntry<P = unknown> {
   parent?: string;
   /** Height 0 and the genesis, or for a fork the first block after it (docs/adr/0003). */
   identityBlock: IdentityBlock;
+  /**
+   * The parent-chain block whose M2 activated the Slot, pinned once checked; only under a parent.
+   * Without it, a Deposit to a Slot with no Treasury yet is refused (docs/adr/0004).
+   */
+  activation?: IdentityBlock;
   /** Default Sidechain Server. */
   sidechainServer: SidechainServerEntry;
   /** Official App origins. */
@@ -117,20 +123,54 @@ export interface VerifiableFacts {
 export type Destination =
   | { kind: "address"; address: string; yours: boolean }
   /**
+   * A Deposit (an M5, on L1) of `deposit` sats to `slot`, whose Treasury grows from
+   * `treasuryBefore` ("0" for its first). `data` (hex; `text` if printable UTF-8) is what the Slot
+   * credits it to. The L1 module decodes these; the wallet adds the rest (`credit`) by asking the
+   * Slot's own Chain Module.
+   */
+  | {
+      kind: "deposit";
+      slot: number;
+      deposit: string;
+      treasuryBefore: string;
+      dataOutput: number;
+      data: string;
+      text?: string;
+      credit?: DepositCredit;
+    }
+  /**
    * A withdrawal burn (how a Withdrawal starts): `payout` (the burn minus `parentFee`) may be paid
    * on L1 to `l1ScriptPubkey` (hex), which `l1Address` gives as an L1 address if it is standard.
    */
   | { kind: "withdrawal"; l1Address?: string; l1ScriptPubkey: string; payout: string; parentFee: string };
 
+/** What a Deposit is credited to on its Slot, as that Slot's own Chain Module derives it. */
+export interface DepositCredit {
+  /** CAIP-2 of the Slot's chain. */
+  chain: string;
+  chainName: string;
+  /** In the chain's own encoding. */
+  address: string;
+  /** The destination re-derives from the Slot's Starter. */
+  yours: boolean;
+  /** L1 confirmations before the Slot may credit it. */
+  confirmations: number;
+}
+
 /** A risky mode of a request, shown above everything else. */
 export type DangerousMode =
   | { kind: "nonDefaultSighash"; input: number; sighash: number }
-  | { kind: "withdrawalBurn"; output: number };
+  | { kind: "withdrawalBurn"; output: number }
+  /** A Deposit: the funds come back to L1 only through a Withdrawal. */
+  | { kind: "deposit"; output: number }
+  /** A Deposit that spends no Treasury: the wallet can't confirm the Slot is active and empty. */
+  | { kind: "firstDeposit"; output: number };
 
 /** What a request the Decoder fully understands does. Data only: `app` renders it. */
 export interface ClearView {
   dangerousModes: DangerousMode[];
-  inputs: (AssetAmount & { index: number; yours: boolean })[];
+  /** `treasury`: the Slot whose Treasury the input spends (L1 only). */
+  inputs: (AssetAmount & { index: number; yours: boolean; treasury?: number })[];
   /** Every output except the fee. */
   outputs: (AssetAmount & { index: number; destination: Destination })[];
   fee: AssetAmount;
@@ -142,7 +182,17 @@ export type Decoded =
   | { kind: "blind"; reason: string; verifiableFacts: VerifiableFacts };
 
 /** Which rule a module refused a request by. */
-export type RefusalCode = "malformed" | "wrongGenesis" | "confidential" | "missingInputFields" | "invalidStarter";
+export type RefusalCode =
+  | "malformed"
+  | "wrongGenesis"
+  | "confidential"
+  | "missingInputFields"
+  | "invalidStarter"
+  /** L1: the spend isn't replay-marked (docs/adr/0004). */
+  | "noReplayMarker"
+  | "invalidAccountKey"
+  /** L1 `buildDeposit`: the coins don't cover the amount and its fee. */
+  | "insufficientFunds";
 
 /** A module refused to decode or sign a request. */
 export class ChainModuleRefusal extends Error {
@@ -155,10 +205,19 @@ export class ChainModuleRefusal extends Error {
   }
 }
 
-/**
- * A Chain Module whose key is `K`. The L1 module (`ChainModule<L1AccountKey>`) has no `check`,
- * `decode` or `sign` exports yet (they come with Deposit, #31): calling them throws.
- */
+/** A Slot's `depositDestination`: what a Deposit to it is credited to, and its rules. */
+export interface DepositDestination {
+  /** In the chain's own encoding. */
+  address: string;
+  /** The bytes an M5's `OP_RETURN` carries, hex. */
+  destination: string;
+  /** The asset the credit arrives in (display hex). */
+  asset: string;
+  /** Sats: the smallest Deposit. */
+  minimum: string;
+}
+
+/** A Chain Module whose key is `K`. */
 export interface ChainModule<K extends ChainKey = Starter> {
   declare(): Declaration;
   chainEntry(): ChainEntry;
@@ -170,6 +229,36 @@ export interface ChainModule<K extends ChainKey = Starter> {
   decode(payload: string, key: K): Decoded;
   /** The payload with signatures on the inputs the key owns; nothing else changes. Throws ChainModuleRefusal. */
   sign(payload: string, key: K): string;
+  /** Only if `declare()` lists `depositDestination` (throws otherwise). */
+  depositDestination(key: K): DepositDestination;
+}
+
+/** What to deposit, and what to build it from (the L1 module's `DepositOrder`). */
+export interface DepositOrder {
+  slot: number;
+  /** Sats, as a decimal string. */
+  amount: string;
+  /** Hex: the Slot's `depositDestination`. */
+  destination: string;
+  /** Sats per 1000 vbytes. */
+  feeRate: number;
+  /** Whole transactions (hex), and which of the account's addresses each output pays. */
+  coins: { tx: string; vout: number; chain: 0 | 1; index: number }[];
+  /** The Slot's Treasury, or null for its first Deposit. */
+  treasury: { tx: string; vout: number } | null;
+  changeIndex: number;
+}
+
+/** eCash's own module: a Chain Module that also builds and completes L1 transactions. */
+export interface L1Module extends ChainModule<L1AccountKey> {
+  /** The Slot's Treasury script on this network, hex. */
+  treasuryScript(slot: number): string;
+  /** A raw transaction's (hex) txid. Throws CoreModuleError if it isn't one. */
+  txid(tx: string): string;
+  /** An unsigned M5 (base64 PSBT). Throws ChainModuleRefusal (e.g. `insufficientFunds`). */
+  buildDeposit(order: DepositOrder, key: L1AccountKey): string;
+  /** A signed PSBT → the raw transaction (hex) and its txid. Throws ChainModuleRefusal. */
+  finalize(payload: string): { tx: string; txid: string };
 }
 
 /** Turns a module's JSON error result into a ChainModuleRefusal. */
@@ -191,7 +280,10 @@ function refusals<T>(call: () => T): T {
 }
 
 export async function loadChainModule<K extends ChainKey = Starter>(bytes: BufferSource): Promise<ChainModule<K>> {
-  const m = await CoreModule.instantiate(bytes);
+  return chainModuleOf<K>(await CoreModule.instantiate(bytes));
+}
+
+function chainModuleOf<K extends ChainKey>(m: CoreModule): ChainModule<K> {
   const json = <T>(name: string, ...args: (string | number)[]) => JSON.parse(m.callText(name, ...args)) as T;
   return {
     declare: () => json<Declaration>("declare"),
@@ -200,5 +292,19 @@ export async function loadChainModule<K extends ChainKey = Starter>(bytes: Buffe
     check: (payload) => refusals(() => void m.callText("check", payload)),
     decode: (payload, key) => refusals(() => json<Decoded>("decode", payload, key)),
     sign: (payload, key) => refusals(() => m.callText("sign", payload, key)),
+    depositDestination: (key) => json<DepositDestination>("deposit_destination", key),
+  };
+}
+
+export async function loadL1Module(bytes: BufferSource): Promise<L1Module> {
+  const m = await CoreModule.instantiate(bytes);
+  const module = chainModuleOf<L1AccountKey>(m);
+  const json = <T>(name: string, ...args: (string | number)[]) => JSON.parse(m.callText(name, ...args)) as T;
+  return {
+    ...module,
+    treasuryScript: (slot) => m.callText("treasury_script", slot),
+    txid: (tx) => m.callText("txid", tx),
+    buildDeposit: (order, key) => refusals(() => json<{ psbt: string }>("build_deposit", JSON.stringify(order), key).psbt),
+    finalize: (payload) => refusals(() => json<{ tx: string; txid: string }>("finalize", payload)),
   };
 }

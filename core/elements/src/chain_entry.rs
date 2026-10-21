@@ -2,6 +2,13 @@
 //! module (embedded from `chain-entry.json`) and the wallet reads it through `chain_entry()`. The
 //! envelope is `ecx-chain-entry`'s; `params` are this module's own.
 //!
+//! betanet's `activation` is block 970,715
+//! (`000000000000000094c4b58e192ea0105c5e82c3eaf168ab53090254bc9a3c3c`), the last of 1,009
+//! consecutive M2 ACKs (from 969,707) for proposal `00241a2e…f1336e86`, the fork's pinned
+//! `BETANET_EXISTING_ELEMENTS_PROPOSAL_HASH` in reverse byte order (read from esplora.beta on
+//! 2026-10-20). The enforcer may count the Slot as active from 970,716; to confirm with the Elements
+//! dev before this ships.
+//!
 //! `build.rs` picks the file: `chain-entry.json`, or `$ECX_ELEMENTS_CHAIN_ENTRY` for the e2e
 //! build, whose Chain Entry differs only in its Sidechain Servers.
 use std::sync::OnceLock;

@@ -38,9 +38,12 @@ export function standardSidechainServer(baseUrl: string, fetchFn: Fetch): Sidech
   return {
     url,
     async state(watch) {
-      const { balances, history } = await call<{ balances?: unknown; history?: unknown }>("GET", `${await register(watch)}/state`);
+      const { balances, unconfirmed = [], history } = await call<{ balances?: unknown; unconfirmed?: unknown; history?: unknown }>("GET", `${await register(watch)}/state`);
       if (!Array.isArray(balances) || !balances.every(isAssetAmount)) throw malformed("state");
-      return { balances: balances.map(({ asset, amount }) => ({ asset, amount })), history: Array.isArray(history) ? history : [] };
+      // Optional: a server that leaves it out has nothing pending.
+      if (!Array.isArray(unconfirmed) || !unconfirmed.every(isAssetAmount)) throw malformed("state");
+      const amounts = (list: { asset: string; amount: string }[]) => list.map(({ asset, amount }) => ({ asset, amount }));
+      return { balances: amounts(balances), unconfirmed: amounts(unconfirmed), history: Array.isArray(history) ? history : [] };
     },
     buildTransfer: async (watch, order) => call<unknown>("POST", `${await register(watch)}/transfers`, order),
     async submit(watch, requestId, payload) {
