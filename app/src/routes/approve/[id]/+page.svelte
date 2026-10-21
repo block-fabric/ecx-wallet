@@ -2,15 +2,18 @@
   import { page } from "$app/state";
   import {
     getApproval,
+    listChains,
     resolveApproval,
     unlockApproval,
     type ApprovalPrompt,
     type AssetAmount,
+    type ChainInfo,
     type ClearView,
     type DangerousMode,
   } from "$lib/background";
   import { shortAsset } from "$lib/asset";
   import Icon from "$lib/Icon.svelte";
+  import { amountText } from "$lib/unit.svelte";
 
   const id = page.params.id ?? "";
   let prompt = $state<ApprovalPrompt | null | undefined>(undefined);
@@ -27,6 +30,11 @@
     );
   }
   load();
+
+  // Amounts are the Decoder's, in base units; the Chain Entries say how to write them, in the
+  // unit every other screen uses.
+  let chains = $state<ChainInfo[]>([]);
+  listChains().then((c) => (chains = c), () => {});
 
   async function decide(approved: boolean) {
     busy = true;
@@ -50,8 +58,16 @@
     }
   }
 
-  /** An amount with its unit: sats on eCash (no assets), else the asset. */
-  const amount = (a: AssetAmount) => (a.asset === "" ? `${a.amount} sats` : `${a.amount} (asset ${shortAsset(a.asset)})`);
+  /** The assets the request's chain names, and the main chain's coin (Deposits and Withdrawal payouts). */
+  const assets = $derived(chains.find((c) => prompt && "chain" in prompt && c.chain === prompt.chain)?.assets ?? []);
+  const coinAssets = $derived(chains.find((c) => c.id === "l1")?.assets ?? []);
+  /** An amount of the request's chain, as named by its Chain Entry; an unnamed asset says its id. */
+  function amount(a: AssetAmount): string {
+    const named = assets.some((n) => n.id === a.asset);
+    return named ? amountText(a.amount, a.asset, assets) : `${amountText(a.amount, a.asset, assets)} (Unknown asset ${shortAsset(a.asset)})`;
+  }
+  /** Sats of the main chain's coin. */
+  const coin = (sats: string | number) => amountText(String(sats), "", coinAssets);
 
   const SIGHASH_NAMES: Record<number, string> = {
     0x02: "NONE",
@@ -69,13 +85,13 @@
       const slot = d ? `Slot ${d.slot}${d.credit ? ` (${d.credit.chainName})` : ""}` : "a Slot";
       if (mode.kind === "firstDeposit") {
         return (
-          `${slot} has no Treasury on eCash's server, so this is its first Deposit. The wallet can't confirm the Slot is active ` +
+          `${slot} has no Treasury on the main chain's server, so this is its first Deposit. The wallet can't confirm the Slot is active ` +
           "and that it has no Treasury yet: if either is wrong, the funds can be lost. If someone else's first Deposit is pending, " +
           "this one can be left stuck unconfirmed."
         );
       }
       return (
-        `This is a Deposit to ${slot}: the funds leave eCash, and only come back through a Withdrawal, a BIP300 miner vote ` +
+        `This is a Deposit to ${slot}: the funds leave the main chain, and only come back through a Withdrawal, a BIP300 miner vote ` +
         "of about 3 to 6 months. Crediting it on the sidechain isn't automatic: it waits for the chain's operator to import it."
       );
     }
@@ -90,7 +106,7 @@
     const burn = output ? amount(output) : "funds";
     const payout =
       output?.destination.kind === "withdrawal"
-        ? ` If the withdrawal is accepted, ${output.destination.payout} is paid on L1 (after a ${output.destination.parentFee} parent fee).`
+        ? ` If the withdrawal is accepted, ${coin(output.destination.payout)} is paid on L1 (after a ${coin(output.destination.parentFee)} parent fee).`
         : "";
     return (
       `Output ${mode.output} is a withdrawal burn of ${burn}: it is irreversible. The burned funds leave this sidechain at once, ` +
@@ -207,14 +223,12 @@
           <li class="card output" data-output>
             <div class="output-head">
               {#if output.destination.kind === "deposit"}
-                <span class="amount" data-deposit-amount>{output.destination.deposit}</span>
-                <span class="muted small">sats</span>
+                <span class="amount" data-deposit-amount>{coin(output.destination.deposit)}</span>
               {:else}
-                <span class="amount">{output.amount}</span>
-                {#if output.asset === ""}
-                  <span class="muted small">sats</span>
-                {:else}
-                  <span class="muted small">asset <code title={output.asset}>{shortAsset(output.asset)}</code></span>
+                {@const named = assets.some((n) => n.id === output.asset)}
+                <span class="amount">{amountText(output.amount, output.asset, assets)}</span>
+                {#if !named}
+                  <span class="muted small">Unknown asset <code title={output.asset}>{shortAsset(output.asset)}</code></span>
                 {/if}
               {/if}
               <span class="index muted small">Output {output.index}</span>
@@ -229,16 +243,16 @@
             {:else if output.destination.kind === "deposit"}
               {@const d = output.destination}
               <div class="small" data-deposit>
-                Deposit {d.deposit} sats to Slot {d.slot}{d.credit ? ` (${d.credit.chainName})` : ""}.
+                Deposit {coin(d.deposit)} to Slot {d.slot}{d.credit ? ` (${d.credit.chainName})` : ""}.
                 {#if d.credit}
-                  {d.deposit} sats credited to <code data-destination>{d.credit.address}</code> after {d.credit.confirmations} blocks, once
+                  {coin(d.deposit)} credited to <code data-destination>{d.credit.address}</code> after {d.credit.confirmations} blocks, once
                   the operator imports it.
                 {:else}
                   Credited to <code data-destination>{d.text ?? d.data}</code>.
                 {/if}
               </div>
               <div class="muted small" data-treasury>
-                Slot {d.slot}'s Treasury: {d.treasuryBefore} → {output.amount} sats (output {output.index}, its address in output {d.dataOutput})
+                Slot {d.slot}'s Treasury: {coin(d.treasuryBefore)} → {coin(output.amount)} (output {output.index}, its address in output {d.dataOutput})
               </div>
               {#if d.credit?.yours}
                 <span class="badge ok" data-yours><Icon name="check" size={14} /> Credited to you (verified by this wallet)</span>
@@ -252,7 +266,7 @@
                 {:else}
                   Withdrawal burn to a non-standard L1 script (hex) <code data-destination>{output.destination.l1ScriptPubkey}</code>,
                 {/if}
-                paying {output.destination.payout} after a {output.destination.parentFee} parent fee
+                paying {coin(output.destination.payout)} after a {coin(output.destination.parentFee)} parent fee
               </div>
               <span class="badge bad" data-not-yours>Not yours: burned</span>
             {/if}

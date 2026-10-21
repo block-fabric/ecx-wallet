@@ -89,13 +89,13 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     assert.equal(shown.outputs.length, 2);
     const [pay, change] = shown.outputs;
     assert.equal(pay.address, FOREIGN_ADDRESS);
-    assert.match(pay.text, /120000/);
+    assert.match(pay.text, /^0\.0012 ECX\b/, "the policy asset is its Chain Entry's ECX");
     assert.equal(pay.yours, false, "the requester calling it change doesn't make it ours");
     assert.equal(pay.label, `Reported by ${app.origin("shop.localhost")}: change`);
     assert.equal(change.address, CHANGE_ADDRESS);
-    assert.match(change.text, /29000/);
+    assert.match(change.text, /^0\.00029 ECX\b/);
     assert.equal(change.yours, true, "re-derived to this wallet");
-    assert.match(shown.fee, /1000/);
+    assert.equal(shown.fee, "0.00001 ECX");
     assert.equal(shown.summary, `Reported by ${app.origin("shop.localhost")}: Pay Bob for the bike`);
 
     await approval.click("[data-approve]");

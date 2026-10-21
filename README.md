@@ -30,7 +30,14 @@ the background decrypts. The Master Mnemonic is stored only encrypted (password 
 only shortens it, clamped to 1-15 min), so it survives
 service-worker restarts and is gone after a browser restart. In the background,
 `await vault.starter(slot)` gives a Slot's Starter and `await vault.l1AccountKey()` the L1 Account
-Key (`[fp/84h/0h/0h]xprv…`; both throw if locked and count as activity).
+Key (`[fp/84h/0h/0h]xprv…`; both throw if locked and count as activity). Using a wallet page also
+counts: a pointer or key event on any of them is reported on the `vault.activity` port (no reply,
+so a page may close mid-report), at most once a minute (`app/src/lib/activity.ts`); a page left
+open untouched doesn't keep the wallet unlocked.
+`vault.status` gives the deadline (`locksAt`) and the delay, and the background announces each new
+deadline to open pages (`vault.deadline`), so the home header counts down ("Locks in 15 min"). The
+Settings screen (`#/settings`) has Grants, the ECX/sats unit, the auto-lock delay (shown only) and
+Lock now.
 
 Accounts: every chain has a Chain Entry, and keys follow its place in the tree (docs/adr/0003):
 eCash, the root (`core/l1/chain-entry.json`, no Slot or parent), gets the L1 Account Key, and a

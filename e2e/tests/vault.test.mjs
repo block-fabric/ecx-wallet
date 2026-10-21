@@ -184,6 +184,68 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       await page.close();
     }));
 
+  /** Moves the stored auto-lock deadline to `ms` from now, standing in for time passing without use. */
+  const deadlineIn = (page, ms) => page.evaluate((ms) => chrome.storage.session.set({ "vault:unlockedUntil": Date.now() + ms }), ms);
+  const deadlineLeft = (page) => page.evaluate(async () => (await chrome.storage.session.get("vault:unlockedUntil"))["vault:unlockedUntil"] - Date.now());
+
+  test("the home page counts down to the auto-lock, following the deadline as it moves", () =>
+    withWallet(async (session) => {
+      await setUpWallet(session);
+      const page = await openWallet(session);
+      await homeSettled(page);
+      const countdown = () => page.$eval("[data-lock-countdown]", (e) => e.textContent.trim());
+      assert.equal(await countdown(), "Locks in 15 min");
+      await page.evaluate(() => chrome.runtime.sendMessage({ kind: "vault.setAutoLock", minutes: 3 }));
+      await page.click('[data-tab="activity"]'); // a use: the deadline moves to 3 minutes from now
+      await page.waitForFunction(() => document.querySelector("[data-lock-countdown]").textContent.trim() === "Locks in 3 min", { timeout: 10_000 });
+      await page.close();
+    }));
+
+  test("using a wallet page moves the auto-lock deadline back, at most once a minute; an untouched page doesn't", () =>
+    withWallet(async (session) => {
+      await setUpWallet(session);
+      const page = await openWallet(session);
+      await homeSettled(page); // its reads derive keys, which count as use; nothing after
+      await deadlineIn(page, 180_000);
+      await new Promise((r) => setTimeout(r, 1_000));
+      assert.ok((await deadlineLeft(page)) < 180_000, "an open page alone keeps nothing unlocked");
+
+      await page.click('[data-tab="activity"]');
+      await page.waitForFunction(
+        async () => (await chrome.storage.session.get("vault:unlockedUntil"))["vault:unlockedUntil"] - Date.now() > 14 * 60_000,
+        { timeout: 10_000 },
+      );
+      await page.waitForFunction(() => document.querySelector("[data-lock-countdown]").textContent.trim() === "Locks in 15 min", { timeout: 10_000 });
+
+      await deadlineIn(page, 180_000);
+      await page.click('[data-tab="assets"]');
+      await new Promise((r) => setTimeout(r, 1_000));
+      assert.ok((await deadlineLeft(page)) < 180_000, "a second use within the minute doesn't ask again");
+      await page.close();
+    }));
+
+  test("Settings shows the auto-lock, switches the unit, links to Grants and locks now", () =>
+    withWallet(async (session) => {
+      await setUpWallet(session);
+      const home = await openWallet(session);
+      await homeSettled(home);
+      await home.click("[data-settings-link]");
+      await home.waitForSelector("[data-settings]");
+      const text = (selector) => home.$eval(selector, (e) => e.textContent.replace(/\s+/g, " ").trim());
+      assert.equal(await text("[data-auto-lock]"), "After 15 minutes without use");
+      assert.equal(await home.$eval("[data-grants-link]", (e) => e.getAttribute("href")), "#/grants");
+
+      assert.equal(await home.$eval('[data-unit-option="ecx"]', (e) => e.getAttribute("aria-pressed")), "true");
+      await home.click('[data-unit-option="sats"]');
+      await home.waitForSelector('[data-unit-option="sats"][aria-pressed="true"]');
+      assert.equal(await home.evaluate(() => chrome.runtime.sendMessage({ kind: "settings.unit" }).then((r) => r.result)), "sats");
+
+      await home.click("[data-lock-now]");
+      await home.waitForSelector('[data-vault-state="locked"]', { timeout: 10_000 });
+      assert.equal(await homeState(session), "locked");
+      await home.close();
+    }));
+
   test("nothing unencrypted that derives from the Master Mnemonic is in persistent storage", () =>
     withWallet(async (session) => {
       await setUpWallet(session);

@@ -7,6 +7,7 @@
   import { chainMark, Chains, onTheWay } from "$lib/chains.svelte";
   import Deposits from "$lib/Deposits.svelte";
   import Icon from "$lib/Icon.svelte";
+  import LockCountdown from "$lib/LockCountdown.svelte";
   import Mark from "$lib/Mark.svelte";
   import TopBar from "$lib/TopBar.svelte";
   import { amountText, unit } from "$lib/unit.svelte";
@@ -98,10 +99,14 @@
   {:else if vaultState === "unlocked"}
     <header class="wallet-head">
       <Mark size={30} />
-      <span class="title">ECX Wallet{#if network}<span class="net-tag" data-network>{network}</span>{/if}</span>
+      <span class="title-block">
+        <span class="title">ECX Wallet{#if network}<span class="net-tag" data-network>{network}</span>{/if}</span>
+        <LockCountdown locksAt={status?.locksAt} onlocked={() => vaultStatus().then((s) => (status = s))} />
+      </span>
       <button class="icon-button" disabled={busy} aria-label="Lock" title="Lock" onclick={() => act(lockVault)} data-lock>
         <Icon name="lock" />
       </button>
+      <a class="icon-button" href="#/settings" aria-label="Settings" title="Settings" data-settings-link><Icon name="settings" /></a>
     </header>
 
     <section class="hero" data-total-ready={list.length > 0 && list.every((c) => !c.shown.refreshing) ? "" : undefined}>
@@ -168,14 +173,6 @@
       {#if list.length > 0}
         <p class="note">Balances are as each chain's server reports them. This wallet doesn't verify them.</p>
       {/if}
-      <a class="card nav-row" href="#/grants" data-grants-link>
-        <Icon name="grants" />
-        <span class="grow">
-          <strong class="small">Grants</strong>
-          <span class="muted tiny">Sites you've let use your wallet</span>
-        </span>
-        <Icon name="forward" size={16} />
-      </a>
     </div>
 
     <div class="panel" role="tabpanel" hidden={tab !== "activity"}>
@@ -236,8 +233,13 @@
     gap: 8px;
     min-height: 36px;
   }
-  .title {
+  .title-block {
     flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .title {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -258,6 +260,9 @@
     text-transform: uppercase;
   }
   .icon-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 34px;
     min-height: 34px;
     padding: 0;

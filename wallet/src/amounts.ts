@@ -31,6 +31,25 @@ export function formatAmount(amount: string, asset: AssetEntry | undefined, unit
   return `${sign}${whole(digits, asset.decimals)} ${asset.ticker}`;
 }
 
+/**
+ * What the user typed, read as `formatAmount` writes it (thousands commas allowed), into base units:
+ * ECX in `unit`, another named asset in whole units, an unknown one in base units. Throws, saying
+ * why, unless it's a positive amount the asset can hold.
+ */
+export function parseAmount(text: string, asset: AssetEntry | undefined, unit: Unit): string {
+  const decimals = asset === undefined || (asset.ecx && unit === "sats") ? 0 : asset.decimals;
+  const match = /^(\d*)(?:\.(\d*))?$/.exec(text.trim().replace(/,/g, ""));
+  if (match === null || (match[1] === "" && !match[2])) throw new Error("Enter an amount, like 0.5.");
+  const [, whole, fraction = ""] = match;
+  if (fraction.replace(/0+$/, "").length > decimals) {
+    if (decimals > 0) throw new Error(`An amount has at most ${decimals} decimal places.`);
+    throw new Error(asset?.ecx ? "Enter a whole number of sats." : "Enter a whole number: this asset has no decimals.");
+  }
+  const base = BigInt(whole + fraction.padEnd(decimals, "0").slice(0, decimals));
+  if (base === 0n) throw new Error("Enter an amount above zero.");
+  return base.toString();
+}
+
 /** One chain as the total sees it: the assets its Chain Entry names, and its report, if it could be read. */
 export interface TotalPart {
   name: string;

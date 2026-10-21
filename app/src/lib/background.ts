@@ -71,6 +71,35 @@ export const unlockVault = (password: string) => send<VaultStatus>({ kind: "vaul
 
 export const lockVault = () => send<VaultStatus>({ kind: "vault.lock" });
 
+/** The port use is reported on: no replies, so a page may close (as the approval window does) mid-report. */
+export const ACTIVITY_PORT = "vault.activity";
+
+/** Reports that someone is using this page: activity, moving the auto-lock deadline. Returns the stop. */
+export function activityReporter(): { used(): void; stop(): void } {
+  let port: chrome.runtime.Port | undefined;
+  return {
+    used() {
+      if (port === undefined) {
+        const opened = chrome.runtime.connect({ name: ACTIVITY_PORT });
+        opened.onDisconnect.addListener(() => (port = undefined));
+        port = opened;
+      }
+      port.postMessage("used");
+    },
+    stop: () => port?.disconnect(),
+  };
+}
+
+/** Calls `onchange` with each new auto-lock deadline the background announces (null once locked); returns the unsubscribe. */
+export function onLockDeadline(onchange: (locksAt: number | null) => void): () => void {
+  const listener = (message: unknown) => {
+    const m = message as { kind?: string; locksAt?: number | null };
+    if (m?.kind === "vault.deadline") onchange(m.locksAt ?? null);
+  };
+  chrome.runtime.onMessage.addListener(listener);
+  return () => chrome.runtime.onMessage.removeListener(listener);
+}
+
 /** Passwords shorter than this are refused (the background enforces it too). */
 export const MIN_PASSWORD_LENGTH = 8;
 

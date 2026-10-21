@@ -34,7 +34,7 @@ import {
   type SigningApproval,
   type VaultModule,
 } from "@ecx/wallet";
-import type { BackgroundMessage, ProviderResponse } from "./messages";
+import { ACTIVITY_PORT, type BackgroundMessage, type ProviderResponse } from "./messages";
 
 /** Error code for Vault failures reported to the wallet's own pages (wrong password, ...). */
 const VAULT_ERROR = -32000;
@@ -81,6 +81,8 @@ const vault = createVault({
       // Awaited: once locked, nothing kept for the session is left.
       await forgetSessionCache().catch(console.error);
     } else chrome.alarms.create(AUTO_LOCK_ALARM, { when: deadline }).catch(() => {});
+    // Open wallet pages count down to it. None may be open: then nobody receives this.
+    chrome.runtime.sendMessage({ kind: "vault.deadline", locksAt: deadline }).catch(() => {});
   },
 });
 
@@ -452,6 +454,13 @@ async function routeVault(message: Extract<BackgroundMessage, { kind: `vault.${s
       return null;
   }
 }
+
+// Someone using a wallet page counts as activity for the auto-lock. Over a port, not a message: a
+// page may close mid-report (the approval window does, right after a click), and nothing replies.
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== ACTIVITY_PORT || port.sender === undefined || !fromWalletPage(port.sender)) return;
+  port.onMessage.addListener(() => vault.touch().catch(console.error));
+});
 
 chrome.runtime.onMessage.addListener((message: BackgroundMessage, sender, sendResponse) => {
   route(message, sender).then(

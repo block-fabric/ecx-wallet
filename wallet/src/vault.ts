@@ -33,6 +33,10 @@ export interface VaultStatus {
   /** A wallet was created or imported in this profile. */
   exists: boolean;
   unlocked: boolean;
+  /** While unlocked: when it locks itself without further use, in ms since the epoch. */
+  locksAt?: number;
+  /** How long without use before it locks itself. */
+  autoLockMinutes: number;
 }
 
 export class VaultError extends Error {
@@ -159,7 +163,17 @@ export function createVault(deps: VaultDeps) {
     status: (): Promise<VaultStatus> =>
       exclusive(async () => {
         const exists = (await persistent.get(VAULT_KEY)) !== undefined;
-        return { exists, unlocked: exists && (await unlocked()) !== undefined };
+        const open = exists && (await unlocked()) !== undefined;
+        const autoLockMinutes = (await autoLockMs()) / 60_000;
+        if (!open) return { exists, unlocked: false, autoLockMinutes };
+        return { exists, unlocked: true, locksAt: await session.get<number>(SESSION_DEADLINE), autoLockMinutes };
+      }),
+
+    /** Someone is using a wallet page: counts as activity (moves the deadline), if unlocked. */
+    touch: () =>
+      exclusive(async () => {
+        const open = await unlocked();
+        if (open !== undefined) await keepUnlocked(open.key);
       }),
 
     /** A fresh Master Mnemonic for the create flow. Not stored until `create`. */

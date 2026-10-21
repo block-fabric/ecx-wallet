@@ -112,5 +112,5 @@ export {
   type DepositStore,
   type PendingDeposit,
 } from "./deposit";
-export { formatAmount, totalAcrossChains, type TotalPart } from "./amounts";
+export { formatAmount, parseAmount, totalAcrossChains, type TotalPart } from "./amounts";
 export { createSettings, UNITS, type Settings, type Unit } from "./settings";
