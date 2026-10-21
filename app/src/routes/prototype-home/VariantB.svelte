@@ -333,7 +333,6 @@
                 {@render avatar(c, 24)}
                 <span class="col">
                   <strong>{c.name}</strong>
-                  <span class="mono muted tiny">{c.chain}</span>
                 </span>
               </button>
               <span class="grow"></span>

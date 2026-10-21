@@ -48,8 +48,9 @@
   }
   /* The toolbar popup's size. The transform makes it the containing block for position: fixed,
      so sheets and tab bars pin to the popup as they would to the real popup window. */
-  /* eCash's brand (ecash.com/brand): eCash Gold on its own neutrals; its pink for warnings and lime
-     for success. Darker gold, pink and lime carry text on light backgrounds, for contrast. */
+  /* eCash's brand (ecash.com/brand): eCash Gold on its own neutrals, and its lime
+     for success. Unconfirmed amounts take its cyan ("live"), not a warning colour: pending, not wrong.
+     Darker gold, cyan and lime carry text on light backgrounds, for contrast. */
   .popup {
     --bg: #f7f7f4;
     --surface: #ffffff;
@@ -64,8 +65,8 @@
     --focus: #b87a1e;
     --ok: #4f7a12;
     --ok-bg: #eef6e0;
-    --warn: #b4325a;
-    --warn-bg: #fbe8ee;
+    --warn: #1a6f7a;
+    --warn-bg: #e3f4f6;
   }
   @media (prefers-color-scheme: dark) {
     .popup {
@@ -82,8 +83,8 @@
       --focus: #e8a84a;
       --ok: #a8d65a;
       --ok-bg: #1f2b10;
-      --warn: #e86a8a;
-      --warn-bg: #3a1520;
+      --warn: #5ac8d6;
+      --warn-bg: #0f2a2e;
       --shadow: none;
     }
   }
