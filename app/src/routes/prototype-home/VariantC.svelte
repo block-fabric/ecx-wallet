@@ -7,6 +7,7 @@
   import Mark from "$lib/Mark.svelte";
   import type { HistoryEntry } from "$lib/background";
   import { shortAsset } from "$lib/asset";
+  import EcashLogo from "./EcashLogo.svelte";
   import ProtoIcon from "./ProtoIcon.svelte";
   import {
     ASSET_NAMES,
@@ -126,8 +127,8 @@
 </script>
 
 {#snippet avatar(c: ProtoChain, size = 36)}
-  <span class="chain-avatar" class:slot={c.id !== "l1"} style:width="{size}px" style:height="{size}px">
-    {c.mark ?? (c.id === "l1" ? "e" : "E+")}
+  <span class="chain-avatar" class:slot={c.id !== "l1"} class:ecash={c.id === "l1"} style:width="{size}px" style:height="{size}px">
+    {#if c.id === "l1"}<EcashLogo size={Math.round(size * 0.6)} />{:else}{c.mark ?? "E+"}{/if}
   </span>
 {/snippet}
 
@@ -226,7 +227,9 @@
           {#each assetsOf(detail.shown) as { asset, amount, unconfirmed } (asset)}
             {@const name = named(asset)}
             <li class="row">
-              <span class="token-avatar" class:unknown={!name}>{name ? name.ticker[0] : "?"}</span>
+              <span class="token-avatar" class:unknown={!name} class:ecash={name?.ticker === "ECX"}>
+                {#if name?.ticker === "ECX"}<EcashLogo size={20} />{:else}{name ? name.ticker[0] : "?"}{/if}
+              </span>
               <span class="col grow">
                 <strong>{name ? name.ticker : "Unknown asset"}</strong>
                 <span class="muted tiny">{#if name}{name.name}{:else}<code title={asset}>{shortAsset(asset)}</code>{/if}</span>
@@ -314,7 +317,9 @@
                 {@const name = named(asset)}
                 <li>
                   <button class="asset-row" onclick={() => ((open = c.id), (chainTab = "assets"))}>
-                    <span class="token-avatar" class:unknown={!name}>{name ? name.ticker[0] : "?"}</span>
+                    <span class="token-avatar" class:unknown={!name} class:ecash={name?.ticker === "ECX"}>
+                {#if name?.ticker === "ECX"}<EcashLogo size={20} />{:else}{name ? name.ticker[0] : "?"}{/if}
+              </span>
                     <span class="col grow">
                       <strong>{name ? name.ticker : "Unknown asset"}</strong>
                       <span class="muted tiny">{#if name}{name.name}{:else}<code title={asset}>{shortAsset(asset)}</code>{/if}</span>
@@ -732,7 +737,7 @@
   }
   .chain-name:hover {
     background: none;
-    color: var(--accent);
+    color: var(--accent-text, var(--accent));
   }
   .subtotal {
     font-weight: 600;
@@ -772,7 +777,7 @@
   }
   .icon.on {
     background: color-mix(in srgb, var(--accent) 14%, transparent);
-    color: var(--accent);
+    color: var(--accent-text, var(--accent));
   }
   .small-icon {
     width: 24px;
@@ -826,7 +831,7 @@
     height: 24px;
     border-radius: 50%;
     background: color-mix(in srgb, var(--accent) 12%, transparent);
-    color: var(--accent);
+    color: var(--accent-text, var(--accent));
   }
   .more-head .fold {
     display: flex;
@@ -880,6 +885,11 @@
   .switch-toggle.on:hover {
     background: var(--accent-hover);
   }
+  /* eCash's mark: eCash Gold on near black, with clear space around it. */
+  .chain-avatar.ecash,
+  .token-avatar.ecash {
+    background: #0a0a0c;
+  }
   .count {
     display: inline-flex;
     align-items: center;
@@ -924,7 +934,7 @@
     gap: 4px;
     border: none;
     background: none;
-    color: var(--accent);
+    color: var(--accent-text, var(--accent));
     font-size: 0.8rem;
   }
   .chain-row.pick {
@@ -964,7 +974,7 @@
   }
   .tabs button.on {
     border-bottom-color: var(--accent);
-    color: var(--accent);
+    color: var(--accent-text, var(--accent));
   }
   .tabs + ul {
     margin-top: -14px;
@@ -1006,7 +1016,7 @@
     color: var(--ok);
   }
   .activity-icon.deposit {
-    color: var(--accent);
+    color: var(--accent-text, var(--accent));
   }
   .col {
     display: flex;
