@@ -22,7 +22,7 @@
 
 {#snippet scenarioToggle()}
   <button onclick={() => (scenario = scenario === "healthy" ? "trouble" : "healthy")} title="Switch the made-up data">
-    Data: {scenario === "healthy" ? "all fine" : "eCash down, Slot refreshing"}
+    Data: {scenario === "healthy" ? "all fine" : "eCash down, Elements+ refreshing"}
   </button>
 {/snippet}
 

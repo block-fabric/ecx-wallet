@@ -83,7 +83,7 @@
 
 {#snippet avatar(c: ProtoChain, size = 36)}
   <span class="chain-avatar" class:slot={c.id !== "l1"} style:width="{size}px" style:height="{size}px">
-    {c.id === "l1" ? "e" : c.id}
+    {c.id === "l1" ? "e" : "E+"}
   </span>
 {/snippet}
 
@@ -247,7 +247,7 @@
       {#if deposits.length && scope !== "l1"}
         <button class="banner" onclick={() => (open = 24)}>
           <span class="spinner"></span>
-          <span class="grow">{deposits.length} Deposit{deposits.length > 1 ? "s" : ""} to Slot 24 in progress</span>
+          <span class="grow">{deposits.length} Deposit{deposits.length > 1 ? "s" : ""} to Elements+ in progress</span>
           <ProtoIcon name="forward" size={16} />
         </button>
       {/if}

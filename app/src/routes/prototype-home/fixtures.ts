@@ -17,7 +17,7 @@ export const OTHER_ASSET = "9e41b07a2c6d8f3e5b1a4c7d9e2f6a8b0c3d5e7f9a1b4c6d8e0f
  */
 export const ASSET_NAMES: Record<string, { ticker: string; name: string; decimals: number }> = {
   "": { ticker: "ECX", name: "eCash", decimals: 8 },
-  [POLICY_ASSET]: { ticker: "ECX", name: "eCash on Slot 24", decimals: 8 },
+  [POLICY_ASSET]: { ticker: "ECX", name: "eCash on Elements+", decimals: 8 },
 };
 
 export interface ProtoChain {
@@ -52,7 +52,7 @@ const CREDIT_TXID = "d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c
 
 const pending = (txid: string, value: string): PendingDeposit => ({
   slot: 24,
-  chainName: "Slot 24",
+  chainName: "Elements+",
   txid,
   vout: 0,
   value,
@@ -103,7 +103,7 @@ function slot24(scenario: Scenario): ProtoChain {
   };
   return {
     id: 24,
-    name: "Slot 24",
+    name: "Elements+",
     chain: "ecash:betanet-s24",
     address: "tlq1qqvzrwmpx0vq2kqcpnxtgszzlqqvyyqgfdqwjvd4s40rutvcf3zh0kuk6d549cauk00d7cv8tychpk9su4c0h7e0ukgq6ssd9q",
     shown: scenario === "healthy" ? { refreshing: false, report } : { refreshing: true, report },
@@ -186,7 +186,7 @@ export function depositState(d: DepositStatus): string {
 
 /** How an activity row describes itself. */
 export function kindOf(entry: HistoryEntry): { label: string; icon: "in" | "out" | "self" | "deposit" } {
-  if (entry.depositTo !== undefined) return { label: `Deposit to Slot ${entry.depositTo}`, icon: "deposit" };
+  if (entry.depositTo !== undefined) return { label: `Deposit to ${entry.depositTo === 24 ? "Elements+" : `Slot ${entry.depositTo}`}`, icon: "deposit" };
   if (entry.toSelf) return { label: "Fee, to yourself", icon: "self" };
   const out = entry.amounts.some((a) => a.amount.startsWith("-"));
   return out ? { label: "Sent", icon: "out" } : { label: "Received", icon: "in" };
