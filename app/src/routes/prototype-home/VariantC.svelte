@@ -305,7 +305,7 @@
         <Mark size={30} />
         <span class="col title-block">
           <span class="title">ECX Wallet</span>
-          <span class="lock-sub" title="The wallet locks itself after 15 minutes without use"><span class="dot"></span>Unlocked · locks in {lockIn} without use</span>
+          <span class="lock-sub" title="The wallet locks itself after 15 minutes without use"><span class="dot"></span>Locks in {lockIn}</span>
         </span>
         <button class="icon" aria-label="Lock" title="Lock"><ProtoIcon name="lock" /></button>
         <button class="icon" aria-label="Settings" title="Settings" onclick={() => go("settings")}><ProtoIcon name="settings" /></button>
