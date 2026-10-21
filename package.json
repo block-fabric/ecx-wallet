@@ -8,6 +8,7 @@
     "build": "pnpm --filter @ecx/core build && pnpm --filter @ecx/app build && pnpm --filter @ecx/extension build",
     "build:e2e": "node e2e/scripts/build.mjs",
     "test": "pnpm --filter @ecx/core test && pnpm build && pnpm build:e2e && pnpm --filter @ecx/e2e test",
-    "typecheck": "pnpm -r --if-present typecheck"
+    "typecheck": "pnpm -r --if-present typecheck",
+    "prototype:home": "pnpm --filter @ecx/app exec vite dev --open '/#/prototype-home/A'"
   }
 }
