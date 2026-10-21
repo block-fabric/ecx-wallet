@@ -116,3 +116,4 @@ export {
 export { formatAmount, parseAmount, totalAcrossChains, type TotalPart } from "./amounts";
 export { createSettings, UNITS, type Settings, type Unit } from "./settings";
 export { qrMatrix } from "./qr";
+export { activityDays, activityKind, localDay, type ActivityItem, type ActivityKind } from "./activity";

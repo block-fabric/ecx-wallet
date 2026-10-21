@@ -91,11 +91,16 @@ once the user approves: in the connect prompt ("Approving also turns on …"), o
 `turnOn` prompt first; refused, 4001. The Send screen is `#/send/<slot>` (`send.start`), for Slots only, picked from home's
 "Send from" sheet.
 
-History (#33): home's Activity tab and each chain's screen link to `#/history/<chain>` (`l1` or the Slot), which reads the
-chain's transactions only when opened (`history.reported`; this session's last, `history.cached`,
-shows while it refreshes). Each entry is the wallet's net change per asset, fee included, with its
-block time, or "Pending" (trusted: it spends only the wallet's own coins, each confirmed or from a
-trusted transaction) or "Unconfirmed" (anything else, with a warning), and its txid. Over Esplora
+History (#33): the Activity tabs, home's (every chain that's on, merged, with chips for one
+chain) and each chain screen's (its own), read the chains' transactions only when first opened
+(`history.reported` per chain, in parallel; this session's last, `history.cached`, shows while it
+refreshes; a chain that fails says so with Retry, the others still show). Deposits in progress come
+first, then "Not yet confirmed", then one section per day (`activityDays`). Each row is what the
+transaction did (`activityKind`: Received, Sent, "Fee, to yourself", "Deposit to <chain>"), the
+wallet's net change per asset, fee included, and its time, or "Pending" (trusted: it spends only the
+wallet's own coins, each confirmed or from a trusted transaction) or "Unconfirmed" (anything else,
+with a warning); tapping it shows its details: status, when mined, the chain and its id, the txid
+with Copy, and who reported it. Over Esplora
 (`SidechainServer.history`) the wallet reads `/address/:a/txs` for the 40 watched addresses, merges
 them by txid and works the rest out itself: "Fee, to yourself" when every output is the wallet's,
 "Deposit to Slot N" for an M5 it funded to a Treasury script of a Slot it supports, and "+
@@ -112,7 +117,7 @@ a server's passed identity check (once per URL, as ADR 0002 has it; a failure is
 last balance each chain's server reported (`l1.cached`, `accounts.cached`: shown at once, marked
 "Last read at …; refreshing…" and `data-refreshing` on the card, until the fresh one arrives), and
 raw transactions, kept only once the L1 module hashes them to their txid, each chain's last
-history (`history.cached`, shown the same way on its History screen), and each Slot's last
+history (`history.cached`, shown the same way on the Activity tabs), and each Slot's last
 Deposit that failed after approval (below). Nothing else a Deposit is
 built from is cached: its coins, Treasury, fee rate and confirmations are always read fresh. Esplora
 lookups run 20 at once (`QUERIES_AT_ONCE`). Tests that change a server's chain lock and unlock first

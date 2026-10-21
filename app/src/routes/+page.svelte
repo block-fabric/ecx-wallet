@@ -5,7 +5,7 @@
   import AssetRows from "$lib/AssetRows.svelte";
   import ChainMark from "$lib/ChainMark.svelte";
   import { chainMark, Chains, onTheWay } from "$lib/chains.svelte";
-  import Deposits from "$lib/Deposits.svelte";
+  import ActivityFeed from "$lib/ActivityFeed.svelte";
   import Icon from "$lib/Icon.svelte";
   import LockCountdown from "$lib/LockCountdown.svelte";
   import Mark from "$lib/Mark.svelte";
@@ -193,21 +193,9 @@
     </div>
 
     <div class="panel" role="tabpanel" hidden={tab !== "activity"}>
-      <Deposits {slots} {ecx} onchange={(slot) => chains?.readDeposits(slot)} />
-      <section class="transactions">
-        <h2>Transactions</h2>
-        <ul>
-          {#each list as c (c.info.id)}
-            <li>
-              <a class="nav-row" href="#/history/{c.info.id}" data-history-link={c.info.id}>
-                <ChainMark {...chainMark(c.info)} size={24} />
-                <span class="grow small">{c.info.name}</span>
-                <Icon name="forward" size={16} />
-              </a>
-            </li>
-          {/each}
-        </ul>
-      </section>
+      {#if chains}
+        <ActivityFeed {chains} views={list} {slots} active={tab === "activity"} chips />
+      {/if}
     </div>
   {/if}
 
@@ -449,15 +437,5 @@
     border-radius: 50%;
     background: color-mix(in srgb, var(--accent) 14%, transparent);
     color: var(--accent-text);
-  }
-  .transactions ul {
-    display: flex;
-    flex-direction: column;
-  }
-  .transactions .nav-row {
-    display: flex;
-    min-height: 48px;
-    padding: 6px 0;
-    border-bottom: 1px solid var(--border);
   }
 </style>

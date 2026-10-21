@@ -1,6 +1,7 @@
-// Seam 1, transaction history (#33): each chain's History screen (`#/history/<chain>`, linked from
-// its home card) lists the transactions touching the addresses the wallet watches, as its Sidechain
-// Server reports them: the wallet's net change per asset, pending or confirmed, and the txid.
+// Seam 1, transaction history (#33): the Activity tabs (home's, every chain's merged; a chain
+// screen's, its own) list the transactions touching the addresses the wallet watches, as each
+// chain's Sidechain Server reports them: the wallet's net change per asset, pending or confirmed,
+// by day; tapping one shows its details, the txid among them.
 //
 // eCash's server is the stub Esplora server, which lists an address's transactions from the raw
 // transactions in its `txs` (made-up inputs), as an indexer would.
@@ -36,19 +37,35 @@ const tx = (seed, outputs, { inputs, confirmed = true, blockHeight = 970800, blo
 const L1 = { identityBlock: L1_FORK_BLOCK, txs: [] };
 const ESPLORA = { identityBlock: { height: 0, hash: GENESIS } };
 
-/** The History screen's entries once refreshed, as a user reads them. */
+/** Opens `chain`'s screen on its Activity tab (or home's, for "home"), once its transactions are in. */
+async function openActivity(session, chain) {
+  const page = chain === "home" ? await session.openPage("index.html#/") : await openWalletPage(session, `#/chain/${chain}`);
+  await page.waitForSelector('[data-tab="activity"]', { timeout: 20_000 });
+  await page.click('[data-tab="activity"]');
+  return page;
+}
+
+/** Closes an Activity page once every read it started has answered (Firefox logs replies to a closed page). */
+async function closeSettled(page) {
+  if (await page.$("[data-chain-screen]")) await page.waitForSelector("[data-chain-screen][data-settled]", { timeout: 20_000 });
+  else await homeSettled(page);
+  await page.close();
+}
+
+/** An Activity tab's entries once refreshed, as a user reads them. */
 async function readHistory(session, chain) {
-  const page = await openWalletPage(session, `#/history/${chain}`);
-  await page.waitForSelector("[data-history]:not([data-refreshing])", { timeout: 20_000 });
+  const page = await openActivity(session, chain);
+  await page.waitForSelector("[data-activity]:not([data-refreshing])", { timeout: 20_000 });
   const shown = await page.evaluate(() => {
     const text = (e) => e?.textContent.replace(/\s+/g, " ").trim();
     return {
-      label: text(document.querySelector("[data-reported-by]")),
       error: text(document.querySelector("[data-history-error]")),
       empty: text(document.querySelector("[data-history-empty]")),
       more: text(document.querySelector("[data-history-more]")),
+      days: [...document.querySelectorAll("[data-activity] .day h2")].map(text),
       entries: [...document.querySelectorAll("[data-history-entry]")].map((e) => ({
         txid: e.getAttribute("data-history-entry"),
+        chain: e.getAttribute("data-history-chain"),
         state: e.getAttribute("data-history-state"),
         amounts: [...e.querySelectorAll("[data-history-amount]")].map(text),
         status: text(e.querySelector("[data-history-status]")),
@@ -56,11 +73,10 @@ async function readHistory(session, chain) {
         warning: e.querySelector("[data-history-status]")?.getAttribute("title") ?? undefined,
         label: text(e.querySelector("[data-history-label]")),
         hidden: text(e.querySelector("[data-history-hidden]")),
-        shownTxid: e.querySelector("[data-history-txid]")?.getAttribute("title"),
       })),
     };
   });
-  await page.close();
+  await closeSettled(page);
   return shown;
 }
 
@@ -86,15 +102,29 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     L1.txs = [received];
     const shown = await readHistory(session, "l1");
     assert.equal(shown.error, undefined);
-    assert.match(shown.label, new RegExp(`Reported by ${l1Stub.url.replace(/[.]/g, "\\.")}`));
     assert.equal(shown.entries.length, 1);
     const [entry] = shown.entries;
     assert.equal(entry.txid, received.txid);
     assert.equal(entry.state, "confirmed");
     assert.deepEqual(entry.amounts, ["+0.0004 ECX"], "only what reached the wallet's address");
     assert.equal(entry.time, new Date(1792000000 * 1000).toISOString(), "the block's time");
-    assert.equal(entry.shownTxid, received.txid);
+    assert.equal(entry.label, "Received");
     assert.equal(shown.more, undefined, "nothing older left out");
+
+    // Its details: the full txid and who reported it.
+    const page = await openActivity(session, "l1");
+    await page.waitForSelector(`[data-history-entry="${received.txid}"]`, { timeout: 20_000 });
+    await page.click(`[data-history-entry="${received.txid}"]`);
+    await page.waitForSelector("[data-activity-details]");
+    const details = await page.evaluate(() => ({
+      txid: document.querySelector("[data-details-txid]").textContent.trim(),
+      reportedBy: document.querySelector("[data-details-reported-by]").textContent.trim(),
+      mined: document.querySelector("[data-details-mined]")?.textContent.trim(),
+    }));
+    await closeSettled(page);
+    assert.equal(details.txid, received.txid);
+    assert.match(details.reportedBy, new RegExp(`^Reported by ${l1Stub.url.replace(/[.]/g, "\\.")}\\.`));
+    assert.ok(details.mined, "when it was mined");
   });
 
   test("a spend shows what left the wallet, fee included, once, though it touches two of its addresses; newest first", async () => {
@@ -109,7 +139,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       [spend.txid, ["−0.00031 ECX"]],
       [funding.txid, ["+0.0005 ECX"]],
     ]);
-    assert.equal(shown.entries[0].label, undefined);
+    assert.equal(shown.entries[0].label, "Sent");
   });
 
   test("a transaction to yourself shows the fee it cost, labelled as such", async () => {
@@ -140,9 +170,9 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     L1.txs = [funding, oldTreasury, deposit, withdrawal];
     const shown = await readHistory(session, "l1");
     assert.deepEqual(shown.entries.map((e) => [e.txid, e.amounts, e.label]), [
-      [withdrawal.txid, ["+0.00015 ECX"], undefined],
+      [withdrawal.txid, ["+0.00015 ECX"], "Received"],
       [deposit.txid, ["−0.00041 ECX"], "Deposit to Elements+"],
-      [funding.txid, ["+0.0005 ECX"], undefined],
+      [funding.txid, ["+0.0005 ECX"], "Received"],
     ]);
   });
 
@@ -205,7 +235,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       assert.deepEqual(out.amounts, ["−0.001003 ECX"]);
       assert.equal(out.hidden, undefined);
       assert.deepEqual(into.amounts.map((a) => a.split(" ")[0]), ["+0.0015", "+7"]);
-      assert.match(into.amounts[1], /Unknown asset 11111111…11111111$/, "an asset the Chain Entry doesn't name");
+      assert.match(into.amounts[1], /^\+7 Unknown asset$/, "an asset the Chain Entry doesn't name");
       assert.equal(into.hidden, "+ confidential amounts not shown");
     } finally {
       delete ESPLORA.addressTxs;
@@ -219,7 +249,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     const shown = await readHistory(session, "l1");
     assert.equal(shown.entries.length, 25, "Esplora's latest 25");
     assert.deepEqual(shown.entries[0].amounts, ["+0.00001025 ECX"]);
-    assert.equal(shown.more, "Older transactions may not be shown.");
+    assert.equal(shown.more, "Older Main chain transactions may not be shown.");
   });
 
   test("with no transactions, it says so", async () => {
@@ -236,33 +266,57 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     L1.delayMs = 1500;
     L1.addressTxs = { [L1_RECEIVE_0]: { not: "a list" } };
     try {
-      const page = await openWalletPage(session, "#/history/l1");
-      await page.waitForSelector("[data-history][data-refreshing] [data-history-entry]", { timeout: 10_000 });
-      assert.match(await page.$eval("[data-read-at]", (e) => e.textContent.replace(/\s+/g, " ").trim()), /^Last read at .+; refreshing…$/);
-      await page.waitForSelector("[data-history]:not([data-refreshing])", { timeout: 20_000 });
+      const page = await openActivity(session, "l1");
+      await page.waitForSelector("[data-activity][data-refreshing] [data-history-entry]", { timeout: 10_000 });
+      assert.match(await page.$eval("[data-activity] [data-read-at]", (e) => e.textContent.replace(/\s+/g, " ").trim()), /^Main chain: last read at .+; refreshing…$/);
+      await page.waitForSelector("[data-activity]:not([data-refreshing])", { timeout: 20_000 });
       const shown = await page.evaluate(() => ({
         error: document.querySelector("[data-history-error]")?.textContent.replace(/\s+/g, " ").trim(),
         entries: [...document.querySelectorAll("[data-history-entry]")].map((e) => e.getAttribute("data-history-entry")),
       }));
-      await page.close();
+      await closeSettled(page);
       assert.deepEqual(shown.entries, [received.txid]);
-      assert.match(shown.error, /^Couldn't refresh: The Sidechain Server at .+ sent a malformed list of transactions\.$/);
+      assert.match(shown.error, /^Couldn't refresh Main chain activity: The Sidechain Server at .+ sent a malformed list of transactions\. Retry$/);
     } finally {
       L1.delayMs = 0;
       delete L1.addressTxs;
     }
   });
 
-  test("home's Activity tab links to each chain's History", async () => {
-    const page = await session.openPage("index.html#/");
-    await page.waitForSelector('[data-history-link="24"]', { timeout: 10_000 });
-    const links = await page.$$eval("[data-history-link]", (links) => links.map((a) => [a.getAttribute("data-history-link"), a.getAttribute("href")]));
-    await homeSettled(page);
-    await page.close();
-    assert.deepEqual(links, [
-      ["l1", "#/history/l1"],
-      ["24", "#/history/24"],
-    ]);
+  test("home's Activity tab merges every chain's transactions, newest first, with chips to show one chain", async () => {
+    const onMain = tx("c8", [{ value: 40000, script: addressScript(L1_RECEIVE_0) }], { blockTime: 1792000000 });
+    L1.txs = [onMain];
+    const onElements = {
+      txid: "e5".repeat(32),
+      vin: [{ txid: "d5".repeat(32), vout: 0, prevout: { scriptpubkey: FOREIGN, value: 9000, asset: POLICY_ASSET }, is_coinbase: false }],
+      vout: [{ scriptpubkey: addressScript(RECEIVE_0), value: 8000, asset: POLICY_ASSET }, { scriptpubkey: "", value: 1000, asset: POLICY_ASSET }],
+      status: { confirmed: true, block_height: 2002, block_hash: "00".repeat(32), block_time: 1792000600 },
+    };
+    ESPLORA.addressTxs = { [RECEIVE_0]: [onElements] };
+    try {
+      const shown = await readHistory(session, "home");
+      assert.deepEqual(
+        shown.entries.map((e) => [e.chain, e.txid, e.amounts]),
+        [
+          ["24", onElements.txid, ["+0.00008 ECX"]],
+          ["l1", onMain.txid, ["+0.0004 ECX"]],
+        ],
+        "both chains, the newer first",
+      );
+      assert.equal(shown.days.length, 1, "both on the same day");
+
+      const page = await openActivity(session, "home");
+      await page.waitForSelector("[data-activity]:not([data-refreshing])", { timeout: 20_000 });
+      const chips = await page.$$eval("[data-chip]", (c) => c.map((e) => e.textContent.trim()));
+      assert.deepEqual(chips, ["All", "Main chain", "Elements+"]);
+      await page.click('[data-chip="24"]');
+      await page.waitForFunction(() => document.querySelectorAll("[data-history-entry]").length === 1);
+      assert.equal(await page.$eval("[data-history-entry]", (e) => e.getAttribute("data-history-chain")), "24");
+      await homeSettled(page);
+      await page.close();
+    } finally {
+      delete ESPLORA.addressTxs;
+    }
   });
 
   test("none of the above raised extension runtime errors", async () => {

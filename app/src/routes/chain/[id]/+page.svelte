@@ -5,7 +5,7 @@
   import AssetRows from "$lib/AssetRows.svelte";
   import ChainMark from "$lib/ChainMark.svelte";
   import { chainMark, Chains } from "$lib/chains.svelte";
-  import Deposits from "$lib/Deposits.svelte";
+  import ActivityFeed from "$lib/ActivityFeed.svelte";
   import Icon from "$lib/Icon.svelte";
   import { amountText, unit } from "$lib/unit.svelte";
 
@@ -23,15 +23,25 @@
   });
 
   const view = $derived(chains.get(id));
-  /** Every ECX is counted in the main chain's coin, so a Deposit reads the same on every screen. */
-  const ecx = $derived(chains.get("l1")?.info.assets ?? []);
   const ecxAsset = $derived(view?.info.assets.find((a) => a.ecx));
   const balance = $derived(ecxAsset && view?.shown.report?.balances.find((b) => b.asset === ecxAsset.id));
   const pending = $derived(ecxAsset && view?.shown.report?.unconfirmed.find((u) => u.asset === ecxAsset.id));
   const deposits = $derived(view && Array.isArray(view.deposits) ? view.deposits : []);
+  const settled = $derived(
+    view !== undefined &&
+      (!view.info.on || (!view.shown.refreshing && view.address !== undefined)) &&
+      (id === "l1" || (view.deposits !== undefined && view.refused !== undefined)) &&
+      (tab !== "activity" || (view.history !== undefined && !view.history.refreshing)),
+  );
 </script>
 
-<main class="screen" data-screen-ready={view || locked ? "" : undefined} data-chain-screen={id}>
+<!-- data-settled: every read this screen started has answered (tests close it only then). -->
+<main
+  class="screen"
+  data-screen-ready={view || locked ? "" : undefined}
+  data-chain-screen={id}
+  data-settled={settled ? "" : undefined}
+>
   <header>
     <a class="back" href="#/" aria-label="Back"><Icon name="back" size={20} /></a>
     {#if view}
@@ -75,14 +85,7 @@
       {/if}
     </div>
     <div class="panel" role="tabpanel" hidden={tab !== "activity"}>
-      {#if id !== "l1"}
-        <Deposits slots={[view]} {ecx} onchange={(slot) => chains.readDeposits(slot)} />
-      {/if}
-      <a class="card nav-row" href="#/history/{id}" data-history-link={id}>
-        <Icon name="history" />
-        <span class="grow small"><strong>Transactions</strong></span>
-        <Icon name="forward" size={16} />
-      </a>
+      <ActivityFeed {chains} views={[view]} slots={id === "l1" ? [] : [view]} active={tab === "activity"} />
     </div>
   {/if}
 
@@ -186,18 +189,5 @@
   }
   .panel[hidden] {
     display: none;
-  }
-  .nav-row {
-    flex-direction: row;
-    align-items: center;
-    gap: 12px;
-    color: var(--text);
-    text-decoration: none;
-  }
-  .nav-row:hover {
-    background: var(--surface-2);
-  }
-  .grow {
-    flex: 1;
   }
 </style>

@@ -298,6 +298,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       const home = await session.openPage("index.html#/");
       await home.waitForSelector(`[data-deposit="${txid}"] [data-deposit-stop-tracking]`, { timeout: 20_000 });
       await home.click('[data-tab="activity"]');
+      await home.waitForSelector("[data-deposit-stop-tracking]", { visible: true });
       assert.equal(await home.$eval("[data-deposit-stop-tracking]", (e) => e.textContent.trim()), "Stop tracking");
       await home.click("[data-deposit-stop-tracking]");
       await home.waitForFunction((t) => document.querySelector(`[data-deposit="${t}"]`) === null, { timeout: 10_000 }, txid);
@@ -367,6 +368,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     const home = await session.openPage("index.html#/");
     await home.waitForSelector("[data-deposit-refused]", { timeout: 20_000 });
     await home.click('[data-tab="activity"]');
+    await home.waitForSelector("[data-deposit-refused-close]", { visible: true });
     const refused = await home.$eval("[data-deposit-refused]", (e) => e.textContent.replace(/\s+/g, " ").trim());
     assert.match(refused, /^Your Deposit of 0.00005 ECX failed: .*min relay fee not met.* Nothing was sent\./);
     assert.equal(await home.$eval("[data-deposit-retry]", (e) => [e.textContent.trim(), e.getAttribute("href")].join(" → ")), "Try again → #/deposit/24");
