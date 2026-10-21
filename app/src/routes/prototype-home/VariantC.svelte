@@ -1,187 +1,348 @@
 <script lang="ts">
-  // PROTOTYPE, throw away. Variant C, "Chain cards and one feed": each chain is a swipeable card
-  // (balance, address, copy), action pills follow the card in view, Deposits sit in an "In
-  // progress" strip with progress bars, and one activity feed below, filterable by chain.
+  // PROTOTYPE, throw away. Variant C, "A's look on B's map": B's structure (every chain on the
+  // home screen, a bottom tab bar, one merged Activity, drill into a chain) with A's look (a big
+  // balance, round action buttons, ECX and asset names, Receive as a sheet). New here: the home
+  // hero is a total in ECX across chains, which is itself a question (it adds eCash to Slot 24's
+  // pegged asset, and leaves out chains that couldn't be read).
   import Mark from "$lib/Mark.svelte";
   import type { HistoryEntry } from "$lib/background";
   import { shortAsset } from "$lib/asset";
   import ProtoIcon from "./ProtoIcon.svelte";
-  import { ASSET_NAMES, assetsOf, coins, depositState, grouped, kindOf, readAt, shortAddress, when, type ProtoChain } from "./fixtures";
+  import {
+    ASSET_NAMES,
+    assetsOf,
+    coins,
+    depositState,
+    grouped,
+    kindOf,
+    readAt,
+    shortTxid,
+    when,
+    type ProtoChain,
+  } from "./fixtures";
 
   let { chains }: { chains: ProtoChain[] } = $props();
 
-  let current = $state(0);
-  let filter = $state<ProtoChain["id"] | "all">("all");
-  let copied = $state<ProtoChain["id"] | undefined>(undefined);
-  let track: HTMLDivElement;
+  let tab = $state<"home" | "activity" | "grants">("home");
+  /** The chain drilled into, on the Home tab. */
+  let open = $state<ProtoChain["id"] | undefined>(undefined);
+  let chainTab = $state<"assets" | "activity">("assets");
+  /** The Receive sheet, and for which chain. */
+  let receiving = $state<ProtoChain["id"] | undefined>(undefined);
+  /** The Send sheet's chain picker. */
+  let picking = $state(false);
+  let copied = $state(false);
 
-  const chain = $derived(chains[current]);
+  const detail = $derived(chains.find((c) => c.id === open));
+  const receiveChain = $derived(chains.find((c) => c.id === receiving));
   const deposits = $derived(chains.flatMap((c) => c.deposits ?? []));
   const feed = $derived(
     chains
-      .filter((c) => filter === "all" || c.id === filter)
       .flatMap((c) => c.history.map((entry) => ({ chain: c, entry })))
       .sort((x, y) => (y.entry.time ?? Infinity) - (x.entry.time ?? Infinity)),
   );
 
-  function onscroll() {
-    current = Math.round(track.scrollLeft / track.clientWidth);
-  }
-  function go(i: number) {
-    track.scrollTo({ left: i * track.clientWidth, behavior: "smooth" });
-  }
-  function copy(c: ProtoChain) {
-    navigator.clipboard.writeText(c.address).catch(() => {});
-    copied = c.id;
-    setTimeout(() => (copied = undefined), 1500);
-  }
+  /** ECX across chains: every asset named ECX, from the chains that could be read. */
+  const total = $derived.by(() => {
+    let sats = 0n;
+    let unconfirmed = 0n;
+    const missing: string[] = [];
+    for (const c of chains) {
+      if (c.shown.report === undefined) missing.push(c.name);
+      for (const a of assetsOf(c.shown)) {
+        if (ASSET_NAMES[a.asset]?.ticker !== "ECX") continue;
+        sats += BigInt(a.amount);
+        if (a.unconfirmed) unconfirmed += BigInt(a.unconfirmed);
+      }
+    }
+    return { sats: sats.toString(), unconfirmed: unconfirmed.toString(), missing };
+  });
 
+  const named = (asset: string) => ASSET_NAMES[asset];
   function amountIn(asset: string, amount: string): string {
-    const name = ASSET_NAMES[asset];
-    return name ? `${coins(amount, name.decimals)} ${name.ticker}` : `${grouped(amount)} × ${shortAsset(asset)}`;
+    const name = named(asset);
+    return name ? `${coins(amount, name.decimals)} ${name.ticker}` : grouped(amount);
+  }
+  /** A chain's ECX, for its row. */
+  const ecxOf = (c: ProtoChain) => assetsOf(c.shown).find((a) => named(a.asset)?.ticker === "ECX");
+
+  function copy(address: string) {
+    navigator.clipboard.writeText(address).catch(() => {});
+    copied = true;
+    setTimeout(() => (copied = false), 1500);
   }
 
   const entryState = (e: HistoryEntry) => (e.confirmed ? undefined : e.trusted ? "Pending" : "Unconfirmed");
 </script>
 
-<div class="c">
-  <header>
-    <Mark size={26} />
-    <span class="title">ECX Wallet</span>
-    <a class="icon" href="#/grants" aria-label="Grants" title="Grants"><ProtoIcon name="grants" /></a>
-    <button class="icon" aria-label="Lock" title="Lock"><ProtoIcon name="lock" /></button>
-  </header>
+{#snippet avatar(c: ProtoChain, size = 36)}
+  <span class="chain-avatar" class:slot={c.id !== "l1"} style:width="{size}px" style:height="{size}px">
+    {c.id === "l1" ? "e" : c.id}
+  </span>
+{/snippet}
 
-  <div class="track" bind:this={track} {onscroll}>
-    {#each chains as c (c.id)}
-      {@const assets = assetsOf(c.shown)}
-      <article class="wallet-card" class:slot={c.id !== "l1"} class:broken={c.shown.error && !c.shown.report}>
-        <div class="card-top">
-          <strong>{c.name}</strong>
-          <span class="card-chip">{c.chain}</span>
-        </div>
-        {#if assets[0]}
-          <div class="card-balance">{amountIn(assets[0].asset, assets[0].amount)}</div>
-          <div class="card-sub">
-            {grouped(assets[0].amount)} sats
-            {#if assets[0].unconfirmed}· <span class="card-warn">+{grouped(assets[0].unconfirmed)} unconfirmed</span>{/if}
-            {#if assets.length > 1}· +{assets.length - 1} asset{/if}
-          </div>
-        {:else if c.shown.error}
-          <div class="card-balance">—</div>
-          <div class="card-sub">Couldn't reach the server. <button class="card-link"><ProtoIcon name="refresh" size={12} />Retry</button></div>
-        {/if}
-        <button class="card-address" onclick={() => copy(c)} title="Copy address">
-          <code>{shortAddress(c.address)}</code>
-          <ProtoIcon name={copied === c.id ? "check" : "copy"} size={14} />
-        </button>
-        {#if c.shown.report}
-          <p class="card-reported">
-            Reported by {c.shown.report.server}. This wallet doesn't verify it.
-            {#if c.shown.refreshing}<br />Last read at {readAt(c.shown.report.readAt)}; refreshing…{/if}
-          </p>
-        {/if}
-      </article>
-    {/each}
-  </div>
-  <div class="dots">
-    {#each chains as c, i (c.id)}
-      <button class="dot" class:on={i === current} aria-label="Show {c.name}" onclick={() => go(i)}></button>
-    {/each}
-  </div>
-
-  {#if chain.shown.error}
-    <p class="error small">{chain.shown.report ? "Couldn't refresh the balance" : "Balance unavailable"}: {chain.shown.error}</p>
-  {/if}
-
-  <nav class="pills">
-    {#if chain.id !== "l1"}
-      <a class="button pill-button" class:off={!chain.canSend} href="#/send/{chain.id}"><ProtoIcon name="send" size={16} />Send</a>
+{#snippet actions(c: ProtoChain | undefined)}
+  <nav class="actions">
+    {#if c === undefined || c.id !== "l1"}
+      {#if c}
+        <a class="action" class:off={!c.canSend} href="#/send/{c.id}"><span class="circle"><ProtoIcon name="send" /></span>Send</a>
+      {:else}
+        <button class="action" onclick={() => (picking = true)}><span class="circle"><ProtoIcon name="send" /></span>Send</button>
+      {/if}
     {/if}
-    <button class="pill-button" onclick={() => copy(chain)}><ProtoIcon name="qr" size={16} />Receive</button>
-    <a class="button pill-button" href="#/deposit/24"><ProtoIcon name="deposit" size={16} />{chain.id === "l1" ? "To Slot 24" : "Deposit"}</a>
+    <button class="action" onclick={() => (receiving = c?.id ?? "l1")}><span class="circle"><ProtoIcon name="receive" /></span>Receive</button>
+    <a class="action" href="#/deposit/24"><span class="circle"><ProtoIcon name="deposit" /></span>Deposit</a>
+  </nav>
+{/snippet}
+
+{#snippet activityRow(c: ProtoChain, entry: HistoryEntry, showChain: boolean)}
+  {@const kind = kindOf(entry)}
+  {@const state = entryState(entry)}
+  <li class="row">
+    <span class="activity-icon {kind.icon}">
+      <ProtoIcon name={kind.icon === "in" ? "receive" : kind.icon === "out" ? "send" : kind.icon} size={16} />
+    </span>
+    <span class="col grow">
+      <strong class="small">{kind.label}</strong>
+      <span class="muted tiny">
+        {#if showChain}{c.name} · {/if}
+        {#if state}<span class="pill tiny-pill" class:warn={state === "Unconfirmed"}>{state}</span>{:else if entry.time}{when(entry.time)}{/if}
+        · <code>{shortTxid(entry.txid)}</code>
+      </span>
+    </span>
+    <span class="col end">
+      {#each entry.amounts as a (a.asset)}
+        <strong class="small" class:in={!a.amount.startsWith("-")}>{a.amount.startsWith("-") ? "" : "+"}{amountIn(a.asset, a.amount)}</strong>
+      {/each}
+      {#if entry.hidden}<span class="muted tiny">+ hidden amounts</span>{/if}
+    </span>
+  </li>
+{/snippet}
+
+<div class="c">
+  <div class="content">
+    {#if tab === "home" && detail}
+      <header>
+        <button class="icon" aria-label="Back" onclick={() => (open = undefined)}><ProtoIcon name="back" /></button>
+        {@render avatar(detail, 26)}
+        <span class="title">{detail.name}</span>
+        <span class="chip">{detail.chain}</span>
+      </header>
+
+      {@const main = assetsOf(detail.shown)[0]}
+      <section class="hero">
+        {#if main}
+          <div class="big">{amountIn(main.asset, main.amount)}</div>
+          {#if named(main.asset)}<div class="muted small">{grouped(main.amount)} sats</div>{/if}
+          {#if main.unconfirmed}<span class="pill warn">+{grouped(main.unconfirmed)} sats unconfirmed</span>{/if}
+        {:else}
+          <div class="big muted">—</div>
+        {/if}
+        {#if detail.shown.error}
+          <p class="error small">{detail.shown.report ? "Couldn't refresh the balance" : "Balance unavailable"}: {detail.shown.error}</p>
+        {/if}
+        {#if detail.shown.report}
+          <p class="reported-inline">Reported by {detail.shown.report.server}. This wallet doesn't verify it.</p>
+          {#if detail.shown.refreshing}
+            <p class="muted tiny line"><span class="spinner"></span>Last read at {readAt(detail.shown.report.readAt)}; refreshing…</p>
+          {/if}
+        {/if}
+      </section>
+
+      {@render actions(detail)}
+
+      {#if detail.deposits?.length}
+        <section class="card deposits">
+          <h2>Deposits from eCash</h2>
+          {#each detail.deposits as d (d.txid)}
+            <div class="col">
+              <div class="between">
+                <strong>{grouped(d.value)} sats</strong>
+                {#if d.state === "notFound" || d.state === "unavailable"}<button class="small-button">Stop tracking</button>{/if}
+              </div>
+              {#if d.state === "confirming"}<div class="bar"><span style:width="{d.confirmations}%"></span></div>{/if}
+              <span class="small" class:err={d.state === "notFound"}>{depositState(d)}</span>
+            </div>
+          {/each}
+          <p class="muted tiny">A Deposit takes 100 eCash blocks, then the chain's operator credits it. Withdrawals back take months.</p>
+        </section>
+      {/if}
+
+      <div class="tabs" role="tablist">
+        <button role="tab" class:on={chainTab === "assets"} onclick={() => (chainTab = "assets")}>Assets</button>
+        <button role="tab" class:on={chainTab === "activity"} onclick={() => (chainTab = "activity")}>Activity</button>
+      </div>
+      {#if chainTab === "assets"}
+        <ul>
+          {#each assetsOf(detail.shown) as { asset, amount, unconfirmed } (asset)}
+            {@const name = named(asset)}
+            <li class="row">
+              <span class="token-avatar" class:unknown={!name}>{name ? name.ticker[0] : "?"}</span>
+              <span class="col grow">
+                <strong>{name ? name.ticker : "Unknown asset"}</strong>
+                <span class="muted tiny">{#if name}{name.name}{:else}<code title={asset}>{shortAsset(asset)}</code>{/if}</span>
+              </span>
+              <span class="col end">
+                <strong>{name ? coins(amount, name.decimals) : grouped(amount)}</strong>
+                {#if unconfirmed}<span class="tiny warn-text">+{grouped(unconfirmed)} unconf.</span>{/if}
+              </span>
+            </li>
+          {:else}
+            <li class="muted small empty">{detail.shown.error ? "Can't show assets while the balance is unavailable." : "Nothing reported."}</li>
+          {/each}
+        </ul>
+      {:else}
+        <ul>
+          {#each detail.history as entry (entry.txid)}
+            {@render activityRow(detail, entry, false)}
+          {/each}
+        </ul>
+      {/if}
+    {:else if tab === "home"}
+      <header>
+        <Mark size={26} />
+        <span class="title">ECX Wallet</span>
+        <button class="icon" aria-label="Lock" title="Lock"><ProtoIcon name="lock" /></button>
+      </header>
+      <p class="lock-note"><span class="dot"></span>Unlocked. Locks itself after 15 minutes without use.</p>
+
+      <section class="hero">
+        <span class="muted tiny">Total across chains</span>
+        <div class="big">{coins(total.sats, 8)} ECX</div>
+        <div class="muted small">{grouped(total.sats)} sats</div>
+        {#if total.unconfirmed !== "0"}<span class="pill warn">+{grouped(total.unconfirmed)} sats unconfirmed</span>{/if}
+        {#if total.missing.length}
+          <span class="pill bad">{total.missing.join(", ")} unavailable, not counted</span>
+        {/if}
+      </section>
+
+      {@render actions(undefined)}
+
+      {#if deposits.length}
+        <button class="banner" onclick={() => (open = 24)}>
+          <span class="spinner"></span>
+          <span class="grow">{deposits.length} Deposit{deposits.length > 1 ? "s" : ""} to Slot 24 in progress</span>
+          <ProtoIcon name="forward" size={16} />
+        </button>
+      {/if}
+
+      <section class="col">
+        <h2>Chains</h2>
+        <ul class="chains">
+          {#each chains as c (c.id)}
+            {@const ecx = ecxOf(c)}
+            {@const others = assetsOf(c.shown).length - (ecx ? 1 : 0)}
+            <li>
+              <button class="chain-row" onclick={() => ((open = c.id), (chainTab = "assets"))}>
+                {@render avatar(c)}
+                <span class="col grow">
+                  <strong>{c.name}</strong>
+                  <span class="mono muted tiny">{c.chain}</span>
+                </span>
+                <span class="col end">
+                  {#if ecx}
+                    <strong>{coins(ecx.amount, 8)} ECX</strong>
+                    {#if ecx.unconfirmed}
+                      <span class="tiny warn-text">+{grouped(ecx.unconfirmed)} sats unconfirmed</span>
+                    {:else if others > 0}
+                      <span class="muted tiny">+{others} other asset{others > 1 ? "s" : ""}</span>
+                    {/if}
+                    {#if c.shown.refreshing}<span class="muted tiny">refreshing…</span>{/if}
+                  {:else if c.shown.error}
+                    <span class="err small">Couldn't reach</span>
+                  {/if}
+                </span>
+                <ProtoIcon name="forward" size={16} />
+              </button>
+            </li>
+          {/each}
+        </ul>
+        <p class="reported-inline">Balances are as each chain's server reports them. This wallet doesn't verify them.</p>
+      </section>
+    {:else if tab === "activity"}
+      <header><span class="title">Activity</span></header>
+      <ul>
+        {#each feed as { chain, entry } (entry.txid)}
+          {@render activityRow(chain, entry, true)}
+        {/each}
+      </ul>
+      <p class="reported-inline">Reported by each chain's server. This wallet doesn't verify it.</p>
+    {:else}
+      <header><span class="title">Grants</span></header>
+      <p class="muted small">(The real Grants screen would go here.)</p>
+    {/if}
+  </div>
+
+  <nav class="tabbar">
+    <button class:on={tab === "home"} onclick={() => ((tab = "home"), (open = undefined))}><ProtoIcon name="wallet" />Home</button>
+    <button class:on={tab === "activity"} onclick={() => (tab = "activity")}><ProtoIcon name="activity" />Activity</button>
+    <button class:on={tab === "grants"} onclick={() => (tab = "grants")}><ProtoIcon name="grants" />Grants</button>
   </nav>
 
-  <p class="muted tiny lock-note">Unlocked. Locks itself after 15 minutes without use.</p>
-
-  {#if deposits.length}
-    <section class="section">
-      <h2>In progress</h2>
-      {#each deposits as d (d.txid)}
-        {@const pct = d.state === "confirming" ? d.confirmations : d.state === "notFound" || d.state === "unavailable" ? 0 : 100}
-        <div class="progress-item">
-          <span class="activity-icon deposit"><ProtoIcon name="deposit" size={16} /></span>
-          <div class="grow col">
-            <div class="between">
-              <strong class="small">Deposit to Slot {d.slot}</strong>
-              <strong class="small">{grouped(d.value)} sats</strong>
-            </div>
-            <div class="bar" class:stuck={pct === 0}><span style:width="{Math.max(pct, 4)}%"></span></div>
-            <span class="tiny" class:err={d.state === "notFound"}>{depositState(d)}</span>
-          </div>
-        </div>
-      {/each}
-      <p class="muted tiny">Deposits wait 100 eCash blocks, then the chain's operator credits them. Withdrawals back to eCash take months.</p>
-    </section>
+  {#if receiveChain || picking}
+    <div class="scrim" role="presentation" onclick={() => ((receiving = undefined), (picking = false))}></div>
   {/if}
-
-  <section class="section">
-    <div class="between">
-      <h2>Activity</h2>
+  {#if receiveChain}
+    <div class="sheet" role="dialog" aria-label="Receive">
+      <div class="between">
+        <strong>Receive</strong>
+        <button class="icon" aria-label="Close" onclick={() => (receiving = undefined)}><ProtoIcon name="close" /></button>
+      </div>
+      <div class="segmented">
+        {#each chains as c (c.id)}
+          <button class:on={c.id === receiveChain.id} onclick={() => (receiving = c.id)}>{c.name}</button>
+        {/each}
+      </div>
+      <div class="qr"><ProtoIcon name="qr" size={110} /><span class="tiny">QR code (library to vendor)</span></div>
+      <code class="address">{receiveChain.address}</code>
+      <button class="primary block" onclick={() => copy(receiveChain.address)}>
+        <ProtoIcon name={copied ? "check" : "copy"} />{copied ? "Copied" : "Copy address"}
+      </button>
+      <p class="muted tiny center">Only for {receiveChain.name} (<span class="mono">{receiveChain.chain}</span>).</p>
     </div>
-    <div class="filters">
-      <button class:on={filter === "all"} onclick={() => (filter = "all")}>All</button>
+  {:else if picking}
+    <div class="sheet" role="dialog" aria-label="Send from">
+      <div class="between">
+        <strong>Send from</strong>
+        <button class="icon" aria-label="Close" onclick={() => (picking = false)}><ProtoIcon name="close" /></button>
+      </div>
       {#each chains as c (c.id)}
-        <button class:on={filter === c.id} onclick={() => (filter = c.id)}>{c.name}</button>
+        {@const ecx = ecxOf(c)}
+        <a class="chain-row pick" class:off={!c.canSend} href="#/send/{c.id}">
+          {@render avatar(c, 30)}
+          <span class="col grow"><strong>{c.name}</strong><span class="muted tiny">{c.canSend ? (ecx ? `${coins(ecx.amount, 8)} ECX` : "") : c.id === "l1" ? "Sending on eCash isn't built yet" : "Needs a fresh balance"}</span></span>
+          <ProtoIcon name="forward" size={16} />
+        </a>
       {/each}
     </div>
-    <ul>
-      {#each feed as { chain: c, entry } (entry.txid)}
-        {@const kind = kindOf(entry)}
-        {@const state = entryState(entry)}
-        <li class="feed-row">
-          <span class="activity-icon {kind.icon}">
-            <ProtoIcon name={kind.icon === "in" ? "receive" : kind.icon === "out" ? "send" : kind.icon} size={16} />
-          </span>
-          <span class="grow col">
-            <strong class="small">{kind.label}</strong>
-            <span class="muted tiny">{c.name} · {#if state}<span class:warn-text={state === "Unconfirmed"}>{state}</span>{:else if entry.time}{when(entry.time)}{/if}</span>
-          </span>
-          <span class="col end">
-            {#each entry.amounts as a (a.asset)}
-              <strong class="small" class:in={!a.amount.startsWith("-")}>{a.amount.startsWith("-") ? "" : "+"}{amountIn(a.asset, a.amount)}</strong>
-            {/each}
-            {#if entry.hidden}<span class="muted tiny">+ hidden</span>{/if}
-          </span>
-        </li>
-      {/each}
-    </ul>
-  </section>
+  {/if}
 </div>
 
 <style>
   .c {
     display: flex;
     flex-direction: column;
-    gap: 14px;
-    padding: 12px 0 24px;
+    min-height: 100%;
   }
-  .c > :not(.track) {
-    margin: 0 16px;
+  .content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 12px 16px 80px;
   }
   header {
     display: flex;
     align-items: center;
     gap: 8px;
+    min-height: 36px;
   }
   .title {
     flex: 1;
     font-weight: 700;
+    font-size: 1.05rem;
   }
   .icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
     min-height: 34px;
     width: 34px;
     padding: 0;
@@ -190,166 +351,162 @@
     background: none;
     color: var(--muted);
   }
-  .icon:hover {
-    background: var(--surface-2);
+  .chain-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--on-accent);
+    font: 700 0.8rem/1 var(--font);
   }
-  .track {
-    display: flex;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    scrollbar-width: none;
-  }
-  .wallet-card {
-    flex: 0 0 calc(100% - 32px);
-    margin: 0 16px;
-    scroll-snap-align: center;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    min-height: 186px;
-    padding: 16px;
-    border-radius: 18px;
-    background: linear-gradient(135deg, #2a62e0, #1b3f9a);
+  .chain-avatar.slot {
+    background: #7b4fd6;
     color: #fff;
   }
-  .wallet-card.slot {
-    background: linear-gradient(135deg, #7b4fd6, #4a2a94);
-  }
-  .wallet-card.broken {
-    background: linear-gradient(135deg, #6b7280, #3f4553);
-  }
-  .card-top {
+  .lock-note {
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 6px;
+    margin-top: -8px;
+    color: var(--muted);
+    font-size: 0.75rem;
   }
-  .card-chip {
-    padding: 1px 8px;
-    border-radius: 999px;
-    background: rgb(255 255 255 / 18%);
-    font-family: var(--mono);
-    font-size: 0.7rem;
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ok);
   }
-  .card-balance {
-    margin-top: 6px;
-    font-size: 1.7rem;
+  .hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    text-align: center;
+  }
+  .big {
+    font-size: 2rem;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     line-height: 1.1;
   }
-  .card-sub {
+  .pill {
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: var(--surface-2);
     font-size: 0.8rem;
-    opacity: 0.85;
-  }
-  .card-warn {
-    color: #ffd58a;
     font-weight: 600;
   }
-  .card-link {
-    min-height: 0;
+  .pill.warn {
+    background: var(--warn-bg);
+    color: var(--warn);
+  }
+  .pill.bad {
+    background: var(--danger-bg);
+    color: var(--danger);
+  }
+  .tiny-pill {
     padding: 0 6px;
-    border: none;
-    background: rgb(255 255 255 / 18%);
-    color: #fff;
+    font-size: 0.7rem;
+  }
+  .reported-inline {
+    padding: 4px 8px;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--muted);
     font-size: 0.75rem;
-    gap: 4px;
-  }
-  .card-address {
-    align-self: flex-start;
-    gap: 6px;
-    min-height: 26px;
-    margin-top: auto;
-    padding: 0 8px;
-    border: none;
-    border-radius: 6px;
-    background: rgb(255 255 255 / 14%);
-    color: #fff;
-    font-weight: 400;
-  }
-  .card-address:hover {
-    background: rgb(255 255 255 / 24%);
-  }
-  .card-reported {
-    font-size: 0.68rem;
     font-style: italic;
-    opacity: 0.8;
+    text-align: center;
   }
-  .dots {
+  .actions {
     display: flex;
     justify-content: center;
-    gap: 6px;
-    margin-top: -6px !important;
+    gap: 28px;
   }
-  .dot {
-    width: 7px;
-    height: 7px;
+  .action {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
     min-height: 0;
     padding: 0;
     border: none;
-    border-radius: 50%;
-    background: var(--border);
+    background: none;
+    color: var(--text);
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-decoration: none;
   }
-  .dot.on {
-    width: 18px;
-    border-radius: 4px;
-    background: var(--accent);
+  .action:hover {
+    background: none;
   }
-  .pills {
-    display: flex;
-    gap: 8px;
-  }
-  .pill-button {
-    flex: 1;
-    min-height: 38px;
-    padding: 0 10px;
-    gap: 6px;
-    border-radius: 999px;
-    font-size: 0.85rem;
-  }
-  .pill-button.off {
+  .off {
     opacity: 0.45;
     pointer-events: none;
   }
-  .lock-note {
-    margin-top: -6px !important;
-    text-align: center;
-  }
-  .section {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-  .progress-item,
-  .feed-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-  }
-  .feed-row {
-    align-items: center;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--border);
-  }
-  .activity-icon {
+  .circle {
     display: flex;
     align-items: center;
     justify-content: center;
-    flex: none;
-    width: 34px;
-    height: 34px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+  .action:hover .circle {
+    background: var(--accent-hover);
+  }
+  .banner {
+    justify-content: flex-start;
+    gap: 10px;
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+    font-size: 0.85rem;
+    text-align: left;
+  }
+  .chains {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+  .chains li + li {
+    border-top: 1px solid var(--border);
+  }
+  .chain-row {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    justify-content: flex-start;
+    gap: 12px;
+    min-height: 62px;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 0;
+    background: none;
+    color: var(--text);
+    font-weight: 400;
+    text-align: left;
+    text-decoration: none;
+  }
+  .chain-row.pick {
+    border-radius: var(--radius-sm);
+  }
+  .chain-row:hover {
     background: var(--surface-2);
   }
-  .activity-icon.in,
-  .in {
-    color: var(--ok);
-  }
-  .activity-icon.deposit {
-    color: var(--accent);
+  .deposits {
+    gap: 10px;
+    padding: 12px;
   }
   .bar {
     height: 6px;
-    margin: 4px 0 2px;
+    margin: 2px 0;
     border-radius: 3px;
     background: var(--surface-2);
     overflow: hidden;
@@ -359,29 +516,72 @@
     height: 100%;
     background: var(--accent);
   }
-  .bar.stuck span {
-    background: var(--danger);
-  }
-  .filters {
+  .tabs {
     display: flex;
-    gap: 6px;
+    border-bottom: 1px solid var(--border);
   }
-  .filters button {
-    min-height: 28px;
-    padding: 0 12px;
-    border-radius: 999px;
-    font-size: 0.8rem;
+  .tabs button {
+    flex: 1;
+    min-height: 40px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: none;
+    color: var(--muted);
   }
-  .filters button.on {
-    border-color: var(--text);
-    background: var(--text);
-    color: var(--bg);
+  .tabs button.on {
+    border-bottom-color: var(--accent);
+    color: var(--accent);
+  }
+  .tabs + ul {
+    margin-top: -14px;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .empty {
+    padding: 16px 0;
+    text-align: center;
+  }
+  .token-avatar,
+  .activity-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-weight: 700;
+  }
+  .token-avatar.unknown,
+  .activity-icon {
+    background: var(--surface-2);
+    color: var(--muted);
+  }
+  .activity-icon {
+    color: var(--text);
+  }
+  .activity-icon.in,
+  .in {
+    color: var(--ok);
+  }
+  .activity-icon.deposit {
+    color: var(--accent);
   }
   .col {
     display: flex;
     flex-direction: column;
+    gap: 2px;
   }
   .end {
+    flex: none;
     align-items: flex-end;
     text-align: right;
   }
@@ -392,17 +592,104 @@
   .between {
     display: flex;
     justify-content: space-between;
-    align-items: baseline;
+    align-items: center;
     gap: 8px;
+  }
+  .line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
   .err {
     color: var(--danger);
   }
   .warn-text {
     color: var(--warn);
-    font-weight: 600;
   }
   .tiny {
     font-size: 0.75rem;
+  }
+  .center {
+    text-align: center;
+  }
+  .segmented {
+    display: flex;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--surface-2);
+  }
+  .segmented button {
+    flex: 1;
+    min-height: 32px;
+    border: none;
+    border-radius: 999px;
+    background: none;
+    font-size: 0.85rem;
+  }
+  .segmented button.on {
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+  .qr {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    align-self: center;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: #fff;
+    color: #111;
+  }
+  .address {
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    font-size: 0.75rem;
+    user-select: all;
+  }
+  /* Fixed: in the popup, to the window; in the prototype frame, to the frame. */
+  .tabbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .tabbar button {
+    flex-direction: column;
+    gap: 2px;
+    min-height: 56px;
+    border: none;
+    border-radius: 0;
+    background: none;
+    color: var(--muted);
+    font-size: 0.72rem;
+  }
+  .tabbar button.on {
+    color: var(--accent);
+  }
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    background: rgb(0 0 0 / 45%);
+  }
+  .sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 11;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    border-radius: 16px 16px 0 0;
+    background: var(--surface);
   }
 </style>
