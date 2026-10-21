@@ -4,11 +4,13 @@
 import type {
   ApprovalPrompt,
   AssetAmount,
+  ChainHistory,
   ChainReport,
   ClearView,
   DangerousMode,
   DepositStatus,
   Grant,
+  HistoryEntry,
   RefusedDeposit,
   SendResult,
   SlotAddress,
@@ -17,7 +19,21 @@ import type {
 } from "@ecx/wallet";
 
 // The shapes the background sends are the wallet package's own types.
-export type { ApprovalPrompt, AssetAmount, ChainReport, ClearView, DangerousMode, DepositStatus, Grant, RefusedDeposit, SendResult, SlotReport, VaultStatus };
+export type {
+  ApprovalPrompt,
+  AssetAmount,
+  ChainHistory,
+  ChainReport,
+  ClearView,
+  DangerousMode,
+  DepositStatus,
+  Grant,
+  HistoryEntry,
+  RefusedDeposit,
+  SendResult,
+  SlotReport,
+  VaultStatus,
+};
 
 type Response<T> = { ok: true; result: T } | { ok: false; error: { code: number; message: string } };
 
@@ -85,14 +101,14 @@ export const cachedState = (slot: number) => send<SlotReport | null>({ kind: "ac
  * A card's balance: the last report shown at once (if this session has one) while a fresh one is
  * read; `error` if that failed (the last report, if any, stays, labelled with when it was read).
  */
-export interface ShownReport<R extends ChainReport = ChainReport> {
+export interface ShownReport<R extends { readAt: number } = ChainReport> {
   report?: R;
   refreshing: boolean;
   error?: string;
 }
 
 /** Reads `cached` then `fresh`, calling `show` with each state in turn. */
-export function showReport<R extends ChainReport>(cached: () => Promise<R | null>, fresh: () => Promise<R>, show: (shown: ShownReport<R>) => void) {
+export function showReport<R extends { readAt: number }>(cached: () => Promise<R | null>, fresh: () => Promise<R>, show: (shown: ShownReport<R>) => void) {
   let current: ShownReport<R> = { refreshing: true };
   const update = (next: ShownReport<R>) => show((current = next));
   update(current);
@@ -110,6 +126,12 @@ export function showReport<R extends ChainReport>(cached: () => Promise<R | null
 
 /** Registers the Slot's addresses with its Sidechain Server and returns what the server reports. */
 export const reportedState = (slot: number) => send<SlotReport>({ kind: "accounts.reported", slot });
+
+/** The transactions the chain's server reports: a Slot's, or eCash's when `slot` is undefined. */
+export const reportedHistory = (slot?: number) => send<ChainHistory>({ kind: "history.reported", slot });
+
+/** The chain's last history this session (null if none), to show while `reportedHistory` refreshes it. */
+export const cachedHistory = (slot?: number) => send<ChainHistory | null>({ kind: "history.cached", slot });
 
 /**
  * Sends from the wallet's own Send screen: the Slot's Sidechain Server builds the transfer, the user

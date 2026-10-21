@@ -285,6 +285,7 @@
           <span class="chip" data-account-chain>{l1Address.chain}</span>
         </div>
         {@render reported(l1Report)}
+        <a class="button block" href="#/history/l1" data-history-link><Icon name="history" /> History</a>
         {@render receiveAddress(l1Address.address)}
       </section>
     {/if}
@@ -307,6 +308,7 @@
             <a class="button primary block" href="#/send/{account.slot}" data-send-link><Icon name="send" /> Send</a>
           {/if}
           <a class="button block" href="#/deposit/{account.slot}" data-deposit-link><Icon name="deposit" /> Deposit from eCash</a>
+          <a class="button block" href="#/history/{account.slot}" data-history-link><Icon name="history" /> History</a>
           {@render receiveAddress(address)}
         </section>
       {/each}

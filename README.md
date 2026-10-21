@@ -72,6 +72,19 @@ Unconfirmed coins are only shown: a Deposit spends confirmed ones only. The Stan
 API reports them in an optional `unconfirmed` list. The Send screen is `#/send/<slot>`
 (`send.start`), for Slots only.
 
+History (#33): each home card links to `#/history/<chain>` (`l1` or the Slot), which reads the
+chain's transactions only when opened (`history.reported`; this session's last, `history.cached`,
+shows while it refreshes). Each entry is the wallet's net change per asset, fee included, with its
+block time, or "Pending" (trusted: it spends only the wallet's own coins, each confirmed or from a
+trusted transaction) or "Unconfirmed" (anything else, with a warning), and its txid. Over Esplora
+(`SidechainServer.history`) the wallet reads `/address/:a/txs` for the 40 watched addresses, merges
+them by txid and works the rest out itself: "Fee, to yourself" when every output is the wallet's,
+"Deposit to Slot N" for an M5 it funded to a Treasury script of a Slot it supports, and "+
+confidential amounts not shown" for its outputs with no explicit value. There's no paging: when an
+address's list is full (25 confirmed or 50 unconfirmed) the screen says older transactions may not
+be shown. The Standard Sidechain API reports history in its `state` (draft 2,
+`stub-server/README.md`).
+
 Session cache (`wallet/src/cache.ts`): mostly to answer faster, the background keeps four things in
 `storage.session` (memory only), read and written only while unlocked, and forgotten on every lock:
 a server's passed identity check (once per URL, as ADR 0002 has it; a failure is never kept), the

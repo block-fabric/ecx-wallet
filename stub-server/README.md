@@ -91,7 +91,10 @@ The server needs the descriptor, not only addresses, to build transfers the wall
   "chain": "ecash:betanet-s24",
   "balances": [{ "asset": "5836dcc0…b2c8", "amount": "150000" }],
   "unconfirmed": [{ "asset": "5836dcc0…b2c8", "amount": "900" }],
-  "history": [{ "txid": "aa…", "amounts": [{ "asset": "5836dcc0…b2c8", "amount": "150000" }] }]
+  "history": [
+    { "txid": "ab…", "amounts": [{ "asset": "5836dcc0…b2c8", "amount": "-120300" }], "confirmed": false, "trusted": true },
+    { "txid": "aa…", "amounts": [{ "asset": "5836dcc0…b2c8", "amount": "150000" }], "confirmed": true, "time": 1792000000 }
+  ]
 }
 ```
 
@@ -102,8 +105,18 @@ The server needs the descriptor, not only addresses, to build transfers the wall
   once confirmed. Omit assets with nothing pending. `balances` already leaves out outputs that
   unconfirmed transactions spend, as Esplora does. The wallet shows it apart from the balance and
   never spends it; it refuses malformed entries the same way, and reads a missing field as nothing pending.
-- `history`: transactions touching the watch, newest first. Draft 1 fixes only `txid` and
-  `amounts`. The wallet doesn't show history yet.
+- `history` (draft 2): the watch's latest transactions, newest first, each one a History entry:
+  - `txid`: hex64.
+  - `amounts`: the watch's net change per asset, fee included: what its outputs received minus
+    what its inputs spent. Negative for what left it (`"-120300"`); omit assets that net to zero.
+  - `confirmed`: boolean. `time` (optional, once confirmed): the block's time, in seconds since
+    the epoch.
+  - `trusted` (required while unconfirmed, absent once confirmed): the transaction spends only the
+    watch's own outputs, each confirmed or from a trusted transaction (Bitcoin Core's `IsTrusted`).
+    The wallet warns that an untrusted one may still not arrive.
+
+  The wallet shows it on the chain's History screen and refuses the whole list if any entry is
+  malformed.
 
 `404 unknownWatch` if the `watchId` was never registered. The wallet registers before each read and build, so a server may forget watches.
 
@@ -204,7 +217,9 @@ The stub only records the submission (`submissions()`) and returns no `txid`.
 answers the Esplora endpoints the wallet reads (docs/adr/0002): `GET /block-height/0` with
 `genesisHash`, and `GET /address/{address}/utxo` with `utxos[address]`, each fixture
 `{ txid, vout, value, asset, confirmed }` (or commitments instead of `value`/`asset`, for a
-confidential output). It reads the config on every request, sends no CORS headers (like the
+confidential output). It also answers `GET /address/{address}/txs`, from the raw transactions in
+`txs` (or `addressTxs[address]` as given, for Elements), and the endpoints Deposit uses; the doc
+comment in `src/esplora.mjs` lists them all. It reads the config on every request, sends no CORS headers (like the
 Elements explorer) and records `requests()`. `pnpm --filter @ecx/stub-server start` runs it for the
 e2e build; the e2e suite starts it with `serveEsplora(config)`.
 
@@ -212,7 +227,7 @@ e2e build; the e2e suite starts it with `serveEsplora(config)`.
 
 - How the wallet learns a server's identity (`info`) and how user server overrides work (spec #12;
   an override is an `{ api, url }` pair, docs/adr/0002).
-- Pagination and confirmations in `history`.
+- Pagination in `history`, and labels (to yourself, Deposits) the wallet derives over Esplora.
 - Fee selection in the build request.
 - Confidential transactions: View Key sharing, blinding, and `fundTransaction`.
 - How the server reports that a submission was broadcast or confirmed.

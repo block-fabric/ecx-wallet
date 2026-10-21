@@ -10,7 +10,8 @@ const MAX_BODY = 1 << 20;
 
 /**
  * @typedef {{ asset: string, amount: string }} AssetAmount
- * @typedef {{ balances: AssetAmount[], unconfirmed?: AssetAmount[], history: object[] }} ReportedState
+ * @typedef {{ txid: string, amounts: AssetAmount[], confirmed: boolean, time?: number, trusted?: boolean }} HistoryEntry
+ * @typedef {{ balances: AssetAmount[], unconfirmed?: AssetAmount[], history: HistoryEntry[] }} ReportedState
  * @typedef {{ asset: string, amount: string, destination: string, payload: string, expiresIn?: number,
  *   hints?: { summary?: string, outputLabels?: Record<string, string> } }} TransferFixture
  * @typedef {{

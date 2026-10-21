@@ -4,15 +4,15 @@
 // Like the Elements explorer it stands in for, it sends no CORS headers: the extension reaches it
 // through its `host_permissions`, as it reaches the real one. Dependency-free node `http`.
 import { createServer } from "node:http";
-import { parseTx, scripthash } from "./bitcoin-tx.mjs";
+import { addressScript, parseTx, scripthash } from "./bitcoin-tx.mjs";
 
 /**
  * @typedef {{ txid: string, vout: number, value?: number, asset?: string, valuecommitment?: string,
  *   assetcommitment?: string, confirmed: boolean }} UtxoFixture
- * @typedef {{ hex: string, confirmed?: boolean, blockHeight?: number, blockHash?: string }} TxFixture
+ * @typedef {{ hex: string, confirmed?: boolean, blockHeight?: number, blockHash?: string, blockTime?: number }} TxFixture
  * @typedef {{ identityBlock: { height: number, hash: string }, blocks?: Record<number, string>,
  *   tipHeight?: number, utxos?: Record<string, UtxoFixture[]>, addressTxCounts?: Record<string, number>,
- *   txs?: TxFixture[], feeEstimates?: Record<string, number>, refuseBroadcast?: string,
+ *   txs?: TxFixture[], addressTxs?: Record<string, object[]>, feeEstimates?: Record<string, number>, refuseBroadcast?: string,
  *   delayMs?: number, txHexOverrides?: Record<string, string> }} EsploraStubConfig
  */
 
@@ -27,6 +27,10 @@ import { parseTx, scripthash } from "./bitcoin-tx.mjs";
  *   `GET /scripthash/{sha256}/utxo` (outputs no listed transaction spends), `GET /tx/{txid}`
  *   (with each input's `prevout`, when its transaction is listed), `/tx/{txid}/hex` and
  *   `/tx/{txid}/status` (`config.txHexOverrides[txid]` answers `/hex` instead, as a lying server would);
+ * - `GET /address/{address}/txs`: `config.addressTxs[address]` as given (Esplora's JSON: Elements
+ *   transactions, which the stub can't parse), else the transactions in `config.txs` that pay or
+ *   spend from the address's script, as Esplora lists them: the mempool's first, newest first,
+ *   then the 25 latest confirmed;
  * - `GET /fee-estimates`: `config.feeEstimates` (404 if absent);
  * - `POST /tx`: parses the transaction, adds it to `config.txs` unconfirmed and answers its txid,
  *   or refuses with `config.refuseBroadcast`.
@@ -38,8 +42,8 @@ export function createEsploraStub(config) {
   /** Every transaction broadcast, hex. */
   const broadcasts = [];
 
-  const status = ({ confirmed = true, blockHeight = 1, blockHash = "00".repeat(32) }) =>
-    confirmed ? { confirmed, block_height: blockHeight, block_hash: blockHash, block_time: 1792000000 } : { confirmed };
+  const status = ({ confirmed = true, blockHeight = 1, blockHash = "00".repeat(32), blockTime = 1792000000 }) =>
+    confirmed ? { confirmed, block_height: blockHeight, block_hash: blockHash, block_time: blockTime } : { confirmed };
 
   /** `config.txs`, parsed, by txid. */
   function indexed() {
@@ -99,6 +103,25 @@ export function createEsploraStub(config) {
     if (utxo) {
       const address = decodeURIComponent(utxo[1]);
       return [200, (config.utxos?.[address] ?? []).map(({ confirmed, ...output }) => ({ ...output, status: status({ confirmed }) }))];
+    }
+    const addressTxs = /^\/address\/([^/]+)\/txs$/.exec(pathname);
+    if (addressTxs) {
+      const a = decodeURIComponent(addressTxs[1]);
+      if (config.addressTxs?.[a]) return [200, config.addressTxs[a]];
+      let script;
+      try {
+        script = addressScript(a);
+      } catch {
+        return [400, "Invalid Bitcoin address"];
+      }
+      const txs = indexed();
+      const touching = [...txs.values()].filter(
+        (tx) => tx.outputs.some((o) => o.script === script) || tx.inputs.some((i) => txs.get(i.txid)?.outputs[i.vout]?.script === script),
+      );
+      const confirmed = (tx) => tx.fixture.confirmed !== false;
+      const mempool = touching.filter((tx) => !confirmed(tx)).reverse();
+      const chain = touching.filter(confirmed).sort((a, b) => (b.fixture.blockHeight ?? 1) - (a.fixture.blockHeight ?? 1));
+      return [200, [...mempool, ...chain.slice(0, 25)].map((tx) => txJson(tx, txs))];
     }
     const address = /^\/address\/([^/]+)$/.exec(pathname);
     if (address) {

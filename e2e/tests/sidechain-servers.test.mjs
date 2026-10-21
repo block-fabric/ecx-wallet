@@ -68,7 +68,10 @@ const STANDARD_STATE = {
       { asset: OTHER_ASSET, amount: "7" },
     ],
     unconfirmed: [{ asset: POLICY_ASSET, amount: "900" }],
-    history: [{ txid: "aa".repeat(32), amounts: [{ asset: POLICY_ASSET, amount: "150000" }] }],
+    history: [
+      { txid: "ab".repeat(32), amounts: [{ asset: POLICY_ASSET, amount: "-120300" }], confirmed: false, trusted: true },
+      { txid: "aa".repeat(32), amounts: [{ asset: POLICY_ASSET, amount: "150000" }], confirmed: true, time: 1792000000 },
+    ],
   },
 };
 
@@ -101,7 +104,6 @@ describe("Standard Sidechain API", () => {
       { asset: OTHER_ASSET, amount: "7" },
     ]);
     assert.deepEqual(report.unconfirmed, [{ asset: POLICY_ASSET, amount: "900" }]);
-    assert.equal(report.history.length, 1);
 
     const registration = stub.registrations().at(-1);
     assert.equal(registration.chain, CHAIN);
@@ -109,6 +111,44 @@ describe("Standard Sidechain API", () => {
     assert.equal(registration.addresses.length, wallet.WATCHED_RECEIVE_ADDRESSES);
     assert.deepEqual(registration.addresses.slice(0, 2).map((a) => a.address), [RECEIVE_0, RECEIVE_1]);
     assert.ok(!registration.addresses.some((a) => a.address === CHANGE_0), "the server derives change from the descriptor");
+  });
+
+  test("history (draft 2) is the state's `history`: signed net amounts, when confirmed, and whether a pending one is trusted", async () => {
+    const history = await pullPathWith(server()).pullPath.history(24);
+    assert.equal(history.server, stub.url);
+    assert.equal(history.partial, false);
+    assert.deepEqual(history.entries, [
+      { txid: "ab".repeat(32), amounts: [{ asset: POLICY_ASSET, amount: "-120300" }], confirmed: false, trusted: true },
+      { txid: "aa".repeat(32), amounts: [{ asset: POLICY_ASSET, amount: "150000" }], confirmed: true, time: 1792000000 },
+    ]);
+  });
+
+  test("a malformed history entry is refused", async () => {
+    const state = STANDARD_STATE[RECEIVE_0];
+    const { history } = state;
+    const valid = { txid: "aa".repeat(32), amounts: [{ asset: POLICY_ASSET, amount: "150000" }], confirmed: true, time: 1792000000 };
+    const malformed = [
+      { ...valid, txid: "aa" },
+      { ...valid, amounts: [{ asset: POLICY_ASSET, amount: "+150000" }] },
+      { ...valid, amounts: [{ asset: "policy", amount: "150000" }] },
+      { ...valid, confirmed: "yes" },
+      { ...valid, time: "yesterday" },
+      { txid: "ab".repeat(32), amounts: [], confirmed: false },
+    ];
+    try {
+      for (const entry of malformed) {
+        state.history = [entry];
+        await assert.rejects(
+          pullPathWith(server()).pullPath.history(24),
+          (e) => e instanceof wallet.SidechainServerError && /malformed history/.test(e.message),
+          JSON.stringify(entry),
+        );
+      }
+      state.history = "none";
+      await assert.rejects(pullPathWith(server()).pullPath.history(24), /malformed history/);
+    } finally {
+      state.history = history;
+    }
   });
 
   test("a server that leaves `unconfirmed` out gives the report nothing unconfirmed", async () => {
@@ -209,7 +249,6 @@ describe("Esplora", () => {
       { asset: OTHER_ASSET, amount: "7" },
     ]);
     assert.deepEqual(report.unconfirmed, [{ asset: POLICY_ASSET, amount: "5000" }], "the confidential unconfirmed output isn't counted");
-    assert.deepEqual(report.history, []);
     const queried = stub.requests().filter((p) => p.endsWith("/utxo")).length;
     assert.equal(queried, wallet.WATCHED_RECEIVE_ADDRESSES + wallet.WATCHED_CHANGE_ADDRESSES);
   });
