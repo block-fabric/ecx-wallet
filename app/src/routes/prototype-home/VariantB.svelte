@@ -15,6 +15,7 @@
     grouped,
     kindOf,
     readAt,
+    shortAddress,
     when,
     type ProtoChain,
   } from "./fixtures";
@@ -25,8 +26,10 @@
   /** The chain drilled into, on the Home tab. */
   let open = $state<ProtoChain["id"] | undefined>(undefined);
   let chainTab = $state<"assets" | "activity">("assets");
-  /** The Receive sheet, and for which chain. */
-  let receiving = $state<ProtoChain["id"] | undefined>(undefined);
+  /** The Receive sheet, and whose QR code it shows, if any. */
+  let receiving = $state<{ qr?: ProtoChain["id"] } | undefined>(undefined);
+  /** The address just copied, to tick its button. */
+  let copiedAddress = $state<string | undefined>(undefined);
   /** The Send sheet's chain picker. */
   let picking = $state(false);
   let copied = $state(false);
@@ -40,7 +43,6 @@
   let folded = $state<Record<string, boolean>>({});
 
   const detail = $derived(chains.find((c) => c.id === open));
-  const receiveChain = $derived(chains.find((c) => c.id === receiving));
   const deposits = $derived(chains.flatMap((c) => c.deposits ?? []));
   /** Sats that left eCash in a Deposit and aren't credited yet: in neither chain's balance. */
   const inFlight = $derived(
@@ -124,7 +126,7 @@
         <button class="action" onclick={() => (picking = true)}><span class="circle"><ProtoIcon name="send" /></span>Send</button>
       {/if}
     {/if}
-    <button class="action" onclick={() => (receiving = c?.id ?? "l1")}><span class="circle"><ProtoIcon name="receive" /></span>Receive</button>
+    <button class="action" onclick={() => (receiving = { qr: c?.id })}><span class="circle"><ProtoIcon name="receive" /></span>Receive</button>
     <a class="action" href="#/deposit/24"><span class="circle"><ProtoIcon name="deposit" /></span>Deposit</a>
   </nav>
 {/snippet}
@@ -361,7 +363,7 @@
     {/if}
   </div>
 
-  {#if receiveChain || picking || inspecting}
+  {#if receiving || picking || inspecting}
     <div class="scrim" role="presentation" onclick={() => ((receiving = undefined), (picking = false), (inspecting = undefined))}></div>
   {/if}
   {#if inspecting}
@@ -393,23 +395,45 @@
       {#if c.shown.report}<p class="reported-inline">Reported by {c.shown.report.server}. This wallet doesn't verify it.</p>{/if}
     </div>
   {/if}
-  {#if receiveChain}
+  {#if receiving}
     <div class="sheet" role="dialog" aria-label="Receive">
       <div class="between">
         <strong>Receive</strong>
         <button class="icon" aria-label="Close" onclick={() => (receiving = undefined)}><ProtoIcon name="close" /></button>
       </div>
-      <div class="segmented">
+      <p class="muted tiny">Each chain has its own address. Only send a chain's assets to its own address.</p>
+      <ul class="addresses">
         {#each chains as c (c.id)}
-          <button class:on={c.id === receiveChain.id} onclick={() => (receiving = c.id)}>{c.name}</button>
+          {@const showing = receiving.qr === c.id}
+          <li class="address-row" class:showing>
+            <div class="between">
+              {@render avatar(c, 28)}
+              <span class="col grow">
+                <strong class="small">{c.name}</strong>
+                <code class="tiny muted">{shortAddress(c.address)}</code>
+              </span>
+              <button class="icon small-icon" aria-label="Show QR code for {c.name}" class:on={showing} onclick={() => (receiving = { qr: showing ? undefined : c.id })}>
+                <ProtoIcon name="qr" size={16} />
+              </button>
+              <button
+                class="icon small-icon"
+                aria-label="Copy {c.name} address"
+                onclick={() => {
+                  copy(c.address);
+                  copiedAddress = c.address;
+                }}
+              >
+                <ProtoIcon name={copied && copiedAddress === c.address ? "check" : "copy"} size={16} />
+              </button>
+            </div>
+            {#if showing}
+              <div class="qr"><ProtoIcon name="qr" size={96} /><span class="tiny">QR code (library to vendor)</span></div>
+              <code class="address">{c.address}</code>
+              <p class="muted tiny center">Only for {c.name} (<span class="mono">{c.chain}</span>).</p>
+            {/if}
+          </li>
         {/each}
-      </div>
-      <div class="qr"><ProtoIcon name="qr" size={110} /><span class="tiny">QR code (library to vendor)</span></div>
-      <code class="address">{receiveChain.address}</code>
-      <button class="primary block" onclick={() => copy(receiveChain.address)}>
-        <ProtoIcon name={copied ? "check" : "copy"} />{copied ? "Copied" : "Copy address"}
-      </button>
-      <p class="muted tiny center">Only for {receiveChain.name} (<span class="mono">{receiveChain.chain}</span>).</p>
+      </ul>
     </div>
   {:else if picking}
     <div class="sheet" role="dialog" aria-label="Send from">
@@ -786,6 +810,29 @@
     min-height: 24px;
     flex: none;
   }
+  .addresses {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .address-row {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .address-row .between {
+    gap: 10px;
+  }
+  .address-row.showing {
+    border-color: var(--accent);
+  }
+  .icon.on {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--accent);
+  }
   .count {
     display: inline-flex;
     align-items: center;
@@ -950,24 +997,6 @@
   }
   .center {
     text-align: center;
-  }
-  .segmented {
-    display: flex;
-    padding: 3px;
-    border-radius: 999px;
-    background: var(--surface-2);
-  }
-  .segmented button {
-    flex: 1;
-    min-height: 32px;
-    border: none;
-    border-radius: 999px;
-    background: none;
-    font-size: 0.85rem;
-  }
-  .segmented button.on {
-    background: var(--surface);
-    box-shadow: var(--shadow);
   }
   .qr {
     display: flex;
