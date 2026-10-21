@@ -19,6 +19,20 @@ export const QUERIES_AT_ONCE = 20;
 const LISTED_MEMPOOL_TXS = 50;
 const LISTED_CONFIRMED_TXS = 25;
 
+/** The fee rate's confirmation target, in blocks. */
+const FEE_TARGET = "6";
+/** sat/vB when the server has no estimate for the target. */
+const FALLBACK_FEE_RATE = 1;
+/** sat/vB the rate never goes below (besides the server's own 1008-block floor). */
+const MIN_FEE_RATE = 0.1;
+
+/** The fee rate, in sats per 1000 vB: the 6-block estimate, never below the 1008-block one or 0.1. */
+export function feeRate(estimates: Record<string, number> | undefined): number {
+  const target = estimates?.[FEE_TARGET] ?? FALLBACK_FEE_RATE;
+  const floor = Math.max(estimates?.["1008"] ?? 0, MIN_FEE_RATE);
+  return Math.ceil(Math.max(target, floor) * 1000);
+}
+
 export interface EsploraServerConfig {
   url: string;
   /** The block the server must have: the network's genesis, or for a fork its first block after it. */
@@ -322,7 +336,8 @@ export function esploraServer(config: EsploraServerConfig, fetchFn: Fetch): Side
     };
   }
 
-  const notYet = () => new SidechainServerError(url, `Sending on ${config.chainName} isn't available yet.`);
+  // Over Esplora the wallet builds and broadcasts transfers itself (send.ts, docs/adr/0006).
+  const notHere = () => new SidechainServerError(url, `The Sidechain Server at ${url} speaks Esplora: it doesn't build transfers.`);
 
   return {
     url,
@@ -368,12 +383,11 @@ export function esploraServer(config: EsploraServerConfig, fetchFn: Fetch): Side
       const newestFirst = [...txs.values()].sort((a, b) => height(b) - height(a));
       return { entries: newestFirst.map((tx) => entry(tx, ours, treasuries, trusted)), partial };
     },
-    // Building and broadcasting over Esplora come with the Send issue (#28).
     buildTransfer: async () => {
-      throw notYet();
+      throw notHere();
     },
     submit: async () => {
-      throw notYet();
+      throw notHere();
     },
   };
 }

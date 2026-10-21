@@ -5,6 +5,7 @@
 // through its `host_permissions`, as it reaches the real one. Dependency-free node `http`.
 import { createServer } from "node:http";
 import { addressScript, parseTx, scripthash } from "./bitcoin-tx.mjs";
+import { parseElementsTx } from "./elements-tx.mjs";
 
 /**
  * @typedef {{ txid: string, vout: number, value?: number, asset?: string, valuecommitment?: string,
@@ -13,7 +14,8 @@ import { addressScript, parseTx, scripthash } from "./bitcoin-tx.mjs";
  * @typedef {{ identityBlock: { height: number, hash: string }, blocks?: Record<number, string>,
  *   tipHeight?: number, utxos?: Record<string, UtxoFixture[]>, addressTxCounts?: Record<string, number>,
  *   txs?: TxFixture[], addressTxs?: Record<string, object[]>, feeEstimates?: Record<string, number>, refuseBroadcast?: string,
- *   delayMs?: number, txHexOverrides?: Record<string, string> }} EsploraStubConfig
+ *   delayMs?: number, txHexOverrides?: Record<string, string>, elements?: boolean,
+ *   txStatuses?: Record<string, { confirmed: boolean, blockHeight?: number, blockHash?: string }> }} EsploraStubConfig
  */
 
 /**
@@ -33,7 +35,10 @@ import { addressScript, parseTx, scripthash } from "./bitcoin-tx.mjs";
  *   then the 25 latest confirmed;
  * - `GET /fee-estimates`: `config.feeEstimates` (404 if absent);
  * - `POST /tx`: parses the transaction, adds it to `config.txs` unconfirmed and answers its txid,
- *   or refuses with `config.refuseBroadcast`.
+ *   or refuses with `config.refuseBroadcast`. With `config.elements`, it parses an Elements
+ *   transaction instead, which it only records in `config.txStatuses` (unconfirmed);
+ * - `GET /tx/{txid}/status`: `config.txStatuses[txid]` first, if listed (a test may confirm or
+ *   drop a broadcast there).
  * Every answer waits `config.delayMs` (default none), as a slow public server does.
  */
 export function createEsploraStub(config) {
@@ -79,12 +84,13 @@ export function createEsploraStub(config) {
       if (config.refuseBroadcast) return [400, config.refuseBroadcast];
       let tx;
       try {
-        tx = parseTx(body.trim());
+        tx = config.elements ? parseElementsTx(body.trim()) : parseTx(body.trim());
       } catch (error) {
         return [400, `sendrawtransaction RPC error: {"code":-22,"message":"TX decode failed: ${error.message}"}`];
       }
       broadcasts.push(body.trim());
-      (config.txs ??= []).push({ hex: body.trim(), confirmed: false });
+      if (config.elements) (config.txStatuses ??= {})[tx.txid] = { confirmed: false };
+      else (config.txs ??= []).push({ hex: body.trim(), confirmed: false });
       return [200, tx.txid];
     }
     if (method !== "GET") return [405, "Method not allowed"];
@@ -146,6 +152,7 @@ export function createEsploraStub(config) {
       ];
     }
     const tx = /^\/tx\/([0-9a-f]{64})(\/hex|\/status)?$/.exec(pathname);
+    if (tx?.[2] === "/status" && config.txStatuses?.[tx[1]]) return [200, status(config.txStatuses[tx[1]])];
     if (tx) {
       const txs = indexed();
       const found = txs.get(tx[1]);

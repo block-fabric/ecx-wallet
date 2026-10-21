@@ -56,12 +56,30 @@ export interface SlotReport extends ChainReport {
   slot: number;
 }
 
-/** A send the Sidechain Server accepted. */
+/** A Send that went out: broadcast by the wallet, or accepted by the Sidechain Server that built it. */
 export interface SendResult {
-  requestId: string;
+  /** Who built or broadcast it. */
   server: string;
   accepted: boolean;
   txid?: string;
+}
+
+/** The order with its addresses trimmed; refuses one without outputs or with an unusable one. */
+export function checkedOrder(order: TransferOrder): TransferOrder {
+  const outputs = Array.isArray(order?.outputs) ? order.outputs : [];
+  if (outputs.length === 0) throw new ProviderRpcError(ErrorCode.InvalidParams, "Add at least one recipient.");
+  return {
+    outputs: outputs.map(({ asset, amount, to }, i) => {
+      const which = outputs.length > 1 ? ` (recipient ${i + 1})` : "";
+      if (typeof asset !== "string" || !/^[0-9a-f]{64}$/.test(asset)) throw new ProviderRpcError(ErrorCode.InvalidParams, `Choose an asset${which}.`);
+      if (typeof amount !== "string" || !/^[1-9][0-9]*$/.test(amount)) {
+        throw new ProviderRpcError(ErrorCode.InvalidParams, `The amount must be a whole number of base units${which}.`);
+      }
+      const address = typeof to?.address === "string" ? to.address.trim() : "";
+      if (address === "") throw new ProviderRpcError(ErrorCode.InvalidParams, `Enter a destination address${which}.`);
+      return { asset, amount, to: { address } };
+    }),
+  };
 }
 
 /** Why a server-built request that needs Blind Signing is refused: there is no Grant to opt in. */
@@ -154,12 +172,11 @@ export function createPullPath(deps: PullPathDeps) {
      * and submitted back.
      */
     async send(slot: number, order: TransferOrder): Promise<SendResult> {
-      if (!/^[1-9][0-9]*$/.test(order.amount)) throw new ProviderRpcError(ErrorCode.InvalidParams, "The amount must be a whole number of base units.");
-      if (order.destination.trim() === "") throw new ProviderRpcError(ErrorCode.InvalidParams, "Enter a destination address.");
+      const checked = checkedOrder(order);
       const target: ChainServer<Starter> = withServer(await routing.slot(slot));
       const { server } = target;
       const watched = await watch(target);
-      const built = await server.buildTransfer(watched, { ...order, destination: order.destination.trim() });
+      const built = await server.buildTransfer(watched, checked);
 
       const request = parseSigningRequest(built, Math.floor(deps.now() / 1000));
       if (request.slot !== slot) {
@@ -168,7 +185,7 @@ export function createPullPath(deps: PullPathDeps) {
       const module = await chainModuleFor(deps, request);
       const signed = await reviewAndSign(deps, { requester: server.url, request, module, blindRefusal: BLIND_REFUSED });
       const { accepted, txid } = await server.submit(watched, request.id, signed);
-      return { requestId: request.id, server: server.url, accepted, ...(txid ? { txid } : {}) };
+      return { server: server.url, accepted, ...(txid ? { txid } : {}) };
     },
   };
 }

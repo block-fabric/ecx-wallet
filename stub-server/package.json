@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/server.mjs",
     "./esplora": "./src/esplora.mjs",
-    "./bitcoin-tx": "./src/bitcoin-tx.mjs"
+    "./bitcoin-tx": "./src/bitcoin-tx.mjs",
+    "./elements-tx": "./src/elements-tx.mjs"
   },
   "scripts": {
     "start": "node src/main.mjs"

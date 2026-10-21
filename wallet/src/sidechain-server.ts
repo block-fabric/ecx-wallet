@@ -3,7 +3,7 @@
 // server-api.ts picks the client.
 // Everything a server answers is *reported*: the wallet shows balances labelled as such, and treats
 // a built transfer as an untrusted Signing Request (parsed, validated and decoded like any other).
-import type { AssetAmount, DerivedAddress } from "./chain-module";
+import type { AssetAmount, DerivedAddress, TransferOutput } from "./chain-module";
 
 /** What the wallet watches: watch data from the Chain Module (never spend authority). */
 export interface WatchData {
@@ -55,13 +55,9 @@ export interface ReportedHistory {
   partial: boolean;
 }
 
+/** A Send: one or more payments, in order. Addresses are in the chain's own encoding. */
 export interface TransferOrder {
-  /** Hex asset id. */
-  asset: string;
-  /** Base units, as a decimal string. */
-  amount: string;
-  /** In the chain's own address encoding. */
-  destination: string;
+  outputs: TransferOutput[];
 }
 
 /** The server couldn't be reached or refused a call. */

@@ -76,12 +76,21 @@ export interface ChainDescription {
   /** The network's key in the Chain Entry ("betanet"). */
   network: string;
   assets: AssetEntry[];
+  /** The wallet can Send on it (a sidechain whose server builds transfers, or whose module does over Esplora). */
+  sends: boolean;
 }
 
 export function describeChain(module: ChainModule<never>): ChainDescription {
   const { entry, network, chain } = servedNetwork(module);
   const key = Object.keys(entry.networks).find((k) => entry.networks[k] === network)!;
-  return { name: entry.name, description: entry.description, chain, network: key, assets: network.assets };
+  const sends = network.parent !== undefined && canSend(module.declare().capabilities, network);
+  return { name: entry.name, description: entry.description, chain, network: key, assets: network.assets, sends };
+}
+
+/** True if a sidechain can Send through this wallet: its server builds, or its module does over Esplora. */
+export function canSend(capabilities: string[], network: NetworkEntry): boolean {
+  const { api } = network.sidechainServer;
+  return api === "ecx-v0" || (api === "esplora" && capabilities.includes("buildTransfer"));
 }
 
 /** Throws unless the entry puts the chain at the root: no Slot and no parent. */

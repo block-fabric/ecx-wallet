@@ -12,7 +12,7 @@ const MAX_BODY = 1 << 20;
  * @typedef {{ asset: string, amount: string }} AssetAmount
  * @typedef {{ txid: string, amounts: AssetAmount[], confirmed: boolean, time?: number, trusted?: boolean }} HistoryEntry
  * @typedef {{ balances: AssetAmount[], unconfirmed?: AssetAmount[], history: HistoryEntry[] }} ReportedState
- * @typedef {{ asset: string, amount: string, destination: string, payload: string, expiresIn?: number,
+ * @typedef {{ outputs: { asset: string, amount: string, to: { address: string } }[], payload: string, expiresIn?: number,
  *   hints?: { summary?: string, outputLabels?: Record<string, string> } }} TransferFixture
  * @typedef {{
  *   chain?: string,
@@ -25,7 +25,7 @@ const MAX_BODY = 1 << 20;
 /**
  * A stub server answering from `config`:
  * - `state`: reported state per address; a watch's state is the sum of its registered addresses'.
- * - `transfers`: the transfers it can build, matched exactly on (asset, amount, destination); the
+ * - `transfers`: the transfers it can build, matched exactly on their `outputs`, in order; the
  *   request's `expiresAt` is now + `expiresIn` seconds (default 600).
  */
 export function createStubServer(config = {}) {
@@ -71,13 +71,14 @@ export function createStubServer(config = {}) {
     // POST /v1/watch/{watchId}/transfers
     if (parts.length === 4 && parts[3] === "transfers") {
       if (method !== "POST") return methodNotAllowed();
-      const { asset, amount, destination } = body ?? {};
-      if (typeof asset !== "string" || typeof amount !== "string" || !/^[1-9][0-9]*$/.test(amount) || typeof destination !== "string") {
-        return badRequest("A transfer needs `asset` (hex), `amount` (base units, decimal string) and `destination`.");
+      const { outputs } = body ?? {};
+      const valid = (o) =>
+        typeof o?.asset === "string" && typeof o.amount === "string" && /^[1-9][0-9]*$/.test(o.amount) && typeof o.to?.address === "string";
+      if (!Array.isArray(outputs) || outputs.length === 0 || !outputs.every(valid)) {
+        return badRequest("A transfer needs `outputs`: one or more `{ asset (hex), amount (base units, decimal string), to: { address } }`.");
       }
-      const transfer = (config.transfers ?? []).find(
-        (t) => t.asset === asset && t.amount === amount && t.destination === destination,
-      );
+      const same = (a, b) => a.asset === b.asset && a.amount === b.amount && a.to.address === b.to.address;
+      const transfer = (config.transfers ?? []).find((t) => t.outputs.length === outputs.length && t.outputs.every((o, i) => same(o, outputs[i])));
       if (transfer === undefined) return [422, error("cannotBuild", "This stub can only build the transfers in its fixture table.")];
       const id = randomUUID();
       issued.set(id, { watchId, transfer });

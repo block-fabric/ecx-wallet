@@ -18,6 +18,7 @@ export {
   CHAIN_MODULE_FILES,
   SUPPORTED_SLOTS,
   L1_MODULE_FILE,
+  canSend,
   createAccounts,
   createChainModules,
   createKeyRouting,
@@ -46,6 +47,9 @@ export {
   type RefusalCode,
   type VerifiableFacts,
   type Binding,
+  type BuiltTransfer,
+  type ModuleTransferOrder,
+  type TransferOutput,
   type ChainEntry,
   type ChainKey,
   type ChainModule,
@@ -97,14 +101,14 @@ export {
   type SendResult,
   type SlotReport,
 } from "./pull-path";
+export { createSends, HOLD_BLOCKS, sendRequester, type HeldSpend, type HeldStore, type RefusedSend, type SendDeps, type Sends } from "./send";
 export { CACHE_PREFIX, cacheKey, type SessionCache } from "./cache";
-export { esploraClient, type EsploraClient, type EsploraTx, type EsploraTxStatus, type EsploraUtxo } from "./esplora";
+export { esploraClient, feeRate, type EsploraClient, type EsploraTx, type EsploraTxStatus, type EsploraUtxo } from "./esplora";
 export { findTreasury, TreasuryError, type Treasury } from "./treasury";
 export {
   createDeposits,
   CONFIRMATIONS_TO_CREDIT,
   DEPOSIT_REQUESTER,
-  feeRate,
   type DepositClaim,
   type DepositDeps,
   type Deposits,
