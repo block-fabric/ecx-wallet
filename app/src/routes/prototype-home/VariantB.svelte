@@ -2,7 +2,7 @@
   // PROTOTYPE, throw away. Variant B, "A by chain, with MetaMask's tabs": A, but the Assets list
   // is grouped by chain (a heading per chain, its assets under it), and home has Assets / Activity
   // tabs instead of the bottom tab bar, the way MetaMask's home does. Grants moves to the ⋮ menu.
-  // The chain chips scope both tabs.
+  // No chain chips: home always shows every chain.
   import Mark from "$lib/Mark.svelte";
   import type { HistoryEntry } from "$lib/background";
   import { shortAsset } from "$lib/asset";
@@ -31,28 +31,24 @@
   /** The Send sheet's chain picker. */
   let picking = $state(false);
   let copied = $state(false);
-  /** Home's scope: every chain, or one. */
-  let scope = $state<ProtoChain["id"] | "all">("all");
   let homeTab = $state<"assets" | "activity">("assets");
   let menu = $state(false);
 
   const detail = $derived(chains.find((c) => c.id === open));
-  const scopeChain = $derived(chains.find((c) => c.id === scope));
-  const scoped = $derived(scopeChain ? [scopeChain] : chains);
   const receiveChain = $derived(chains.find((c) => c.id === receiving));
   const deposits = $derived(chains.flatMap((c) => c.deposits ?? []));
   const feed = $derived(
-    scoped
+    chains
       .flatMap((c) => c.history.map((entry) => ({ chain: c, entry })))
       .sort((x, y) => (y.entry.time ?? Infinity) - (x.entry.time ?? Infinity)),
   );
 
-  /** ECX across the chains in scope: every asset named ECX, from the chains that could be read. */
+  /** ECX across chains: every asset named ECX, from the chains that could be read. */
   const total = $derived.by(() => {
     let sats = 0n;
     let unconfirmed = 0n;
     const missing: string[] = [];
-    for (const c of scoped) {
+    for (const c of chains) {
       if (c.shown.report === undefined) missing.push(c.name);
       for (const a of assetsOf(c.shown)) {
         if (ASSET_NAMES[a.asset]?.ticker !== "ECX") continue;
@@ -219,32 +215,19 @@
       </header>
       <p class="lock-note"><span class="dot"></span>Unlocked. Locks itself after 15 minutes without use.</p>
 
-      <div class="filters">
-        <button class:on={scope === "all"} onclick={() => (scope = "all")}>All chains</button>
-        {#each chains as c (c.id)}
-          <button class:on={scope === c.id} onclick={() => (scope = c.id)}>{c.name}</button>
-        {/each}
-      </div>
-
       <section class="hero">
-        <span class="muted tiny">{scopeChain ? `On ${scopeChain.name}` : "Total across chains"}</span>
-        {#if scopeChain && !scopeChain.shown.report}
-          <div class="big muted">—</div>
-        {:else}
-          <div class="big">{coins(total.sats, 8)} ECX</div>
-          <div class="muted small">{grouped(total.sats)} sats</div>
-        {/if}
+        <span class="muted tiny">Total across chains</span>
+        <div class="big">{coins(total.sats, 8)} ECX</div>
+        <div class="muted small">{grouped(total.sats)} sats</div>
         {#if total.unconfirmed !== "0"}<span class="pill warn">+{grouped(total.unconfirmed)} sats unconfirmed</span>{/if}
-        {#if scopeChain?.shown.error}
-          <p class="error small">{scopeChain.shown.report ? "Couldn't refresh the balance" : "Balance unavailable"}: {scopeChain.shown.error}</p>
-        {:else if total.missing.length}
+        {#if total.missing.length}
           <span class="pill bad">{total.missing.join(", ")} unavailable, not counted</span>
         {/if}
       </section>
 
-      {@render actions(scopeChain)}
+      {@render actions(undefined)}
 
-      {#if deposits.length && scope !== "l1"}
+      {#if deposits.length}
         <button class="banner" onclick={() => (open = 24)}>
           <span class="spinner"></span>
           <span class="grow">{deposits.length} Deposit{deposits.length > 1 ? "s" : ""} to Elements+ in progress</span>
@@ -257,7 +240,7 @@
         <button role="tab" class:on={homeTab === "activity"} onclick={() => (homeTab = "activity")}>Activity</button>
       </div>
       {#if homeTab === "assets"}
-        {#each scoped as c (c.id)}
+        {#each chains as c (c.id)}
           {@const assets = assetsOf(c.shown)}
           <section class="chain-group">
             <button class="chain-heading" onclick={() => ((open = c.id), (chainTab = "assets"))}>
@@ -294,7 +277,7 @@
       {:else}
         <ul>
           {#each feed as { chain, entry } (entry.txid)}
-            {@render activityRow(chain, entry, scope === "all")}
+            {@render activityRow(chain, entry, true)}
           {/each}
         </ul>
         <p class="reported-inline">Reported by each chain's server. This wallet doesn't verify it.</p>
@@ -523,22 +506,6 @@
     font-weight: 400;
     text-align: left;
     text-decoration: none;
-  }
-  .filters {
-    display: flex;
-    gap: 6px;
-    margin-top: -4px;
-  }
-  .filters button {
-    min-height: 28px;
-    padding: 0 12px;
-    border-radius: 999px;
-    font-size: 0.8rem;
-  }
-  .filters button.on {
-    border-color: var(--text);
-    background: var(--text);
-    color: var(--bg);
   }
   .token {
     position: relative;

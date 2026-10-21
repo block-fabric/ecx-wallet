@@ -12,7 +12,7 @@
   const VARIANTS = [
     { key: "A", name: "Assets first" },
     { key: "B", name: "A by chain, MetaMask tabs" },
-    { key: "C", name: "A's look on B's map" },
+    { key: "C", name: "B, folded" },
   ];
 
   const variant = $derived(VARIANTS.some((v) => v.key === page.params.variant) ? page.params.variant! : "A");
