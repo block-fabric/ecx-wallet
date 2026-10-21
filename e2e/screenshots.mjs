@@ -134,10 +134,12 @@ try {
   await shot(page, "06-send");
   await page.close();
 
-  page = await openWalletPage(session, "#/history/24");
+  page = await session.openPage("index.html#/");
   await page.setViewport(POPUP);
-  await page.waitForSelector("[data-history]:not([data-refreshing])", { timeout: 20_000 });
-  await shot(page, "06-history");
+  await page.waitForSelector('[data-tab="activity"]', { timeout: 20_000 });
+  await page.click('[data-tab="activity"]');
+  await page.waitForSelector("[data-activity]:not([data-refreshing])", { timeout: 20_000 });
+  await shot(page, "06-activity");
   await page.close();
 
   // Grant requests: one plain, one with the Blind Signing opt-in ticked.

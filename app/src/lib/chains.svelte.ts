@@ -2,6 +2,7 @@
 // receive address, what its server reports, and (for a Slot) its Deposits. Each read is the
 // background's; this only keeps the answers, per chain, and asks again on Retry.
 import {
+  cachedHistory,
   cachedState,
   l1Account,
   l1Cached,
@@ -10,8 +11,10 @@ import {
   listChains,
   listDeposits,
   refusedDeposit,
+  reportedHistory,
   reportedState,
   showReport,
+  type ChainHistory,
   type AssetEntry,
   type ChainId,
   type ChainInfo,
@@ -30,6 +33,8 @@ export interface ChainView {
   deposits?: DepositStatus[] | { error: string };
   /** A Slot's last Deposit that failed after approval, or null; undefined until read. */
   refused?: RefusedDeposit | null;
+  /** Its transactions (this session's last while refreshing), once its Activity was opened. */
+  history?: ShownReport<ChainHistory>;
 }
 
 export class Chains {
@@ -73,6 +78,14 @@ export class Chains {
   /** Asks the chain's server again. */
   retry(id: ChainId) {
     this.readReport(id);
+  }
+
+  /** Reads the chains' transactions: on opening an Activity tab, and on Retry. */
+  readHistory(ids: ChainId[]) {
+    for (const id of ids) {
+      const slot = id === "l1" ? undefined : id;
+      showReport(() => cachedHistory(slot), () => reportedHistory(slot), (history) => this.update(id, { history }));
+    }
   }
 
   /** Reads a Slot's Deposits again (after Stop tracking or closing a refused one). */
