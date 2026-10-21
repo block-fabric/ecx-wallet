@@ -9,7 +9,7 @@ import { cacheKey, type SessionCache } from "./cache";
 import type { AssetAmount, ChainEntry, ChainKey, ClearView, NetworkEntry, Starter } from "./chain-module";
 import { ErrorCode, ProviderRpcError } from "./errors";
 import { SidechainServerError, type HistoryEntry, type SidechainServer, type TransferOrder, type TreasuryScript, type WatchData } from "./sidechain-server";
-import { parseSigningRequest } from "./signing-request";
+import { parseSigningRequest, type SigningRequest } from "./signing-request";
 import { chainModuleFor, reviewAndSign, type SigningApproval, type SigningDeps } from "./signing";
 
 /** Receive addresses the wallet watches: the gap a server watches ahead of the first unused one. */
@@ -186,9 +186,9 @@ export function createPullPath(deps: PullPathDeps) {
     /**
      * The wallet's own Send: the Slot's server builds the transfer; the Signing Request it returns
      * gets the whole validation order (no Grant step: the wallet asked for it), must be Clear (no
-     * Grant, so no Blind opt-in) and be the transfer asked for, is approved in the approval window naming the server, then signed
-     * and submitted back. A Sidechain App's Send (`via`) names the app instead, in the window it
-     * already opened.
+     * Grant, so no Blind opt-in) and be the transfer asked for, is approved in the approval window
+     * naming the server, then signed and submitted back. A Sidechain App's Send (`via`) names the
+     * app instead, in the window it already opened.
      */
     async send(slot: number, order: TransferOrder, via?: { requester: string; approval: SigningApproval }): Promise<SendResult> {
       const checked = checkedOrder(order);
@@ -197,24 +197,32 @@ export function createPullPath(deps: PullPathDeps) {
       const watched = await watch(target);
       const built = await server.buildTransfer(watched, checked);
 
-      const request = parseSigningRequest(built, Math.floor(deps.now() / 1000));
-      if (request.slot !== slot) {
-        throw new ProviderRpcError(ErrorCode.InvalidParams, `Slot ${slot}'s Sidechain Server sent a request for ${request.chain}.`);
+      // From here, whatever is wrong with the request is the server's doing: the requester reads it
+      // as the server's error, not its own (only rejecting stays the user's).
+      let request: SigningRequest;
+      let signed: string;
+      try {
+        request = parseSigningRequest(built, Math.floor(deps.now() / 1000));
+        if (request.slot !== slot) {
+          throw new ProviderRpcError(ErrorCode.InvalidParams, `Slot ${slot}'s Sidechain Server sent a request for ${request.chain}.`);
+        }
+        const module = await chainModuleFor(deps, request);
+        signed = await reviewAndSign(deps, {
+          requester: via?.requester ?? server.url,
+          request,
+          module,
+          blindRefusal: BLIND_REFUSED,
+          approval: via?.approval,
+          expect: (view) => {
+            if (!isTransferAskedFor(view, checked)) {
+              throw new SidechainServerError(server.url, `The Sidechain Server at ${server.url} built a transfer that isn't the one asked for. Nothing was sent.`);
+            }
+          },
+        });
+      } catch (error) {
+        if (error instanceof ProviderRpcError && error.code !== ErrorCode.UserRejected) throw new SidechainServerError(server.url, error.message);
+        throw error;
       }
-      const module = await chainModuleFor(deps, request);
-      const signed = await reviewAndSign(deps, {
-        requester: via?.requester ?? server.url,
-        request,
-        module,
-        blindRefusal: BLIND_REFUSED,
-        approval: via?.approval,
-        // The server built it: one that isn't what was asked for is the server's, refused unseen.
-        expect: (view) => {
-          if (!isTransferAskedFor(view, checked)) {
-            throw new SidechainServerError(server.url, `The Sidechain Server at ${server.url} built a transfer that isn't the one asked for. Nothing was sent.`);
-          }
-        },
-      });
       const { accepted, txid } = await server.submit(watched, request.id, signed);
       return { server: server.url, accepted, ...(txid ? { txid } : {}) };
     },

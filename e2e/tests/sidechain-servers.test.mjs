@@ -249,7 +249,7 @@ describe("Standard Sidechain API", () => {
   test("Send: a server-built request the Decoder can't fully explain is refused without an approval", async () => {
     const before = stub.submissions().length;
     const { pullPath, prompts } = pullPathWith(server());
-    await assert.rejects(send(pullPath, "2"), /Clear Signed/);
+    await assert.rejects(send(pullPath, "2"), (e) => e instanceof wallet.SidechainServerError && /Clear Signed/.test(e.message));
     assert.equal(prompts.length, 0, "never shown, so never Blind-signed");
     assert.equal(stub.submissions().length, before);
   });
@@ -287,10 +287,10 @@ describe("Standard Sidechain API", () => {
     ["a confidential input", "5", /confidential/i],
     ["a confidential output", "6", /confidential/i],
   ]) {
-    test(`Send: a server-built request with ${what} is refused`, async () => {
+    test(`Send: a server-built request with ${what} is refused as the server's error`, async () => {
       const before = stub.submissions().length;
       const { pullPath, prompts } = pullPathWith(server());
-      await assert.rejects(send(pullPath, amount), message);
+      await assert.rejects(send(pullPath, amount), (e) => e instanceof wallet.SidechainServerError && message.test(e.message));
       assert.equal(prompts.length, 0);
       assert.equal(stub.submissions().length, before);
     });

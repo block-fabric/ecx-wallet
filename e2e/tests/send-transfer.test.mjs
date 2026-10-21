@@ -56,6 +56,12 @@ describe("sendTransfer", () => {
     assert.deepEqual(sent, []);
   });
 
+  test("a Slot the wallet has no Chain Module for is 4901", async () => {
+    const { handle, sent } = provider({ grant: granted(["sendTransfer"], [9]) });
+    await assert.rejects(handle(ORIGIN, "sendTransfer", { slot: 9, outputs: OUTPUTS }), (e) => e.code === 4901);
+    assert.deepEqual(sent, []);
+  });
+
   test("a missing Slot is invalid params, naming the method", async () => {
     const { handle } = provider({ grant: granted(["sendTransfer"]) });
     await assert.rejects(handle(ORIGIN, "sendTransfer", { outputs: OUTPUTS }), (e) => e.code === -32602 && /^sendTransfer needs `slot`/.test(e.message));

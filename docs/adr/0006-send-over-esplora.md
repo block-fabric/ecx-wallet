@@ -11,16 +11,16 @@ The rules:
 - **Change:** one change address for every asset, the first of the 20 watched change addresses (`/1/0..19`) that nothing has paid. When all 20 are used, change goes to `/1/19` again: reusing an address costs privacy, but refusing would lock funds behind a window the user can't widen.
 - **Held coins.** A broadcast Send's spent coins are kept in `storage.local` with the tip height at broadcast, and left out of coin selection. The server may still list them before it has indexed the spend. An entry is dropped once its transaction confirms. It is also dropped, releasing the coins, once the server doesn't know the transaction (404) and the tip is at least 6 blocks past the broadcast. Blocks, not minutes, because Slot 24's blocks depend on the main chain's mining and can stall.
 
-Every output in `build_transfer`'s order is `{ asset, amount, to: { address } }`. `to` is tagged so that later outputs can pay a script or carry data (a Withdrawal's burn, a dApp's OP_RETURN) without changing the interface. The `/v1` `TransferOrder` takes the same list.
+Every output in `build_transfer`'s order is `{ asset, amount, to: { address } }`. `to` is tagged so that later outputs can pay a script or carry data (a Withdrawal's burn, a Sidechain App's OP_RETURN) without changing the interface. The `/v1` `TransferOrder` takes the same list.
 
 ## A Sidechain App's Send: `sendTransfer` (#39)
 
 An app with a Grant for `sendTransfer` can have the wallet make a Send: `{ slot, outputs }`, answered with `{ txid }`. It is the same Send, built and held by the same rules, over Esplora and `/v1` alike, with three differences. The approval window names the app's origin. A request while the wallet is locked opens the window to unlock first, then builds, then shows the transfer in the same window; it doesn't fail with 4100 as `getAddresses` does. A failure after approval is the app's answer, not a refused Send in Activity, since the app's page is still open.
 
-- **Outputs only.** The wallet builds the whole transaction. Completing a PSET the app started (swaps) is a different method: it needs foreign inputs without our derivation, a net-flow approval rather than `checkView`, and often the app, not the wallet, broadcasting.
+- **Outputs only.** The wallet builds the whole transaction. Completing a PSET the app started (swaps) is a different method: it needs foreign inputs without our derivation, a net-flow approval rather than checking the Clear View against an order, and often the app, not the wallet, broadcasting.
 - **Its own Grant.** `signTransaction`'s doesn't cover it: a funded transaction shows the app the wallet's coins and a change address.
 - **Always Clear.** The wallet built it, so a Blind result is a wallet bug, refused even if the Grant opts into Blind Signing. So only output kinds the Decoder explains are accepted: `address` for now; any other `to` is refused.
-- **Refusals go straight to the app** as `-32602`, with the Send page's message (not enough spendable, below dust, a confidential address, no ECX for the fee). Hiding them would protect nothing: `getAddresses` and the chain's Esplora already show the app the receive addresses' coins. Rejection is 4001, a server failure -32001.
+- **Refusals go straight to the app** as `-32602`, with the Send page's message (not enough spendable, below dust, a confidential address, no ECX for the fee). Hiding them would protect nothing: `getAddresses` and the chain's Esplora already show the app the receive addresses' coins. Rejection is 4001, a server failure -32001. Over `/v1` the server builds, so its refusals (not enough spendable among them) and anything wrong with the request it built arrive as -32001, with the server's message.
 - **Over `/v1` too, the transfer must be the one asked for.** The server builds it, so a Clear View that isn't the payments asked for plus outputs back to the wallet is refused as the server's error, before the user sees it. This holds for the wallet's own Send as well.
 - **One Send per Slot at a time**, the app's or the wallet's own: coins are held only once broadcast, so two built together could pick the same coins.
 - **Chain identity**: an app learns the chain from `getAddresses`' CAIP-2 `chain`; there is no separate network method.
@@ -35,5 +35,5 @@ An app with a Grant for `sendTransfer` can have the wallet make a Send: `{ slot,
 ## Consequences
 
 - Known edge case: if the server evicts a held Send that another node keeps and later mines, a Send built after the release may spend the same coins. One of the two is refused; nothing is lost.
-- Spends a dApp signs through `signTransaction` and broadcasts itself aren't held: the wallet never sees the broadcast. Once the server has the transaction, its mempool view leaves the coins out of `/utxo`.
+- Spends a Sidechain App signs through `signTransaction` and broadcasts itself aren't held: the wallet never sees the broadcast. Once the server has the transaction, its mempool view leaves the coins out of `/utxo`.
 - Gaps, each for a later issue: completing a PSET someone else started (swaps); `script` and `data` outputs for `sendTransfer`, once the Decoder explains them; telling `signTransaction` apps which coins are held; issuance; choosing coins by hand; sending the maximum; a fee picker; RBF.
