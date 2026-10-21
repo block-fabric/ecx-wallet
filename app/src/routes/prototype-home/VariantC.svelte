@@ -31,8 +31,8 @@
   const chains = $derived([...baseChains.filter((c) => !hidden[c.id]), ...added]);
   /** Every chain this version supports, and whether it's on. */
   const manageable = $derived([
-    ...baseChains.map((c) => ({ id: c.id, name: c.name, chain: c.chain, mark: c.id === "l1" ? "e" : "E+", blurb: c.id === "l1" ? "The main chain" : "Assets and confidential transfers", on: !hidden[c.id], root: c.id === "l1" })),
-    ...MORE_CHAINS.map((m) => ({ id: m.slot, name: m.name, chain: m.chain, mark: m.mark, blurb: m.blurb, on: added.some((c) => c.id === m.slot), root: false })),
+    ...baseChains.map((c) => ({ id: c.id, name: c.name, network: c.network, chain: c.chain, mark: c.id === "l1" ? "e" : "E+", blurb: c.id === "l1" ? "eCash itself" : "Assets and confidential transfers", on: !hidden[c.id], root: c.id === "l1" })),
+    ...MORE_CHAINS.map((m) => ({ id: m.slot, name: m.name, network: undefined as string | undefined, chain: m.chain, mark: m.mark, blurb: m.blurb, on: added.some((c) => c.id === m.slot), root: false })),
   ]);
   function toggle(id: ProtoChain["id"]) {
     const base = baseChains.find((c) => c.id === id);
@@ -242,8 +242,10 @@
       <header>
         <button class="icon" aria-label="Back" onclick={() => (open = undefined)}><ProtoIcon name="back" /></button>
         {@render avatar(detail, 26)}
-        <span class="title">{detail.name}</span>
-        <span class="chip">{detail.chain}</span>
+        <span class="col title-block">
+          <span class="title name-line">{detail.name}{#if detail.network}<span class="net-tag">{detail.network}</span>{/if}</span>
+          <span class="mono muted tiny">{detail.chain}</span>
+        </span>
       </header>
 
       {@const main = ecxOf(detail)}
@@ -344,7 +346,7 @@
               <button class="chain-name" onclick={() => ((open = c.id), (chainTab = "assets"))}>
                 {@render avatar(c, 24)}
                 <span class="col">
-                  <strong>{c.name}</strong>
+                  <span class="name-line"><strong>{c.name}</strong>{#if c.network}<span class="net-tag">{c.network}</span>{/if}</span>
                 </span>
               </button>
               <span class="grow"></span>
@@ -425,7 +427,7 @@
               {#if m.root}<EcashLogo size={19} />{:else}{m.mark}{/if}
             </span>
             <span class="col grow">
-              <strong class="small">{m.name}</strong>
+              <span class="name-line"><strong class="small">{m.name}</strong>{#if m.network}<span class="net-tag">{m.network}</span>{/if}</span>
               <span class="muted tiny">{m.blurb} · <span class="mono">{m.chain}</span></span>
             </span>
             {#if m.root}
@@ -568,7 +570,7 @@
         {@const ecx = ecxOf(c)}
         <a class="chain-row pick" class:off={!c.canSend} href="#/send/{c.id}">
           {@render avatar(c, 30)}
-          <span class="col grow"><strong>{c.name}</strong><span class="muted tiny">{c.canSend ? (ecx ? ecxAmount(ecx.amount) : "") : c.id === "l1" ? `Sending on ${c.name} isn't built yet` : "Needs a fresh balance"}</span></span>
+          <span class="col grow"><strong>{c.name}</strong><span class="muted tiny">{c.canSend ? (ecx ? ecxAmount(ecx.amount) : "") : c.id === "l1" ? "Sending here isn't built yet" : "Needs a fresh balance"}</span></span>
           <ProtoIcon name="forward" size={16} />
         </a>
       {/each}
@@ -847,6 +849,7 @@
   .subtotal {
     font-weight: 600;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
   .fold {
     width: 28px;
@@ -1066,6 +1069,25 @@
   .seg button.on {
     background: var(--surface);
     box-shadow: var(--shadow);
+  }
+  /* A network that isn't the real one yet: a quiet metadata label (uppercase, tracked, as eCash's brand does). */
+  .name-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .net-tag {
+    padding: 1px 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--muted);
+    font-size: 0.6rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    line-height: 1.4;
+    text-transform: uppercase;
+    vertical-align: middle;
   }
   .count {
     display: inline-flex;

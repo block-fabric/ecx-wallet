@@ -219,7 +219,7 @@
         <button class="icon" aria-label="Back" onclick={() => (open = undefined)}><ProtoIcon name="back" /></button>
         {@render avatar(detail, 26)}
         <span class="col title-block">
-          <span class="title">{detail.name}</span>
+          <span class="title name-line">{detail.name}{#if detail.network}<span class="net-tag">{detail.network}</span>{/if}</span>
           <span class="mono muted tiny">{detail.chain}</span>
         </span>
       </header>
@@ -346,7 +346,7 @@
               <button class="chain-name" onclick={() => ((open = c.id), (chainTab = "assets"))}>
                 {@render avatar(c, 24)}
                 <span class="col">
-                  <strong>{c.name}</strong>
+                  <span class="name-line"><strong>{c.name}</strong>{#if c.network}<span class="net-tag">{c.network}</span>{/if}</span>
                 </span>
               </button>
               <span class="grow"></span>
@@ -524,7 +524,7 @@
         {@const ecx = ecxOf(c)}
         <a class="chain-row pick" class:off={!c.canSend} href="#/send/{c.id}">
           {@render avatar(c, 30)}
-          <span class="col grow"><strong>{c.name}</strong><span class="muted tiny">{c.canSend ? (ecx ? ecxAmount(ecx.amount) : "") : c.id === "l1" ? `Sending on ${c.name} isn't built yet` : "Needs a fresh balance"}</span></span>
+          <span class="col grow"><strong>{c.name}</strong><span class="muted tiny">{c.canSend ? (ecx ? ecxAmount(ecx.amount) : "") : c.id === "l1" ? "Sending here isn't built yet" : "Needs a fresh balance"}</span></span>
           <ProtoIcon name="forward" size={16} />
         </a>
       {/each}
@@ -821,6 +821,7 @@
   .subtotal {
     font-weight: 600;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
   .fold {
     width: 28px;
@@ -987,6 +988,25 @@
   .chain-avatar.ecash,
   .token-avatar.ecash {
     background: #0a0a0c;
+  }
+  /* A network that isn't the real one yet: a quiet metadata label (uppercase, tracked, as eCash's brand does). */
+  .name-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .net-tag {
+    padding: 1px 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--muted);
+    font-size: 0.6rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    line-height: 1.4;
+    text-transform: uppercase;
+    vertical-align: middle;
   }
   .count {
     display: inline-flex;

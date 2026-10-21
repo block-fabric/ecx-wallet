@@ -34,6 +34,8 @@ export interface ProtoChain {
   canSend: boolean;
   /** What its icon says; eCash's "e" and Elements+'s "E+" when missing. */
   mark?: string;
+  /** A network that isn't the real one yet, shown as a tag by the name. */
+  network?: string;
 }
 
 /**
@@ -92,7 +94,8 @@ const pending = (txid: string, value: string): PendingDeposit => ({
 function ecash(scenario: Scenario): ProtoChain {
   return {
     id: "l1",
-    name: "Betanet",
+    name: "Main chain",
+    network: "Betanet",
     chain: "ecash:betanet",
     address: "tex1qx90cvlsrluvqjj9uv54an54sv0kqfse45nyrxx",
     shown:
