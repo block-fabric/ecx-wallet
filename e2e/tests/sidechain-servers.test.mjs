@@ -420,6 +420,62 @@ describe("Send over Esplora", () => {
     }
   });
 
+  test("a partial history spends confirmed coins only: an unlisted parent could pass for trusted", async () => {
+    const ours = account.receive[0].scriptPubkey;
+    const confirmedTx = (i) => ({
+      txid: i.toString(16).padStart(64, "c"),
+      vin: [],
+      vout: [{ scriptpubkey: ours, value: 1, asset: POLICY_ASSET }],
+      status: { confirmed: true, block_height: 1, block_hash: "00".repeat(32), block_time: 1792000000 },
+    });
+    const trustedPending = {
+      txid: "b1".repeat(32),
+      vin: [{ txid: "a0".repeat(32), vout: 0, prevout: { scriptpubkey: ours, value: 5000, asset: POLICY_ASSET } }],
+      vout: [{ scriptpubkey: ours, value: 4000, asset: POLICY_ASSET }],
+      status: { confirmed: false },
+    };
+    config.utxos = { [RECEIVE_0]: [utxo("a0", 150000), utxo("b1", 4000, { confirmed: false })] };
+    // 25 confirmed transactions: Esplora's full first page, so older ones may be missing.
+    config.addressTxs = { [RECEIVE_0]: [trustedPending, ...Array.from({ length: 25 }, (_, i) => confirmedTx(i))] };
+    try {
+      assert.deepEqual(await sendsWith(esplora()).sends.spendable(24), [{ asset: POLICY_ASSET, amount: "150000" }]);
+    } finally {
+      config.addressTxs = undefined;
+    }
+  });
+
+  test("a Slot whose module doesn't build transfers has no Send over Esplora, but does over `/v1`", async () => {
+    const entry = structuredClone(elements.chainEntry());
+    const withoutBuild = (api) => {
+      entry.networks.betanet.sidechainServer = { api, url };
+      const declared = elements.declare();
+      return {
+        ...elements,
+        chainEntry: () => structuredClone(entry),
+        declare: () => ({ ...declared, capabilities: declared.capabilities.filter((c) => c !== "buildTransfer") }),
+      };
+    };
+    assert.equal(wallet.describeChain(withoutBuild("esplora")).sends, false);
+    assert.equal(wallet.describeChain(withoutBuild("ecx-v0")).sends, true);
+    assert.equal(wallet.describeChain(elements).sends, true, "the shipped module over Esplora");
+
+    config.utxos = { [RECEIVE_0]: [utxo("a0", 150000)] };
+    const module = withoutBuild("esplora");
+    const sends = wallet.createSends({
+      chainModule: async () => module,
+      l1Module: async () => l1,
+      starter: async () => SLOT_24_STARTER,
+      l1AccountKey: async () => assert.fail(),
+      pullPath: pullPathWith(esplora()).pullPath,
+      esplora: () => assert.fail("asked its server"),
+      openSigningApproval: () => assert.fail("opened an approval"),
+      isUnlocked: async () => true,
+      held: { list: async () => [], put: async () => {}, remove: async () => {} },
+      now: () => 0,
+    });
+    await assert.rejects(sends.send(24, { outputs: [out("1000")] }), /can't send on Elements\+: its Chain Module doesn't build transfers/);
+  });
+
   test("a refused broadcast says nothing was sent, holds nothing, and is kept for the Activity feed until a Send goes through", async () => {
     config.utxos = { [RECEIVE_0]: [utxo("a0", 150000)] };
     config.refuseBroadcast = "bad-txns-inputs-missingorspent";
