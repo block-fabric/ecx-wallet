@@ -58,6 +58,14 @@ impl Wallet {
             .map(|(pk, source)| (*pk, source.clone()))
     }
 
+    /// The key at `<account>/<chain>/<index>`, as a PSET's `bip32_derivation` holds it.
+    pub(crate) fn key(&self, chain: u32, index: u32) -> Result<(PublicKey, KeySource), String> {
+        let normal = |i: u32| ChildNumber::from_normal_idx(i).map_err(|e| e.to_string());
+        let rest = [normal(chain)?, normal(index)?];
+        let child = self.account_xpub.derive_pub(&self.secp, &rest).map_err(|e| e.to_string())?;
+        Ok((PublicKey::new(child.public_key), (self.fingerprint, self.account_path.extend(rest))))
+    }
+
     /// True if `path` is `<account>/{0,1}/i` and derives to `pk`.
     fn derives(&self, path: &DerivationPath, pk: &PublicKey) -> bool {
         let Some(rest) = path.as_ref().strip_prefix(self.account_path.as_ref()) else { return false };
