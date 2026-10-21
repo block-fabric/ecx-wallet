@@ -72,12 +72,28 @@ Unconfirmed coins are only shown: a Deposit spends confirmed ones only. The Stan
 API reports them in an optional `unconfirmed` list. The Send screen is `#/send/<slot>`
 (`send.start`), for Slots only.
 
-Session cache (`wallet/src/cache.ts`): mostly to answer faster, the background keeps four things in
+History (#33): each home card links to `#/history/<chain>` (`l1` or the Slot), which reads the
+chain's transactions only when opened (`history.reported`; this session's last, `history.cached`,
+shows while it refreshes). Each entry is the wallet's net change per asset, fee included, with its
+block time, or "Pending" (trusted: it spends only the wallet's own coins, each confirmed or from a
+trusted transaction) or "Unconfirmed" (anything else, with a warning), and its txid. Over Esplora
+(`SidechainServer.history`) the wallet reads `/address/:a/txs` for the 40 watched addresses, merges
+them by txid and works the rest out itself: "Fee, to yourself" when every output is the wallet's,
+"Deposit to Slot N" for an M5 it funded to a Treasury script of a Slot it supports, and "+
+confidential amounts not shown" for its outputs with no explicit value. There's no paging: when an
+address's list is full (25 confirmed or 50 unconfirmed) the screen says older transactions may not
+be shown. Trust needs each input's parent, and over Esplora the wallet assumes a parent missing
+from the lists is confirmed: it paid a watched address, whose list has every one of its mempool's
+transactions (up to 50), so only an older confirmed one can be left out. The Standard Sidechain
+API reports history in its `state` (draft 2, `stub-server/README.md`).
+
+Session cache (`wallet/src/cache.ts`): mostly to answer faster, the background keeps five things in
 `storage.session` (memory only), read and written only while unlocked, and forgotten on every lock:
 a server's passed identity check (once per URL, as ADR 0002 has it; a failure is never kept), the
 last balance each chain's server reported (`l1.cached`, `accounts.cached`: shown at once, marked
 "Last read at …; refreshing…" and `data-refreshing` on the card, until the fresh one arrives), and
-raw transactions, kept only once the L1 module hashes them to their txid, and each Slot's last
+raw transactions, kept only once the L1 module hashes them to their txid, each chain's last
+history (`history.cached`, shown the same way on its History screen), and each Slot's last
 Deposit that failed after approval (below). Nothing else a Deposit is
 built from is cached: its coins, Treasury, fee rate and confirmations are always read fresh. Esplora
 lookups run 20 at once (`QUERIES_AT_ONCE`). Tests that change a server's chain lock and unlock first

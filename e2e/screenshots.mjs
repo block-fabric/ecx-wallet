@@ -3,7 +3,7 @@
 //   pnpm build && pnpm build:e2e && node e2e/screenshots.mjs <out dir> [light|dark]
 //
 // Drives the e2e build through the same harness as the e2e suite: onboarding, create, import,
-// the account screen with balances from the stub Esplora server, Send, Grants, the
+// the account screen with balances from the stub Esplora server, Send, History, Grants, the
 // locked screens, and each kind of approval window. Brave only: over BiDi, Firefox can't resize
 // or capture extension pages.
 import { mkdir, readFile } from "node:fs/promises";
@@ -25,6 +25,22 @@ const CHAIN = "ecash:betanet-s24";
 const SLOT_24_ADDRESS = "elements1qew44aehkjstjm56ng2rjrz57vwxh5g9su6dlpm";
 const POLICY_ASSET = "5836dcc06130dcf6a65b6ac493813fd65559955283e44cc3f07966294eccb2c8";
 const OTHER_ASSET = "1111111111111111111111111111111111111111111111111111111111111111";
+const SLOT_24_SCRIPT = "0014cbab5ee6f694172dd3534287218a9e638d7a20b0";
+const FOREIGN_SCRIPT = `0014${"ab".repeat(20)}`;
+/** Slot 24 transactions as Esplora lists them, for the History screen. */
+const historyTx = (seed, vin, vout, status) => ({
+  txid: seed.repeat(32),
+  vin: vin.map(([scriptpubkey, value]) => ({ txid: "d0".repeat(32), vout: 0, prevout: { scriptpubkey, value, asset: POLICY_ASSET }, is_coinbase: false })),
+  vout: vout.map(([scriptpubkey, value, asset = POLICY_ASSET]) => ({ scriptpubkey, value, asset })),
+  status,
+});
+const block = (height, time) => ({ confirmed: true, block_height: height, block_hash: "00".repeat(32), block_time: time });
+const SLOT_24_HISTORY = [
+  historyTx("e3", [[FOREIGN_SCRIPT, 9000]], [[SLOT_24_SCRIPT, 2500], [FOREIGN_SCRIPT, 6400], ["", 100]], { confirmed: false }),
+  historyTx("e2", [[SLOT_24_SCRIPT, 150000]], [[FOREIGN_SCRIPT, 40000], [SLOT_24_SCRIPT, 109700], ["", 300]], { confirmed: false }),
+  historyTx("e1", [[FOREIGN_SCRIPT, 20]], [[SLOT_24_SCRIPT, 7, OTHER_ASSET], [FOREIGN_SCRIPT, 13, OTHER_ASSET]], block(2001, 1792040000)),
+  historyTx("e0", [[FOREIGN_SCRIPT, 200000]], [[SLOT_24_SCRIPT, 150000], [FOREIGN_SCRIPT, 49700], ["", 300]], block(2000, 1792000000)),
+];
 // Popup width; the approval window is 420 wide (extension/src/background.ts).
 const POPUP = { width: 360, height: 600 };
 const APPROVAL = { width: 420, height: 640 };
@@ -54,6 +70,7 @@ const [session, app, stub] = await Promise.all([
         { txid: "cc".repeat(32), vout: 0, value: 2500, asset: POLICY_ASSET, confirmed: false },
       ],
     },
+    addressTxs: { [SLOT_24_ADDRESS]: SLOT_24_HISTORY },
   }),
 ]);
 
@@ -111,6 +128,12 @@ try {
   await page.setViewport(POPUP);
   await page.waitForSelector("[data-send-asset] option");
   await shot(page, "06-send");
+  await page.close();
+
+  page = await openWalletPage(session, "#/history/24");
+  await page.setViewport(POPUP);
+  await page.waitForSelector("[data-history]:not([data-refreshing])", { timeout: 20_000 });
+  await shot(page, "06-history");
   await page.close();
 
   // Grant requests: one plain, one with the Blind Signing opt-in ticked.

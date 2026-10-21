@@ -363,6 +363,12 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
       // What a Slot's Sidechain Server reports for the addresses the wallet watches.
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
       return pullPath.reportedState(supportedSlot(message.slot));
+    case "history.reported":
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      return message.slot === undefined ? pullPath.l1History() : pullPath.history(supportedSlot(message.slot));
+    case "history.cached":
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      return (await (message.slot === undefined ? pullPath.cachedL1History() : pullPath.cachedHistory(supportedSlot(message.slot)))) ?? null;
     case "send.start":
       // The wallet's own Send: resolves once the server accepted the signed payload.
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");

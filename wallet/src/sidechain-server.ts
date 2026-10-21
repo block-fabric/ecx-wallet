@@ -19,7 +19,40 @@ export interface ReportedState {
   balances: AssetAmount[];
   /** What unconfirmed outputs would add once confirmed, per asset; none if nothing is pending. */
   unconfirmed: AssetAmount[];
-  history: unknown[];
+}
+
+/** A transaction touching a watch, as its server reports it. Unverified by the wallet. */
+export interface HistoryEntry {
+  txid: string;
+  /** The watch's net change per asset: base units, negative for what left it. */
+  amounts: AssetAmount[];
+  confirmed: boolean;
+  /** When its block was mined, in seconds since the epoch; only once confirmed. */
+  time?: number;
+  /**
+   * Unconfirmed only: it spends only the wallet's own coins, each confirmed or from a trusted
+   * transaction (Bitcoin Core's `IsTrusted`), so only the wallet could replace it.
+   */
+  trusted?: boolean;
+  /** It spends the wallet's coins and pays only the wallet back: all it cost is the fee. */
+  toSelf?: boolean;
+  /** Some of the wallet's outputs it pays or spends are confidential: their amounts aren't in `amounts`. */
+  hidden?: boolean;
+  /** The wallet's M5 to this Slot's Treasury (eCash only). */
+  depositTo?: number;
+}
+
+/** A Slot's Treasury script on eCash, by which a server's client recognizes the wallet's Deposits. */
+export interface TreasuryScript {
+  slot: number;
+  scriptPubkey: string;
+}
+
+/** A server's account of a watch's transactions, newest first. */
+export interface ReportedHistory {
+  entries: HistoryEntry[];
+  /** The server has older transactions it didn't list. */
+  partial: boolean;
 }
 
 export interface TransferOrder {
@@ -48,6 +81,11 @@ export interface SidechainServer {
   /** The server's base URL: who the wallet names as the requester of what it builds. */
   readonly url: string;
   state(watch: WatchData): Promise<ReportedState>;
+  /**
+   * The transactions touching the watch, newest first: the latest ones only, never paged. On eCash,
+   * `treasuries` are the Slots' Treasury scripts, to label Deposits.
+   */
+  history(watch: WatchData, treasuries?: TreasuryScript[]): Promise<ReportedHistory>;
   /** Asks the server to build a transfer; returns its Signing Request (unvalidated). */
   buildTransfer(watch: WatchData, order: TransferOrder): Promise<unknown>;
   /** Hands the signed payload back for the server to finalize and broadcast. */

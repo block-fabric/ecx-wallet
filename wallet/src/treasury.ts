@@ -34,7 +34,7 @@ function isSinglePushOpReturn(script: string): boolean {
 }
 
 /** An M5 creates its Treasury output directly before a single-push `OP_RETURN` (its address). */
-const isM5 = (tx: EsploraTx, vout: number) => tx.vout[vout + 1] !== undefined && isSinglePushOpReturn(tx.vout[vout + 1].scriptpubkey);
+export const isM5 = (tx: EsploraTx, vout: number) => tx.vout[vout + 1] !== undefined && isSinglePushOpReturn(tx.vout[vout + 1].scriptpubkey);
 
 /** An M6 has one input (the Treasury it pays out of) and creates the new Treasury as output 0. */
 const isM6 = (tx: EsploraTx, vout: number) => tx.vin.length === 1 && vout === 0;

@@ -1,5 +1,6 @@
 // Bitcoin's raw transaction format, just enough for the stub Esplora server and the tests: encode a
-// made-up transaction, parse a real one (segwit or not), and compute txids.
+// made-up transaction, parse a real one (segwit or not), compute txids, and find a segwit address's
+// script.
 import { createHash } from "node:crypto";
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest();
@@ -7,6 +8,31 @@ const reverseHex = (hex) => hex.match(/../g).reverse().join("");
 
 /** SHA-256 of a hex string's bytes, hex: Esplora's scripthash (plain byte order). */
 export const scripthash = (scriptHex) => sha256(Buffer.from(scriptHex, "hex")).toString("hex");
+
+const BECH32 = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+
+/**
+ * The output script of a segwit v0 address (`bc1q…`, or Elements' unconfidential `elements1q…`),
+ * hex: `OP_0 <program>`. Its checksum isn't checked. Throws on any other address.
+ */
+export function addressScript(address) {
+  const separator = address.lastIndexOf("1");
+  const data = [...address.slice(separator + 1, -6)].map((c) => BECH32.indexOf(c));
+  if (separator < 1 || data.length < 2 || data.includes(-1) || data[0] !== 0) throw new Error(`not a segwit v0 address: ${address}`);
+  let acc = 0;
+  let bits = 0;
+  const program = [];
+  for (const value of data.slice(1)) {
+    acc = (acc << 5) | value;
+    bits += 5;
+    if (bits >= 8) {
+      bits -= 8;
+      program.push((acc >> bits) & 0xff);
+    }
+  }
+  if (program.length !== 20 && program.length !== 32) throw new Error(`not a segwit v0 address: ${address}`);
+  return `00${program.length.toString(16)}${Buffer.from(program).toString("hex")}`;
+}
 
 function varint(n) {
   if (n < 0xfd) return Buffer.from([n]);

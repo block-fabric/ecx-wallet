@@ -14,6 +14,8 @@ export const cacheKey = {
   identity: (url: string, { height, hash }: IdentityBlock) => `${CACHE_PREFIX}identity:${url}:${height}:${hash}`,
   /** The last balance a chain's server reported, for display while it refreshes. */
   balance: (chain: string, url: string) => `${CACHE_PREFIX}balance:${chain}:${url}`,
+  /** The last history a chain's server reported, for display while it refreshes. */
+  history: (chain: string, url: string) => `${CACHE_PREFIX}history:${chain}:${url}`,
   /** A raw transaction (hex): it never changes. */
   tx: (txid: string) => `${CACHE_PREFIX}tx:${txid}`,
   /**

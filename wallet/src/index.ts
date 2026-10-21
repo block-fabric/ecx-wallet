@@ -70,7 +70,15 @@ export {
   type VaultDeps,
   type VaultStatus,
 } from "./vault";
-export { SidechainServerError, type ReportedState, type SidechainServer, type TransferOrder, type WatchData } from "./sidechain-server";
+export {
+  SidechainServerError,
+  type HistoryEntry,
+  type ReportedHistory,
+  type ReportedState,
+  type SidechainServer,
+  type TransferOrder,
+  type WatchData,
+} from "./sidechain-server";
 export { sidechainServer } from "./server-api";
 export { standardSidechainServer } from "./standard-sidechain-api";
 export { esploraServer, type EsploraServerConfig } from "./esplora";
@@ -80,6 +88,7 @@ export {
   WATCHED_RECEIVE_ADDRESSES,
   type PullPath,
   type PullPathDeps,
+  type ChainHistory,
   type ChainReport,
   type SendResult,
   type SlotReport,

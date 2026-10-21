@@ -45,6 +45,9 @@ export type BackgroundMessage =
   | { kind: "accounts.cached"; slot: number }
   // Pull path (what the Slot's server reports for the addresses the wallet watches): wallet pages only.
   | { kind: "accounts.reported"; slot: number }
+  // A chain's transactions (a Slot's, or eCash's when `slot` is absent), and this session's last: wallet pages only.
+  | { kind: "history.reported"; slot?: number }
+  | { kind: "history.cached"; slot?: number }
   // The wallet's own Send (pull path): wallet pages only.
   | { kind: "send.start"; slot: number; asset: string; amount: string; destination: string }
   // Deposit from eCash to a Slot, and the Slot's pending Deposits: wallet pages only.

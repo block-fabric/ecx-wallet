@@ -70,6 +70,10 @@ _Avoid_: Adapter, backend, sidechain plugin
 The protocol the Wallet Base speaks to a Sidechain Server, named next to its URL in the Chain Entry: the Standard Sidechain API, or an existing indexer API the Wallet Base supports (Esplora).
 _Avoid_: Backend type, server kind
 
+**History Entry**:
+A transaction touching the addresses the Wallet Base watches on one chain, shown as the wallet's net change per asset (fee included), pending or confirmed, as reported by the chain's Sidechain Server. A pending one is trusted when it spends only the wallet's own coins, each confirmed or from a trusted transaction.
+_Avoid_: Activity, transfer (a Standard Sidechain API build request)
+
 **Standard Sidechain API**:
 The HTTPS + JSON API this project defines (`/v1`) for a sidechain with no existing indexer: register watch data, read reported state, build a transfer as a Signing Request, submit the signed payload.
 _Avoid_: Sidechain Server API (reads as "any API a Sidechain Server speaks"), pull API
