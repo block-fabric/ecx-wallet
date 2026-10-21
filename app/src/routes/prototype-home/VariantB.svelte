@@ -1,8 +1,8 @@
 <script lang="ts">
-  // PROTOTYPE, throw away. Variant B, "A, grouped, with MetaMask's tabs": A, but an asset held on
-  // several chains is one row (ECX: the total, expanding to each chain's share), and home has
-  // Assets / Activity tabs instead of the bottom tab bar, the way MetaMask's home does. Grants
-  // moves to the ⋮ menu. The chain chips scope both tabs.
+  // PROTOTYPE, throw away. Variant B, "A by chain, with MetaMask's tabs": A, but the Assets list
+  // is grouped by chain (a heading per chain, its assets under it), and home has Assets / Activity
+  // tabs instead of the bottom tab bar, the way MetaMask's home does. Grants moves to the ⋮ menu.
+  // The chain chips scope both tabs.
   import Mark from "$lib/Mark.svelte";
   import type { HistoryEntry } from "$lib/background";
   import { shortAsset } from "$lib/asset";
@@ -35,8 +35,6 @@
   let scope = $state<ProtoChain["id"] | "all">("all");
   let homeTab = $state<"assets" | "activity">("assets");
   let menu = $state(false);
-  /** The asset group showing each chain's share. */
-  let expanded = $state<string | undefined>(undefined);
 
   const detail = $derived(chains.find((c) => c.id === open));
   const scopeChain = $derived(chains.find((c) => c.id === scope));
@@ -67,25 +65,6 @@
 
   const named = (asset: string) => ASSET_NAMES[asset];
 
-  /** The scope's assets, one group per ticker (or per id, for an unnamed asset). */
-  const groups = $derived.by(() => {
-    const out = new Map<
-      string,
-      { key: string; name: (typeof ASSET_NAMES)[string] | undefined; rows: { chain: ProtoChain; amount: string }[]; total: bigint; unconfirmed: bigint }
-    >();
-    for (const c of scoped) {
-      for (const a of assetsOf(c.shown)) {
-        const name = named(a.asset);
-        const key = name?.ticker ?? a.asset;
-        const g = out.get(key) ?? { key, name, rows: [], total: 0n, unconfirmed: 0n };
-        g.rows.push({ chain: c, amount: a.amount });
-        g.total += BigInt(a.amount);
-        g.unconfirmed += BigInt(a.unconfirmed ?? "0");
-        out.set(key, g);
-      }
-    }
-    return [...out.values()];
-  });
   function amountIn(asset: string, amount: string): string {
     const name = named(asset);
     return name ? `${coins(amount, name.decimals)} ${name.ticker}` : grouped(amount);
@@ -278,58 +257,39 @@
         <button role="tab" class:on={homeTab === "activity"} onclick={() => (homeTab = "activity")}>Activity</button>
       </div>
       {#if homeTab === "assets"}
-        <ul>
-          {#each groups as g (g.key)}
-            {@const one = g.rows.length === 1}
-            <li>
-              <button
-                class="asset-row"
-                onclick={() => (one ? ((open = g.rows[0].chain.id), (chainTab = "assets")) : (expanded = expanded === g.key ? undefined : g.key))}
-              >
-                <span class="token">
-                  <span class="token-avatar" class:unknown={!g.name}>{g.name ? g.name.ticker[0] : "?"}</span>
-                  {#if one}
-                    <span class="chain-badge" class:slot={g.rows[0].chain.id !== "l1"}>{g.rows[0].chain.id === "l1" ? "e" : g.rows[0].chain.id}</span>
-                  {/if}
-                </span>
-                <span class="col grow">
-                  <strong>{g.name ? g.name.ticker : "Unknown asset"}</strong>
-                  <span class="muted tiny">
-                    {one ? `on ${g.rows[0].chain.name}` : `on ${g.rows.length} chains`}{#if !g.name} · <code title={g.key}>{shortAsset(g.key)}</code>{/if}
-                  </span>
-                </span>
-                <span class="col end">
-                  <strong>{g.name ? coins(g.total.toString(), g.name.decimals) : grouped(g.total.toString())}</strong>
-                  {#if g.unconfirmed}<span class="tiny warn-text">+{grouped(g.unconfirmed.toString())} sats unconfirmed</span>{/if}
-                </span>
-                {#if !one}<span class="chev" class:up={expanded === g.key}><ProtoIcon name="chevron" size={16} /></span>{/if}
-              </button>
-              {#if !one && expanded === g.key}
-                <ul class="breakdown">
-                  {#each g.rows as r (r.chain.id)}
-                    <li>
-                      <button class="sub-row" onclick={() => ((open = r.chain.id), (chainTab = "assets"))}>
-                        {@render avatar(r.chain, 22)}
-                        <span class="grow small">{r.chain.name}{#if r.chain.shown.refreshing} <span class="muted tiny">refreshing…</span>{/if}</span>
-                        <span class="small">{g.name ? coins(r.amount, g.name.decimals) : grouped(r.amount)}</span>
-                        <ProtoIcon name="forward" size={14} />
-                      </button>
-                    </li>
-                  {/each}
-                </ul>
-              {/if}
-            </li>
-          {/each}
-          {#each scoped.filter((c) => c.shown.error && !c.shown.report) as c (c.id)}
-            <li>
-              <button class="asset-row" onclick={() => ((open = c.id), (chainTab = "assets"))}>
-                {@render avatar(c)}
-                <span class="col grow"><strong>{c.name}</strong><span class="err tiny">Couldn't reach its server</span></span>
-                <ProtoIcon name="refresh" size={16} />
-              </button>
-            </li>
-          {/each}
-        </ul>
+        {#each scoped as c (c.id)}
+          {@const assets = assetsOf(c.shown)}
+          <section class="chain-group">
+            <button class="chain-heading" onclick={() => ((open = c.id), (chainTab = "assets"))}>
+              {@render avatar(c, 24)}
+              <strong class="grow">{c.name}</strong>
+              {#if c.shown.refreshing}<span class="spinner"></span>{/if}
+              <span class="mono muted tiny">{c.chain}</span>
+              <ProtoIcon name="forward" size={14} />
+            </button>
+            {#if c.shown.error && !c.shown.report}
+              <p class="err small unreachable">Couldn't reach its server. <button class="link"><ProtoIcon name="refresh" size={12} /> Retry</button></p>
+            {/if}
+            <ul>
+              {#each assets as { asset, amount, unconfirmed } (asset)}
+                {@const name = named(asset)}
+                <li>
+                  <button class="asset-row" onclick={() => ((open = c.id), (chainTab = "assets"))}>
+                    <span class="token-avatar" class:unknown={!name}>{name ? name.ticker[0] : "?"}</span>
+                    <span class="col grow">
+                      <strong>{name ? name.ticker : "Unknown asset"}</strong>
+                      <span class="muted tiny">{#if name}{name.name}{:else}<code title={asset}>{shortAsset(asset)}</code>{/if}</span>
+                    </span>
+                    <span class="col end">
+                      <strong>{name ? coins(amount, name.decimals) : grouped(amount)}</strong>
+                      {#if unconfirmed}<span class="tiny warn-text">+{grouped(unconfirmed)} sats unconfirmed</span>{/if}
+                    </span>
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          </section>
+        {/each}
         <p class="reported-inline">Balances are as each chain's server reports them. This wallet doesn't verify them.</p>
       {:else}
         <ul>
@@ -638,29 +598,48 @@
   .asset-row:hover {
     background: none;
   }
-  .chev {
+  .chain-group {
     display: flex;
-    color: var(--muted);
-    transition: transform 0.15s;
+    flex-direction: column;
+    margin-top: -6px;
   }
-  .chev.up {
-    transform: rotate(180deg);
+  .chain-heading {
+    justify-content: flex-start;
+    gap: 8px;
+    min-height: 40px;
+    padding: 0 2px;
+    border: none;
+    border-radius: 0;
+    background: none;
+    text-align: left;
   }
-  .breakdown {
-    margin: 0 0 4px 48px;
+  .chain-heading:hover {
+    background: none;
+    color: var(--accent);
+  }
+  .chain-group .asset-row {
+    padding-left: 12px;
+  }
+  .chain-group .token-avatar {
+    width: 30px;
+    height: 30px;
+    font-size: 0.85rem;
+  }
+  .unreachable {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 0 10px 12px;
     border-bottom: 1px solid var(--border);
   }
-  .sub-row {
-    width: 100%;
-    justify-content: flex-start;
-    gap: 10px;
-    min-height: 40px;
-    padding: 0 4px;
+  .link {
+    min-height: 0;
+    padding: 0;
+    gap: 4px;
     border: none;
-    border-radius: var(--radius-sm);
     background: none;
-    font-weight: 400;
-    text-align: left;
+    color: var(--accent);
+    font-size: 0.8rem;
   }
   .chain-row.pick {
     border-radius: var(--radius-sm);
