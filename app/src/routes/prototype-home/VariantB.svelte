@@ -91,8 +91,6 @@
 
   /** An ECX amount in base units, in the chosen unit. */
   const ecxAmount = (sats: string) => (unit === "ecx" ? `${coins(sats, 8)} ECX` : `${grouped(sats)} sats`);
-  /** The same amount in the other unit, for under the big balance. */
-  const otherUnit = (sats: string) => (unit === "ecx" ? `${grouped(sats)} sats` : `${coins(sats, 8)} ECX`);
   function amountIn(asset: string, amount: string): string {
     const name = named(asset);
     return name ? ecxAmount(amount) : grouped(amount);
@@ -209,8 +207,7 @@
       <section class="hero">
         {#if main}
           <button class="big switch" onclick={() => (unit = unit === "ecx" ? "sats" : "ecx")}>{ecxAmount(main.amount)}</button>
-          <div class="muted small">{otherUnit(main.amount)}</div>
-          {#if main.unconfirmed}<span class="pill warn">+{grouped(main.unconfirmed)} sats unconfirmed</span>{/if}
+          {#if main.unconfirmed}<span class="pill warn">+{amountIn(main.asset, main.unconfirmed)} unconfirmed</span>{/if}
         {:else}
           <div class="big muted">—</div>
         {/if}
@@ -242,7 +239,7 @@
               </span>
               <span class="col end">
                 <strong>{bare(asset, amount)}</strong>
-                {#if unconfirmed}<span class="tiny warn-text">+{grouped(unconfirmed)} sats unconfirmed</span>{/if}
+                {#if unconfirmed}<span class="tiny warn-text">+{amountIn(asset, unconfirmed)} unconfirmed</span>{/if}
               </span>
             </li>
           {:else}
@@ -280,8 +277,7 @@
         <button class="big switch" onclick={() => (unit = unit === "ecx" ? "sats" : "ecx")} title="Show amounts in {unit === "ecx" ? "sats" : "ECX"}">
           {ecxAmount(total.sats)}
         </button>
-        <div class="muted small line">{otherUnit(total.sats)} <span class="muted tiny">· tap to switch</span></div>
-        {#if total.unconfirmed !== "0"}<span class="pill warn">+{grouped(total.unconfirmed)} sats unconfirmed</span>{/if}
+        {#if total.unconfirmed !== "0"}<span class="pill warn">+{ecxAmount(total.unconfirmed)} unconfirmed</span>{/if}
         {#if inFlight}
           <button class="pill flight" onclick={() => (homeTab = "activity")}>
             +{ecxAmount(inFlight.toString())} in Deposits on the way
@@ -342,7 +338,7 @@
                     </span>
                     <span class="col end">
                       <strong>{bare(asset, amount)}</strong>
-                      {#if unconfirmed}<span class="tiny warn-text">+{grouped(unconfirmed)} sats unconfirmed</span>{/if}
+                      {#if unconfirmed}<span class="tiny warn-text">+{amountIn(asset, unconfirmed)} unconfirmed</span>{/if}
                     </span>
                   </button>
                 </li>
@@ -380,7 +376,6 @@
       <div class="col tx-amounts">
         {#each entry.amounts as a (a.asset)}
           <span class="big-ish" class:in={!a.amount.startsWith("-")}>{a.amount.startsWith("-") ? "" : "+"}{amountIn(a.asset, a.amount)}</span>
-          {#if named(a.asset)}<span class="muted small">{otherUnit(a.amount)}</span>{/if}
         {/each}
         {#if entry.hidden}<span class="muted small">Some amounts are confidential and not shown.</span>{/if}
       </div>

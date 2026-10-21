@@ -79,9 +79,11 @@
   }
   const timeOf = (seconds: number) => new Date(seconds * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
+  /** An ECX amount in base units, in ECX. */
+  const ecxAmount = (sats: string) => `${coins(sats, 8)} ECX`;
   function amountIn(asset: string, amount: string): string {
     const name = named(asset);
-    return name ? `${coins(amount, name.decimals)} ${name.ticker}` : grouped(amount);
+    return name ? ecxAmount(amount) : grouped(amount);
   }
   /** A chain's ECX, for its row. */
   const ecxOf = (c: ProtoChain) => assetsOf(c.shown).find((a) => named(a.asset)?.ticker === "ECX");
@@ -153,8 +155,7 @@
       <section class="hero">
         {#if main}
           <div class="big">{amountIn(main.asset, main.amount)}</div>
-          {#if named(main.asset)}<div class="muted small">{grouped(main.amount)} sats</div>{/if}
-          {#if main.unconfirmed}<span class="pill warn">+{grouped(main.unconfirmed)} sats unconfirmed</span>{/if}
+          {#if main.unconfirmed}<span class="pill warn">+{amountIn(main.asset, main.unconfirmed)} unconfirmed</span>{/if}
         {:else}
           <div class="big muted">—</div>
         {/if}
@@ -177,7 +178,7 @@
           {#each detail.deposits as d (d.txid)}
             <div class="col">
               <div class="between">
-                <strong>{grouped(d.value)} sats</strong>
+                <strong>{ecxAmount(d.value)}</strong>
                 {#if d.state === "notFound" || d.state === "unavailable"}<button class="small-button">Stop tracking</button>{/if}
               </div>
               {#if d.state === "confirming"}<div class="bar"><span style:width="{d.confirmations}%"></span></div>{/if}
@@ -204,7 +205,7 @@
               </span>
               <span class="col end">
                 <strong>{name ? coins(amount, name.decimals) : grouped(amount)}</strong>
-                {#if unconfirmed}<span class="tiny warn-text">+{grouped(unconfirmed)} unconf.</span>{/if}
+                {#if unconfirmed}<span class="tiny warn-text">+{amountIn(asset, unconfirmed)} unconfirmed</span>{/if}
               </span>
             </li>
           {:else}
@@ -235,9 +236,8 @@
 
       <section class="hero">
         <span class="muted tiny">Total across chains</span>
-        <div class="big">{coins(total.sats, 8)} ECX</div>
-        <div class="muted small">{grouped(total.sats)} sats</div>
-        {#if total.unconfirmed !== "0"}<span class="pill warn">+{grouped(total.unconfirmed)} sats unconfirmed</span>{/if}
+        <div class="big">{ecxAmount(total.sats)}</div>
+        {#if total.unconfirmed !== "0"}<span class="pill warn">+{ecxAmount(total.unconfirmed)} unconfirmed</span>{/if}
         {#if total.missing.length}
           <span class="pill bad">{total.missing.join(", ")} unavailable, not counted</span>
         {/if}
@@ -266,7 +266,7 @@
               </button>
               <span class="grow"></span>
               {#if c.shown.refreshing}<span class="spinner"></span>{/if}
-              {#if ecx}<span class="small subtotal">{coins(ecx.amount, 8)} ECX</span>{/if}
+              {#if ecx}<span class="small subtotal">{ecxAmount(ecx.amount)}</span>{/if}
               <button
                 class="fold"
                 class:up={!folded[c.id]}
@@ -293,7 +293,7 @@
                     </span>
                     <span class="col end">
                       <strong>{name ? coins(amount, name.decimals) : grouped(amount)}</strong>
-                      {#if unconfirmed}<span class="tiny warn-text">+{grouped(unconfirmed)} sats unconfirmed</span>{/if}
+                      {#if unconfirmed}<span class="tiny warn-text">+{amountIn(asset, unconfirmed)} unconfirmed</span>{/if}
                     </span>
                   </button>
                 </li>
@@ -314,7 +314,7 @@
                   <div class="col grow">
                     <div class="between">
                       <strong class="small">Deposit to {d.chainName}</strong>
-                      <strong class="small">{grouped(d.value)} sats</strong>
+                      <strong class="small">{ecxAmount(d.value)}</strong>
                     </div>
                     {#if d.state === "confirming"}
                       <div class="bar"><span style:width="{d.confirmations}%"></span></div>
@@ -382,7 +382,7 @@
         {@const ecx = ecxOf(c)}
         <a class="chain-row pick" class:off={!c.canSend} href="#/send/{c.id}">
           {@render avatar(c, 30)}
-          <span class="col grow"><strong>{c.name}</strong><span class="muted tiny">{c.canSend ? (ecx ? `${coins(ecx.amount, 8)} ECX` : "") : c.id === "l1" ? "Sending on eCash isn't built yet" : "Needs a fresh balance"}</span></span>
+          <span class="col grow"><strong>{c.name}</strong><span class="muted tiny">{c.canSend ? (ecx ? ecxAmount(ecx.amount) : "") : c.id === "l1" ? "Sending on eCash isn't built yet" : "Needs a fresh balance"}</span></span>
           <ProtoIcon name="forward" size={16} />
         </a>
       {/each}
