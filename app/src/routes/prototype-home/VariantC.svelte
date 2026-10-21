@@ -1,9 +1,9 @@
 <script lang="ts">
-  // PROTOTYPE, throw away. Variant C, "B, folded": B, but each chain's section in Assets shows the
-  // chain's ECX subtotal and folds away, pending Deposits head Activity as "In progress" (no banner
-  // above the tabs; the Activity tab counts them), and Activity is grouped by day.
-  // Adding a chain: a "More chains" section at the end of Assets unfolds in place to every chain
-  // this version supports beyond eCash, each with an on/off switch.
+  // PROTOTYPE, throw away. Variant C, "B, settled": B, but ⋮ opens a Settings screen (Grants,
+  // Chains, the unit, auto-lock, Lock now) instead of a menu, the header counts down to the
+  // auto-lock (resetting on any use), and a chain with no assets offers to Receive.
+  // Adding a chain: a Manage chains row at the end of Assets opens a screen of every chain this
+  // version supports, each with an on/off switch (eCash always on).
   import Mark from "$lib/Mark.svelte";
   import type { HistoryEntry } from "$lib/background";
   import { shortAsset } from "$lib/asset";
@@ -18,7 +18,6 @@
     kindOf,
     readAt,
     shortAddress,
-    shortTxid,
     when,
     MORE_CHAINS,
     addedChain,
@@ -27,26 +26,28 @@
 
   let { chains: baseChains }: { chains: ProtoChain[] } = $props();
   let added = $state<ProtoChain[]>([]);
-  /** Shipped chains switched off under More chains. */
+  /** Shipped chains switched off on the Manage chains screen. */
   let hidden = $state<Record<string, boolean>>({});
   const chains = $derived([...baseChains.filter((c) => !hidden[c.id]), ...added]);
-  /** Every chain this version supports beyond eCash, and whether it's on. */
-  const optional = $derived([
-    ...baseChains
-      .filter((c) => c.id !== "l1")
-      .map((c) => ({ id: c.id, name: c.name, chain: c.chain, mark: "E+", blurb: "Assets and confidential transfers", on: !hidden[c.id] })),
-    ...MORE_CHAINS.map((m) => ({ id: m.slot, name: m.name, chain: m.chain, mark: m.mark, blurb: m.blurb, on: added.some((c) => c.id === m.slot) })),
+  /** Every chain this version supports, and whether it's on. */
+  const manageable = $derived([
+    ...baseChains.map((c) => ({ id: c.id, name: c.name, chain: c.chain, mark: c.id === "l1" ? "e" : "E+", blurb: c.id === "l1" ? "The main chain" : "Assets and confidential transfers", on: !hidden[c.id], root: c.id === "l1" })),
+    ...MORE_CHAINS.map((m) => ({ id: m.slot, name: m.name, chain: m.chain, mark: m.mark, blurb: m.blurb, on: added.some((c) => c.id === m.slot), root: false })),
   ]);
-  const offCount = $derived(optional.filter((o) => !o.on).length);
-  /** The More chains section is unfolded. */
-  let moreOpen = $state(false);
   function toggle(id: ProtoChain["id"]) {
-    if (baseChains.some((c) => c.id === id)) hidden[id] = !hidden[id];
+    const base = baseChains.find((c) => c.id === id);
+    if (base) hidden[id] = !hidden[id];
     else if (added.some((c) => c.id === id)) added = added.filter((c) => c.id !== id);
     else added = [...added, addedChain(MORE_CHAINS.find((m) => m.slot === id)!)];
   }
 
-  let tab = $state<"home" | "activity" | "grants">("home");
+  let tab = $state<"home" | "activity" | "grants" | "chains" | "settings">("home");
+  /** Where a sub-screen's back arrow goes: home, or Settings. */
+  let backTo = $state<"home" | "settings">("home");
+  function go(to: "grants" | "chains" | "settings") {
+    backTo = tab === "settings" ? "settings" : "home";
+    tab = to;
+  }
   /** The chain drilled into, on the Home tab. */
   let open = $state<ProtoChain["id"] | undefined>(undefined);
   let chainTab = $state<"assets" | "activity">("assets");
@@ -58,14 +59,35 @@
   let picking = $state(false);
   let copied = $state(false);
   let homeTab = $state<"assets" | "activity">("assets");
-  let menu = $state(false);
+  /** The auto-lock: the wallet locks itself after 15 minutes without use. */
+  const LOCK_AFTER = 15 * 60_000;
+  let lastUse = $state(Date.now());
+  let now = $state(Date.now());
+  $effect(() => {
+    const timer = setInterval(() => (now = Date.now()), 1000);
+    return () => clearInterval(timer);
+  });
+  const lockIn = $derived.by(() => {
+    const left = Math.max(0, LOCK_AFTER - (now - lastUse));
+    return left >= 60_000 ? `${Math.ceil(left / 60_000)} min` : `${Math.ceil(left / 1000)} s`;
+  });
   /** Activity's chain filter. */
   let activityChain = $state<ProtoChain["id"] | "all">("all");
+  /** How every ECX amount is shown; tapping the big balance switches it. */
+  let unit = $state<"ecx" | "sats">("ecx");
+  /** The transaction whose details sheet is open. */
+  let inspecting = $state<{ chain: ProtoChain; entry: HistoryEntry } | undefined>(undefined);
   /** Chains whose section in Assets is folded away. */
   let folded = $state<Record<string, boolean>>({});
 
   const detail = $derived(chains.find((c) => c.id === open));
   const deposits = $derived(chains.flatMap((c) => c.deposits ?? []));
+  /** Sats that left eCash in a Deposit and aren't credited yet: in neither chain's balance. */
+  const inFlight = $derived(
+    deposits
+      .filter((d) => d.state === "confirming" || d.state === "awaitingCredit")
+      .reduce((sum, d) => sum + BigInt(d.value), 0n),
+  );
   const feed = $derived(
     chains
       .filter((c) => activityChain === "all" || c.id === activityChain)
@@ -91,15 +113,15 @@
 
   const named = (asset: string) => ASSET_NAMES[asset];
   /** Activity's sections: not yet confirmed, then one per day. */
-  const days = $derived.by(() => {
+  function daysOf(items: typeof feed) {
     const out: { day: string; items: typeof feed }[] = [];
-    for (const item of feed) {
+    for (const item of items) {
       const day = item.entry.time === undefined ? "Not yet confirmed" : dayOf(item.entry.time);
       if (out.at(-1)?.day !== day) out.push({ day, items: [] });
       out.at(-1)!.items.push(item);
     }
     return out;
-  });
+  }
   function dayOf(seconds: number): string {
     const date = new Date(seconds * 1000);
     if (date.toDateString() === new Date().toDateString()) return "Today";
@@ -108,12 +130,14 @@
   }
   const timeOf = (seconds: number) => new Date(seconds * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-  /** An ECX amount in base units, in ECX. */
-  const ecxAmount = (sats: string) => `${coins(sats, 8)} ECX`;
+  /** An ECX amount in base units, in the chosen unit. */
+  const ecxAmount = (sats: string) => (unit === "ecx" ? `${coins(sats, 8)} ECX` : `${grouped(sats)} sats`);
   function amountIn(asset: string, amount: string): string {
     const name = named(asset);
     return name ? ecxAmount(amount) : grouped(amount);
   }
+  /** A number in an asset row, whose name already says the asset. */
+  const bare = (asset: string, amount: string) => (named(asset) && unit === "ecx" ? coins(amount, 8) : grouped(amount));
   /** A chain's ECX, for its row. */
   const ecxOf = (c: ProtoChain) => assetsOf(c.shown).find((a) => named(a.asset)?.ticker === "ECX");
 
@@ -149,26 +173,68 @@
 {#snippet activityRow(c: ProtoChain, entry: HistoryEntry, showChain: boolean, byDay: boolean)}
   {@const kind = kindOf(entry)}
   {@const state = entryState(entry)}
-  <li class="row">
-    <span class="activity-icon {kind.icon}">
-      <ProtoIcon name={kind.icon === "in" ? "receive" : kind.icon === "out" ? "send" : kind.icon} size={16} />
-    </span>
-    <span class="col grow">
-      <strong class="small">{kind.label}</strong>
-      <span class="muted tiny">
-        {#if showChain}{c.name} · {/if}
-        {#if state}<span class="pill tiny-pill" class:warn={state === "Unconfirmed"}>{state}</span>{:else if entry.time}{byDay ? timeOf(entry.time) : when(entry.time)}{/if}
-        · <code>{shortTxid(entry.txid)}</code>
+  <li>
+    <button class="row tx" onclick={() => (inspecting = { chain: c, entry })}>
+      <span class="activity-icon {kind.icon}">
+        <ProtoIcon name={kind.icon === "in" ? "receive" : kind.icon === "out" ? "send" : kind.icon} size={16} />
       </span>
-    </span>
-    <span class="col end">
-      {#each entry.amounts as a (a.asset)}
-        <strong class="small" class:in={!a.amount.startsWith("-")}>{a.amount.startsWith("-") ? "" : "+"}{amountIn(a.asset, a.amount)}</strong>
-      {/each}
-      {#if entry.hidden}<span class="muted tiny">+ hidden amounts</span>{/if}
-    </span>
+      <span class="col grow">
+        <strong class="small">{kind.label}</strong>
+        <span class="muted tiny">
+          {#if showChain}{c.name} · {/if}
+          {#if state}<span class="pill tiny-pill" class:warn={state === "Unconfirmed"}>{state}</span>{:else if entry.time}{byDay ? timeOf(entry.time) : when(entry.time)}{/if}
+        </span>
+      </span>
+      <span class="col end">
+        {#each entry.amounts as a (a.asset)}
+          <strong class="small" class:in={!a.amount.startsWith("-")}>{a.amount.startsWith("-") ? "" : "+"}{amountIn(a.asset, a.amount)}</strong>
+        {/each}
+        {#if entry.hidden}<span class="muted tiny">+ hidden</span>{/if}
+      </span>
+    </button>
   </li>
 {/snippet}
+
+{#snippet activityPanel(list: typeof deposits, entries: typeof feed, showChain: boolean)}
+    {#if list.length}
+      <section class="col day">
+        <h2>In progress</h2>
+        <ul>
+          {#each list as d (d.txid)}
+            <li class="row">
+              <span class="activity-icon deposit"><ProtoIcon name="deposit" size={16} /></span>
+              <div class="col grow">
+                <div class="between">
+                  <strong class="small">Deposit to {d.chainName}</strong>
+                  <strong class="small">{ecxAmount(d.value)}</strong>
+                </div>
+                {#if d.state === "confirming"}
+                  <div class="bar"><span style:width="{d.confirmations}%"></span></div>
+                {/if}
+                <span class="tiny" class:muted={d.state !== "notFound"} class:err={d.state === "notFound"}>{depositState(d)}</span>
+                {#if d.state === "notFound" || d.state === "unavailable"}
+                  <button class="small-button stop">Stop tracking</button>
+                {/if}
+              </div>
+            </li>
+          {/each}
+        </ul>
+        <p class="muted tiny">Deposits wait 100 eCash blocks, then the chain's operator credits them. Withdrawals take months.</p>
+      </section>
+    {/if}
+    {#each daysOf(entries) as { day, items } (day)}
+      <section class="col day">
+        <h2>{day}</h2>
+        <ul>
+          {#each items as { chain, entry } (entry.txid)}
+            {@render activityRow(chain, entry, showChain, true)}
+          {/each}
+        </ul>
+      </section>
+    {/each}
+{/snippet}
+
+<svelte:window onpointerdown={() => (lastUse = Date.now())} onkeydown={() => (lastUse = Date.now())} />
 
 <div class="c">
   <div class="content">
@@ -180,10 +246,10 @@
         <span class="chip">{detail.chain}</span>
       </header>
 
-      {@const main = assetsOf(detail.shown)[0]}
+      {@const main = ecxOf(detail)}
       <section class="hero">
         {#if main}
-          <div class="big">{amountIn(main.asset, main.amount)}</div>
+          <button class="big switch" onclick={() => (unit = unit === "ecx" ? "sats" : "ecx")}>{ecxAmount(main.amount)}</button>
           {#if main.unconfirmed}<span class="pill warn">+{amountIn(main.asset, main.unconfirmed)} unconfirmed</span>{/if}
         {:else}
           <div class="big muted">—</div>
@@ -191,36 +257,18 @@
         {#if detail.shown.error}
           <p class="error small">{detail.shown.report ? "Couldn't refresh the balance" : "Balance unavailable"}: {detail.shown.error}</p>
         {/if}
-        {#if detail.shown.report}
-          <p class="reported-inline">Reported by {detail.shown.report.server}. This wallet doesn't verify it.</p>
-          {#if detail.shown.refreshing}
-            <p class="muted tiny line"><span class="spinner"></span>Last read at {readAt(detail.shown.report.readAt)}; refreshing…</p>
-          {/if}
+        {#if detail.shown.refreshing && detail.shown.report}
+          <p class="muted tiny line"><span class="spinner"></span>Last read at {readAt(detail.shown.report.readAt)}; refreshing…</p>
         {/if}
       </section>
 
       {@render actions(detail)}
 
-      {#if detail.deposits?.length}
-        <section class="card deposits">
-          <h2>Deposits from eCash</h2>
-          {#each detail.deposits as d (d.txid)}
-            <div class="col">
-              <div class="between">
-                <strong>{ecxAmount(d.value)}</strong>
-                {#if d.state === "notFound" || d.state === "unavailable"}<button class="small-button">Stop tracking</button>{/if}
-              </div>
-              {#if d.state === "confirming"}<div class="bar"><span style:width="{d.confirmations}%"></span></div>{/if}
-              <span class="small" class:err={d.state === "notFound"}>{depositState(d)}</span>
-            </div>
-          {/each}
-          <p class="muted tiny">A Deposit takes 100 eCash blocks, then the chain's operator credits it. Withdrawals back take months.</p>
-        </section>
-      {/if}
-
       <div class="tabs" role="tablist">
         <button role="tab" class:on={chainTab === "assets"} onclick={() => (chainTab = "assets")}>Assets</button>
-        <button role="tab" class:on={chainTab === "activity"} onclick={() => (chainTab = "activity")}>Activity</button>
+        <button role="tab" class:on={chainTab === "activity"} onclick={() => (chainTab = "activity")}>
+          Activity{#if detail.deposits?.length}<span class="count" title="Deposits in progress">{detail.deposits.length}</span>{/if}
+        </button>
       </div>
       {#if chainTab === "assets"}
         <ul>
@@ -235,7 +283,7 @@
                 <span class="muted tiny">{#if name}{name.name}{:else}<code title={asset}>{shortAsset(asset)}</code>{/if}</span>
               </span>
               <span class="col end">
-                <strong>{name ? coins(amount, name.decimals) : grouped(amount)}</strong>
+                <strong>{bare(asset, amount)}</strong>
                 {#if unconfirmed}<span class="tiny warn-text">+{amountIn(asset, unconfirmed)} unconfirmed</span>{/if}
               </span>
             </li>
@@ -243,32 +291,37 @@
             <li class="muted small empty">{detail.shown.error ? "Can't show assets while the balance is unavailable." : "Nothing reported."}</li>
           {/each}
         </ul>
+        {#if detail.shown.report}
+          <p class="reported-inline">Reported by {detail.shown.report.server}. This wallet doesn't verify it.</p>
+        {/if}
       {:else}
-        <ul>
-          {#each detail.history as entry (entry.txid)}
-            {@render activityRow(detail, entry, false, false)}
-          {/each}
-        </ul>
+        {@render activityPanel(detail.deposits ?? [], detail.history.map((entry) => ({ chain: detail, entry })), false)}
+        {#if detail.shown.report}
+          <p class="reported-inline">Reported by {detail.shown.report.server}. This wallet doesn't verify it.</p>
+        {/if}
       {/if}
     {:else if tab === "home"}
       <header>
-        <Mark size={26} />
-        <span class="title">ECX Wallet</span>
+        <Mark size={30} />
+        <span class="col title-block">
+          <span class="title">ECX Wallet</span>
+          <span class="lock-sub" title="The wallet locks itself after 15 minutes without use"><span class="dot"></span>Unlocked · locks in {lockIn} without use</span>
+        </span>
         <button class="icon" aria-label="Lock" title="Lock"><ProtoIcon name="lock" /></button>
-        <button class="icon" aria-label="More" onclick={() => (menu = !menu)}><ProtoIcon name="more" /></button>
-        {#if menu}
-          <div class="menu card">
-            <button class="menu-row" onclick={() => ((tab = "grants"), (menu = false))}><ProtoIcon name="grants" /> Grants</button>
-            <button class="menu-row"><ProtoIcon name="lock" /> Lock now</button>
-          </div>
-        {/if}
+        <button class="icon" aria-label="Settings" title="Settings" onclick={() => go("settings")}><ProtoIcon name="settings" /></button>
       </header>
-      <p class="lock-note"><span class="dot"></span>Unlocked. Locks itself after 15 minutes without use.</p>
 
       <section class="hero">
         <span class="muted tiny">Total across chains</span>
-        <div class="big">{ecxAmount(total.sats)}</div>
+        <button class="big switch" onclick={() => (unit = unit === "ecx" ? "sats" : "ecx")} title="Show amounts in {unit === "ecx" ? "sats" : "ECX"}">
+          {ecxAmount(total.sats)}
+        </button>
         {#if total.unconfirmed !== "0"}<span class="pill warn">+{ecxAmount(total.unconfirmed)} unconfirmed</span>{/if}
+        {#if inFlight}
+          <button class="pill flight" onclick={() => (homeTab = "activity")}>
+            +{ecxAmount(inFlight.toString())} in Deposits on the way
+          </button>
+        {/if}
         {#if total.missing.length}
           <span class="pill bad">{total.missing.join(", ")} unavailable, not counted</span>
         {/if}
@@ -324,46 +377,31 @@
                       <span class="muted tiny">{#if name}{name.name}{:else}<code title={asset}>{shortAsset(asset)}</code>{/if}</span>
                     </span>
                     <span class="col end">
-                      <strong>{name ? coins(amount, name.decimals) : grouped(amount)}</strong>
+                      <strong>{bare(asset, amount)}</strong>
                       {#if unconfirmed}<span class="tiny warn-text">+{amountIn(asset, unconfirmed)} unconfirmed</span>{/if}
                     </span>
                   </button>
                 </li>
               {:else}
-                {#if !c.shown.error}<li class="muted small no-assets">No assets yet.</li>{/if}
+                {#if !c.shown.error}
+                  <li class="muted small no-assets">
+                    No assets yet. <button class="link" onclick={() => (receiving = { qr: c.id })}>Receive on {c.name}</button>
+                  </li>
+                {/if}
               {/each}
             </ul>
             {/if}
           </section>
         {/each}
         <p class="reported-inline">Balances are as each chain's server reports them. This wallet doesn't verify them.</p>
-        <section class="more-chains" class:open={moreOpen}>
-          <button class="more-head" aria-expanded={moreOpen} onclick={() => (moreOpen = !moreOpen)}>
-            <span class="more-icon"><ProtoIcon name="plus" size={14} /></span>
-            <span class="col grow">
-              <strong>More chains</strong>
-              <span class="muted tiny">{offCount ? `${offCount} more available` : "All on"}</span>
-            </span>
-            <span class="fold" class:up={moreOpen}><ProtoIcon name="chevron" size={16} /></span>
-          </button>
-          {#if moreOpen}
-            <ul>
-              {#each optional as o (o.id)}
-                <li class="more-row">
-                  <span class="chain-avatar slot" style:width="28px" style:height="28px">{o.mark}</span>
-                  <span class="col grow">
-                    <strong class="small">{o.name}</strong>
-                    <span class="muted tiny">{o.blurb}</span>
-                  </span>
-                  <button class="switch-toggle" class:on={o.on} role="switch" aria-checked={o.on} aria-label="Show {o.name}" onclick={() => toggle(o.id)}><span></span></button>
-                </li>
-              {/each}
-            </ul>
-            <p class="muted tiny more-note">
-              The chains this version of the wallet supports; new ones come with wallet updates. Turning one off only hides it: your funds on it stay where they are.
-            </p>
-          {/if}
-        </section>
+        <button class="manage-chains" onclick={() => go("chains")}>
+          <span class="manage-icon"><ProtoIcon name="plus" size={16} /></span>
+          <span class="col grow">
+            <strong class="small">Manage chains</strong>
+            <span class="muted tiny">{manageable.filter((m) => m.on).length} of {manageable.length} on · add or hide chains</span>
+          </span>
+          <ProtoIcon name="forward" size={16} />
+        </button>
       {:else}
         <div class="filters">
           <button class:on={activityChain === "all"} onclick={() => (activityChain = "all")}>All</button>
@@ -371,55 +409,114 @@
             <button class:on={activityChain === c.id} onclick={() => (activityChain = c.id)}>{c.name}</button>
           {/each}
         </div>
-        {#if deposits.length}
-          <section class="col day">
-            <h2>In progress</h2>
-            <ul>
-              {#each deposits as d (d.txid)}
-                <li class="row">
-                  <span class="activity-icon deposit"><ProtoIcon name="deposit" size={16} /></span>
-                  <div class="col grow">
-                    <div class="between">
-                      <strong class="small">Deposit to {d.chainName}</strong>
-                      <strong class="small">{ecxAmount(d.value)}</strong>
-                    </div>
-                    {#if d.state === "confirming"}
-                      <div class="bar"><span style:width="{d.confirmations}%"></span></div>
-                    {/if}
-                    <span class="tiny" class:muted={d.state !== "notFound"} class:err={d.state === "notFound"}>{depositState(d)}</span>
-                    {#if d.state === "notFound" || d.state === "unavailable"}
-                      <button class="small-button stop">Stop tracking</button>
-                    {/if}
-                  </div>
-                </li>
-              {/each}
-            </ul>
-            <p class="muted tiny">Deposits wait 100 eCash blocks, then the chain's operator credits them. Withdrawals take months.</p>
-          </section>
-        {/if}
-        {#each days as { day, items } (day)}
-          <section class="col day">
-            <h2>{day}</h2>
-            <ul>
-              {#each items as { chain, entry } (entry.txid)}
-                {@render activityRow(chain, entry, true, true)}
-              {/each}
-            </ul>
-          </section>
-        {/each}
+        {@render activityPanel(deposits, feed, true)}
         <p class="reported-inline">Reported by each chain's server. This wallet doesn't verify it.</p>
       {/if}
-    {:else}
+    {:else if tab === "chains"}
+      <header>
+        <button class="icon" aria-label="Back" onclick={() => (tab = backTo)}><ProtoIcon name="back" /></button>
+        <span class="title">Chains</span>
+      </header>
+      <p class="muted small">Turn on the chains you use. Turning one off only hides it: your funds on it stay where they are.</p>
+      <ul class="manage-list">
+        {#each manageable as m (m.id)}
+          <li class="manage-row">
+            <span class="chain-avatar" class:slot={!m.root} class:ecash={m.root} style:width="32px" style:height="32px">
+              {#if m.root}<EcashLogo size={19} />{:else}{m.mark}{/if}
+            </span>
+            <span class="col grow">
+              <strong class="small">{m.name}</strong>
+              <span class="muted tiny">{m.blurb} · <span class="mono">{m.chain}</span></span>
+            </span>
+            {#if m.root}
+              <span class="muted tiny">Always on</span>
+            {:else}
+              <button class="switch-toggle" class:on={m.on} role="switch" aria-checked={m.on} aria-label="Show {m.name}" onclick={() => toggle(m.id)}><span></span></button>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+      <p class="muted tiny">These are the chains this version of the wallet supports. New chains come with wallet updates.</p>
+    {:else if tab === "settings"}
       <header>
         <button class="icon" aria-label="Back" onclick={() => (tab = "home")}><ProtoIcon name="back" /></button>
+        <span class="title">Settings</span>
+      </header>
+      <ul class="settings card">
+        <li>
+          <button class="setting" onclick={() => go("grants")}>
+            <ProtoIcon name="grants" />
+            <span class="col grow"><strong class="small">Grants</strong><span class="muted tiny">Sites you've let use your wallet</span></span>
+            <ProtoIcon name="forward" size={16} />
+          </button>
+        </li>
+        <li>
+          <button class="setting" onclick={() => go("chains")}>
+            <ProtoIcon name="plus" />
+            <span class="col grow">
+              <strong class="small">Chains</strong>
+              <span class="muted tiny">{manageable.filter((m) => m.on).length} of {manageable.length} on</span>
+            </span>
+            <ProtoIcon name="forward" size={16} />
+          </button>
+        </li>
+        <li class="setting">
+          <ProtoIcon name="wallet" />
+          <span class="col grow"><strong class="small">Amounts in</strong><span class="muted tiny">Every ECX amount, everywhere</span></span>
+          <span class="seg">
+            <button class:on={unit === "ecx"} onclick={() => (unit = "ecx")}>ECX</button>
+            <button class:on={unit === "sats"} onclick={() => (unit = "sats")}>sats</button>
+          </span>
+        </li>
+        <li class="setting">
+          <ProtoIcon name="history" />
+          <span class="col grow"><strong class="small">Auto-lock</strong><span class="muted tiny">After 15 minutes without use</span></span>
+        </li>
+        <li>
+          <button class="setting"><ProtoIcon name="lock" /><span class="grow"><strong class="small">Lock now</strong></span></button>
+        </li>
+      </ul>
+      <p class="muted tiny center">ECX Wallet · prototype</p>
+    {:else}
+      <header>
+        <button class="icon" aria-label="Back" onclick={() => (tab = backTo)}><ProtoIcon name="back" /></button>
         <span class="title">Grants</span>
       </header>
       <p class="muted small">(The real Grants screen would go here.)</p>
     {/if}
   </div>
 
-  {#if receiving || picking}
-    <div class="scrim" role="presentation" onclick={() => ((receiving = undefined), (picking = false))}></div>
+  {#if receiving || picking || inspecting}
+    <div class="scrim" role="presentation" onclick={() => ((receiving = undefined), (picking = false), (inspecting = undefined))}></div>
+  {/if}
+  {#if inspecting}
+    {@const { chain: c, entry } = inspecting}
+    {@const kind = kindOf(entry)}
+    {@const state = entryState(entry)}
+    <div class="sheet" role="dialog" aria-label="Transaction">
+      <div class="between">
+        <strong>{kind.label}</strong>
+        <button class="icon" aria-label="Close" onclick={() => (inspecting = undefined)}><ProtoIcon name="close" /></button>
+      </div>
+      <div class="col tx-amounts">
+        {#each entry.amounts as a (a.asset)}
+          <span class="big-ish" class:in={!a.amount.startsWith("-")}>{a.amount.startsWith("-") ? "" : "+"}{amountIn(a.asset, a.amount)}</span>
+        {/each}
+        {#if entry.hidden}<span class="muted small">Some amounts are confidential and not shown.</span>{/if}
+      </div>
+      <dl class="facts">
+        <dt>Status</dt>
+        <dd>{#if state}<span class="pill tiny-pill" class:warn={state === "Unconfirmed"}>{state}</span>{state === "Unconfirmed" ? " Sent by someone else; may still not arrive." : ""}{:else}Confirmed{/if}</dd>
+        {#if entry.time}<dt>Mined</dt><dd>{new Date(entry.time * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</dd>{/if}
+        <dt>Chain</dt><dd>{c.name} <span class="mono muted tiny">{c.chain}</span></dd>
+        <dt>Transaction</dt>
+        <dd class="txid-line">
+          <code>{entry.txid}</code>
+          <button class="icon small-icon" aria-label="Copy transaction id" onclick={() => copy(entry.txid)}><ProtoIcon name={copied ? "check" : "copy"} size={14} /></button>
+        </dd>
+      </dl>
+      {#if c.shown.report}<p class="reported-inline">Reported by {c.shown.report.server}. This wallet doesn't verify it.</p>{/if}
+    </div>
   {/if}
   {#if receiving}
     <div class="sheet" role="dialog" aria-label="Receive">
@@ -527,6 +624,33 @@
     background: #7b4fd6;
     color: #fff;
   }
+  .title-block {
+    flex: 1;
+    min-width: 0;
+  }
+  .title-block .title {
+    line-height: 1.2;
+  }
+  .lock-sub {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--muted);
+    font-size: 0.7rem;
+    white-space: nowrap;
+  }
+  .switch {
+    min-height: 0;
+    padding: 0 6px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text);
+    font-family: var(--font);
+  }
+  .switch:hover {
+    background: var(--surface-2);
+  }
   .lock-note {
     display: flex;
     align-items: center;
@@ -540,6 +664,7 @@
     height: 6px;
     border-radius: 50%;
     background: var(--ok);
+    flex: none;
   }
   .hero {
     display: flex;
@@ -679,25 +804,6 @@
     background: #7b4fd6;
     color: #fff;
   }
-  .menu {
-    position: absolute;
-    top: 40px;
-    right: 0;
-    z-index: 5;
-    gap: 2px;
-    min-width: 160px;
-    padding: 6px;
-  }
-  .menu-row {
-    justify-content: flex-start;
-    gap: 10px;
-    min-height: 36px;
-    padding: 0 10px;
-    border: none;
-    background: none;
-    font-size: 0.9rem;
-    font-weight: 500;
-  }
   .asset-row {
     width: 100%;
     justify-content: flex-start;
@@ -755,6 +861,60 @@
   .fold.up {
     transform: rotate(180deg);
   }
+  .flight {
+    border: none;
+    min-height: 0;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent-text, var(--accent));
+  }
+  .flight:hover {
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+  .tx {
+    width: 100%;
+    justify-content: flex-start;
+    min-height: 0;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: none;
+    font-weight: 400;
+    text-align: left;
+  }
+  .tx:hover {
+    background: color-mix(in srgb, var(--accent) 5%, transparent);
+  }
+  .tx-amounts {
+    align-items: center;
+    text-align: center;
+  }
+  .big-ish {
+    font-size: 1.5rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .facts {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 12px;
+    font-size: 0.85rem;
+  }
+  .facts dt {
+    color: var(--muted);
+  }
+  .txid-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .txid-line code {
+    font-size: 0.72rem;
+  }
+  .small-icon {
+    width: 24px;
+    min-height: 24px;
+    flex: none;
+  }
   .addresses {
     display: flex;
     flex-direction: column;
@@ -778,11 +938,6 @@
     background: color-mix(in srgb, var(--accent) 14%, transparent);
     color: var(--accent-text, var(--accent));
   }
-  .small-icon {
-    width: 24px;
-    min-height: 24px;
-    flex: none;
-  }
   .filters {
     display: flex;
     gap: 6px;
@@ -802,54 +957,35 @@
   .no-assets {
     padding: 10px 12px;
   }
-  .more-chains {
-    display: flex;
-    flex-direction: column;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-  }
-  .more-chains.open {
-    background: var(--surface);
-  }
-  .more-head {
+  .manage-chains {
     justify-content: flex-start;
-    gap: 10px;
-    min-height: 52px;
+    gap: 12px;
+    min-height: 56px;
     padding: 8px 12px;
-    border: none;
     border-radius: var(--radius);
-    background: none;
     font-weight: 400;
     text-align: left;
   }
-  .more-icon {
+  .manage-icon {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     background: color-mix(in srgb, var(--accent) 12%, transparent);
     color: var(--accent-text, var(--accent));
   }
-  .more-head .fold {
+  .manage-list {
     display: flex;
-    color: var(--muted);
-    transition: transform 0.15s;
+    flex-direction: column;
   }
-  .more-head .fold.up {
-    transform: rotate(180deg);
-  }
-  .more-row {
+  .manage-row {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    border-top: 1px solid var(--border);
-  }
-  .more-note {
-    padding: 8px 12px 12px;
-    border-top: 1px solid var(--border);
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
   }
   .switch-toggle {
     position: relative;
@@ -888,6 +1024,48 @@
   .chain-avatar.ecash,
   .token-avatar.ecash {
     background: #0a0a0c;
+  }
+  .settings {
+    gap: 0;
+    padding: 0;
+  }
+  .settings li + li {
+    border-top: 1px solid var(--border);
+  }
+  .setting {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 56px;
+    padding: 8px 14px;
+    border: none;
+    border-radius: 0;
+    background: none;
+    color: var(--text);
+    font-weight: 400;
+    text-align: left;
+  }
+  button.setting:hover {
+    background: var(--surface-2);
+  }
+  .seg {
+    display: flex;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--surface-2);
+  }
+  .seg button {
+    min-height: 26px;
+    padding: 0 10px;
+    border: none;
+    border-radius: 999px;
+    background: none;
+    font-size: 0.8rem;
+  }
+  .seg button.on {
+    background: var(--surface);
+    box-shadow: var(--shadow);
   }
   .count {
     display: inline-flex;

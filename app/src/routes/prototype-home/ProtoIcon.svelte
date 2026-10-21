@@ -22,6 +22,7 @@
     qr: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 18h2v2h-2zM14 18h2v2h-2zM18 14h2v2h-2z",
     refresh: "M20 11a8 8 0 0 0-14.6-4.4M4 4v3h3M4 13a8 8 0 0 0 14.6 4.4M20 20v-3h-3",
     plus: "M12 5v14M5 12h14",
+    settings: "M4 6h9M17 6h3M15 4v4M4 12h3M11 12h9M9 10v4M4 18h11M19 18h1M17 16v4",
   } as const;
 
   let { name, size = 18 }: { name: keyof typeof PATHS; size?: number } = $props();
