@@ -11,7 +11,7 @@
 
   const VARIANTS = [
     { key: "A", name: "C, quieter Activity" },
-    { key: "B", name: "A by chain, MetaMask tabs" },
+    { key: "B", name: "A, unit switch, matching chains" },
     { key: "C", name: "B, folded" },
   ];
 
