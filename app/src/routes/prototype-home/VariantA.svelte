@@ -1,7 +1,7 @@
 <script lang="ts">
-  // PROTOTYPE, throw away. Variant A, "Assets first": C, but home lists assets, not chains, the
-  // way MetaMask's all-networks view does: every asset on every chain, each badged with its chain.
-  // Chips scope the hero and the list to one chain or all of them; an asset opens its chain.
+  // PROTOTYPE, throw away. Variant A, "C, quieter Activity": C, but Activity rows are one line
+  // each (no txid; tapping one opens a sheet with its details), and the hero counts Deposits on
+  // their way between chains, which have left eCash but aren't on Elements+ yet.
   import Mark from "$lib/Mark.svelte";
   import type { HistoryEntry } from "$lib/background";
   import { shortAsset } from "$lib/asset";
@@ -14,7 +14,6 @@
     grouped,
     kindOf,
     readAt,
-    shortTxid,
     when,
     type ProtoChain,
   } from "./fixtures";
@@ -30,26 +29,34 @@
   /** The Send sheet's chain picker. */
   let picking = $state(false);
   let copied = $state(false);
-  /** Home's scope: every chain, or one. */
-  let scope = $state<ProtoChain["id"] | "all">("all");
+  let homeTab = $state<"assets" | "activity">("assets");
+  let menu = $state(false);
+  /** The transaction whose details sheet is open. */
+  let inspecting = $state<{ chain: ProtoChain; entry: HistoryEntry } | undefined>(undefined);
+  /** Chains whose section in Assets is folded away. */
+  let folded = $state<Record<string, boolean>>({});
 
   const detail = $derived(chains.find((c) => c.id === open));
-  const scopeChain = $derived(chains.find((c) => c.id === scope));
-  const scoped = $derived(scopeChain ? [scopeChain] : chains);
   const receiveChain = $derived(chains.find((c) => c.id === receiving));
   const deposits = $derived(chains.flatMap((c) => c.deposits ?? []));
+  /** Sats that left eCash in a Deposit and aren't credited yet: in neither chain's balance. */
+  const inFlight = $derived(
+    deposits
+      .filter((d) => d.state === "confirming" || d.state === "awaitingCredit")
+      .reduce((sum, d) => sum + BigInt(d.value), 0n),
+  );
   const feed = $derived(
     chains
       .flatMap((c) => c.history.map((entry) => ({ chain: c, entry })))
       .sort((x, y) => (y.entry.time ?? Infinity) - (x.entry.time ?? Infinity)),
   );
 
-  /** ECX across the chains in scope: every asset named ECX, from the chains that could be read. */
+  /** ECX across chains: every asset named ECX, from the chains that could be read. */
   const total = $derived.by(() => {
     let sats = 0n;
     let unconfirmed = 0n;
     const missing: string[] = [];
-    for (const c of scoped) {
+    for (const c of chains) {
       if (c.shown.report === undefined) missing.push(c.name);
       for (const a of assetsOf(c.shown)) {
         if (ASSET_NAMES[a.asset]?.ticker !== "ECX") continue;
@@ -61,6 +68,24 @@
   });
 
   const named = (asset: string) => ASSET_NAMES[asset];
+  /** Activity's sections: not yet confirmed, then one per day. */
+  const days = $derived.by(() => {
+    const out: { day: string; items: typeof feed }[] = [];
+    for (const item of feed) {
+      const day = item.entry.time === undefined ? "Not yet confirmed" : dayOf(item.entry.time);
+      if (out.at(-1)?.day !== day) out.push({ day, items: [] });
+      out.at(-1)!.items.push(item);
+    }
+    return out;
+  });
+  function dayOf(seconds: number): string {
+    const date = new Date(seconds * 1000);
+    if (date.toDateString() === new Date().toDateString()) return "Today";
+    if (date.toDateString() === new Date(Date.now() - 86_400_000).toDateString()) return "Yesterday";
+    return date.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
+  }
+  const timeOf = (seconds: number) => new Date(seconds * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
   function amountIn(asset: string, amount: string): string {
     const name = named(asset);
     return name ? `${coins(amount, name.decimals)} ${name.ticker}` : grouped(amount);
@@ -97,27 +122,28 @@
   </nav>
 {/snippet}
 
-{#snippet activityRow(c: ProtoChain, entry: HistoryEntry, showChain: boolean)}
+{#snippet activityRow(c: ProtoChain, entry: HistoryEntry, showChain: boolean, byDay: boolean)}
   {@const kind = kindOf(entry)}
   {@const state = entryState(entry)}
-  <li class="row">
-    <span class="activity-icon {kind.icon}">
-      <ProtoIcon name={kind.icon === "in" ? "receive" : kind.icon === "out" ? "send" : kind.icon} size={16} />
-    </span>
-    <span class="col grow">
-      <strong class="small">{kind.label}</strong>
-      <span class="muted tiny">
-        {#if showChain}{c.name} · {/if}
-        {#if state}<span class="pill tiny-pill" class:warn={state === "Unconfirmed"}>{state}</span>{:else if entry.time}{when(entry.time)}{/if}
-        · <code>{shortTxid(entry.txid)}</code>
+  <li>
+    <button class="row tx" onclick={() => (inspecting = { chain: c, entry })}>
+      <span class="activity-icon {kind.icon}">
+        <ProtoIcon name={kind.icon === "in" ? "receive" : kind.icon === "out" ? "send" : kind.icon} size={16} />
       </span>
-    </span>
-    <span class="col end">
-      {#each entry.amounts as a (a.asset)}
-        <strong class="small" class:in={!a.amount.startsWith("-")}>{a.amount.startsWith("-") ? "" : "+"}{amountIn(a.asset, a.amount)}</strong>
-      {/each}
-      {#if entry.hidden}<span class="muted tiny">+ hidden amounts</span>{/if}
-    </span>
+      <span class="col grow">
+        <strong class="small">{kind.label}</strong>
+        <span class="muted tiny">
+          {#if showChain}{c.name} · {/if}
+          {#if state}<span class="pill tiny-pill" class:warn={state === "Unconfirmed"}>{state}</span>{:else if entry.time}{byDay ? timeOf(entry.time) : when(entry.time)}{/if}
+        </span>
+      </span>
+      <span class="col end">
+        {#each entry.amounts as a (a.asset)}
+          <strong class="small" class:in={!a.amount.startsWith("-")}>{a.amount.startsWith("-") ? "" : "+"}{amountIn(a.asset, a.amount)}</strong>
+        {/each}
+        {#if entry.hidden}<span class="muted tiny">+ hidden</span>{/if}
+      </span>
+    </button>
   </li>
 {/snippet}
 
@@ -196,7 +222,7 @@
       {:else}
         <ul>
           {#each detail.history as entry (entry.txid)}
-            {@render activityRow(detail, entry, false)}
+            {@render activityRow(detail, entry, false, false)}
           {/each}
         </ul>
       {/if}
@@ -205,102 +231,171 @@
         <Mark size={26} />
         <span class="title">ECX Wallet</span>
         <button class="icon" aria-label="Lock" title="Lock"><ProtoIcon name="lock" /></button>
+        <button class="icon" aria-label="More" onclick={() => (menu = !menu)}><ProtoIcon name="more" /></button>
+        {#if menu}
+          <div class="menu card">
+            <button class="menu-row" onclick={() => ((tab = "grants"), (menu = false))}><ProtoIcon name="grants" /> Grants</button>
+            <button class="menu-row"><ProtoIcon name="lock" /> Lock now</button>
+          </div>
+        {/if}
       </header>
       <p class="lock-note"><span class="dot"></span>Unlocked. Locks itself after 15 minutes without use.</p>
 
-      <div class="filters">
-        <button class:on={scope === "all"} onclick={() => (scope = "all")}>All chains</button>
-        {#each chains as c (c.id)}
-          <button class:on={scope === c.id} onclick={() => (scope = c.id)}>{c.name}</button>
-        {/each}
-      </div>
-
       <section class="hero">
-        <span class="muted tiny">{scopeChain ? `On ${scopeChain.name}` : "Total across chains"}</span>
-        {#if scopeChain && !scopeChain.shown.report}
-          <div class="big muted">—</div>
-        {:else}
-          <div class="big">{coins(total.sats, 8)} ECX</div>
-          <div class="muted small">{grouped(total.sats)} sats</div>
-        {/if}
+        <span class="muted tiny">Total across chains</span>
+        <div class="big">{coins(total.sats, 8)} ECX</div>
+        <div class="muted small">{grouped(total.sats)} sats</div>
         {#if total.unconfirmed !== "0"}<span class="pill warn">+{grouped(total.unconfirmed)} sats unconfirmed</span>{/if}
-        {#if scopeChain?.shown.error}
-          <p class="error small">{scopeChain.shown.report ? "Couldn't refresh the balance" : "Balance unavailable"}: {scopeChain.shown.error}</p>
-        {:else if total.missing.length}
+        {#if inFlight}
+          <button class="pill flight" onclick={() => (homeTab = "activity")}>
+            +{coins(inFlight.toString(), 8)} ECX in Deposits on the way
+          </button>
+        {/if}
+        {#if total.missing.length}
           <span class="pill bad">{total.missing.join(", ")} unavailable, not counted</span>
         {/if}
       </section>
 
-      {@render actions(scopeChain)}
+      {@render actions(undefined)}
 
-      {#if deposits.length && scope !== "l1"}
-        <button class="banner" onclick={() => (open = 24)}>
-          <span class="spinner"></span>
-          <span class="grow">{deposits.length} Deposit{deposits.length > 1 ? "s" : ""} to Elements+ in progress</span>
-          <ProtoIcon name="forward" size={16} />
+      <div class="tabs" role="tablist">
+        <button role="tab" class:on={homeTab === "assets"} onclick={() => (homeTab = "assets")}>Assets</button>
+        <button role="tab" class:on={homeTab === "activity"} onclick={() => (homeTab = "activity")}>
+          Activity{#if deposits.length}<span class="count" title="Deposits in progress">{deposits.length}</span>{/if}
         </button>
-      {/if}
-
-      <section class="col">
-        <h2>Assets</h2>
-        <ul class="chains">
-          {#each scoped as c (c.id)}
-            {#each assetsOf(c.shown) as { asset, amount, unconfirmed } (asset)}
-              {@const name = named(asset)}
-              <li>
-                <button class="chain-row" onclick={() => ((open = c.id), (chainTab = "assets"))}>
-                  <span class="token">
-                    <span class="token-avatar" class:unknown={!name}>{name ? name.ticker[0] : "?"}</span>
-                    <span class="chain-badge" class:slot={c.id !== "l1"}>{c.id === "l1" ? "e" : "E+"}</span>
-                  </span>
-                  <span class="col grow">
-                    <strong>{name ? name.ticker : "Unknown asset"}</strong>
-                    <span class="muted tiny">on {c.name}{#if !name} · <code title={asset}>{shortAsset(asset)}</code>{/if}</span>
-                  </span>
-                  <span class="col end">
-                    <strong>{name ? coins(amount, name.decimals) : grouped(amount)}</strong>
-                    {#if unconfirmed}<span class="tiny warn-text">+{grouped(unconfirmed)} sats unconfirmed</span>{/if}
-                    {#if c.shown.refreshing}<span class="muted tiny">refreshing…</span>{/if}
-                  </span>
-                </button>
-              </li>
-            {:else}
-              {#if c.shown.error}
+      </div>
+      {#if homeTab === "assets"}
+        {#each chains as c (c.id)}
+          {@const assets = assetsOf(c.shown)}
+          {@const ecx = ecxOf(c)}
+          <section class="chain-group">
+            <div class="chain-heading">
+              <button class="chain-name" onclick={() => ((open = c.id), (chainTab = "assets"))}>
+                {@render avatar(c, 24)}
+                <span class="col">
+                  <strong>{c.name}</strong>
+                  <span class="mono muted tiny">{c.chain}</span>
+                </span>
+              </button>
+              <span class="grow"></span>
+              {#if c.shown.refreshing}<span class="spinner"></span>{/if}
+              {#if ecx}<span class="small subtotal">{coins(ecx.amount, 8)} ECX</span>{/if}
+              <button
+                class="fold"
+                class:up={!folded[c.id]}
+                aria-label={folded[c.id] ? `Show ${c.name}` : `Hide ${c.name}`}
+                aria-expanded={!folded[c.id]}
+                onclick={() => (folded[c.id] = !folded[c.id])}
+              >
+                <ProtoIcon name="chevron" size={16} />
+              </button>
+            </div>
+            {#if c.shown.error && !c.shown.report}
+              <p class="err small unreachable">Couldn't reach its server. <button class="link"><ProtoIcon name="refresh" size={12} /> Retry</button></p>
+            {/if}
+            {#if !folded[c.id]}
+            <ul>
+              {#each assets as { asset, amount, unconfirmed } (asset)}
+                {@const name = named(asset)}
                 <li>
-                  <button class="chain-row" onclick={() => ((open = c.id), (chainTab = "assets"))}>
-                    {@render avatar(c)}
-                    <span class="col grow"><strong>{c.name}</strong><span class="err tiny">Couldn't reach its server</span></span>
-                    <ProtoIcon name="refresh" size={16} />
+                  <button class="asset-row" onclick={() => ((open = c.id), (chainTab = "assets"))}>
+                    <span class="token-avatar" class:unknown={!name}>{name ? name.ticker[0] : "?"}</span>
+                    <span class="col grow">
+                      <strong>{name ? name.ticker : "Unknown asset"}</strong>
+                      <span class="muted tiny">{#if name}{name.name}{:else}<code title={asset}>{shortAsset(asset)}</code>{/if}</span>
+                    </span>
+                    <span class="col end">
+                      <strong>{name ? coins(amount, name.decimals) : grouped(amount)}</strong>
+                      {#if unconfirmed}<span class="tiny warn-text">+{grouped(unconfirmed)} sats unconfirmed</span>{/if}
+                    </span>
                   </button>
                 </li>
-              {/if}
-            {/each}
-          {/each}
-        </ul>
-        <p class="reported-inline">Balances are as each chain's server reports them. This wallet doesn't verify them.</p>
-      </section>
-    {:else if tab === "activity"}
-      <header><span class="title">Activity</span></header>
-      <ul>
-        {#each feed as { chain, entry } (entry.txid)}
-          {@render activityRow(chain, entry, true)}
+              {/each}
+            </ul>
+            {/if}
+          </section>
         {/each}
-      </ul>
-      <p class="reported-inline">Reported by each chain's server. This wallet doesn't verify it.</p>
+        <p class="reported-inline">Balances are as each chain's server reports them. This wallet doesn't verify them.</p>
+      {:else}
+        {#if deposits.length}
+          <section class="col day">
+            <h2>In progress</h2>
+            <ul>
+              {#each deposits as d (d.txid)}
+                <li class="row">
+                  <span class="activity-icon deposit"><ProtoIcon name="deposit" size={16} /></span>
+                  <div class="col grow">
+                    <div class="between">
+                      <strong class="small">Deposit to {d.chainName}</strong>
+                      <strong class="small">{grouped(d.value)} sats</strong>
+                    </div>
+                    {#if d.state === "confirming"}
+                      <div class="bar"><span style:width="{d.confirmations}%"></span></div>
+                    {/if}
+                    <span class="tiny" class:muted={d.state !== "notFound"} class:err={d.state === "notFound"}>{depositState(d)}</span>
+                    {#if d.state === "notFound" || d.state === "unavailable"}
+                      <button class="small-button stop">Stop tracking</button>
+                    {/if}
+                  </div>
+                </li>
+              {/each}
+            </ul>
+            <p class="muted tiny">Deposits wait 100 eCash blocks, then the chain's operator credits them. Withdrawals take months.</p>
+          </section>
+        {/if}
+        {#each days as { day, items } (day)}
+          <section class="col day">
+            <h2>{day}</h2>
+            <ul>
+              {#each items as { chain, entry } (entry.txid)}
+                {@render activityRow(chain, entry, true, true)}
+              {/each}
+            </ul>
+          </section>
+        {/each}
+        <p class="reported-inline">Reported by each chain's server. This wallet doesn't verify it.</p>
+      {/if}
     {:else}
-      <header><span class="title">Grants</span></header>
+      <header>
+        <button class="icon" aria-label="Back" onclick={() => (tab = "home")}><ProtoIcon name="back" /></button>
+        <span class="title">Grants</span>
+      </header>
       <p class="muted small">(The real Grants screen would go here.)</p>
     {/if}
   </div>
 
-  <nav class="tabbar">
-    <button class:on={tab === "home"} onclick={() => ((tab = "home"), (open = undefined))}><ProtoIcon name="wallet" />Home</button>
-    <button class:on={tab === "activity"} onclick={() => (tab = "activity")}><ProtoIcon name="activity" />Activity</button>
-    <button class:on={tab === "grants"} onclick={() => (tab = "grants")}><ProtoIcon name="grants" />Grants</button>
-  </nav>
-
-  {#if receiveChain || picking}
-    <div class="scrim" role="presentation" onclick={() => ((receiving = undefined), (picking = false))}></div>
+  {#if receiveChain || picking || inspecting}
+    <div class="scrim" role="presentation" onclick={() => ((receiving = undefined), (picking = false), (inspecting = undefined))}></div>
+  {/if}
+  {#if inspecting}
+    {@const { chain: c, entry } = inspecting}
+    {@const kind = kindOf(entry)}
+    {@const state = entryState(entry)}
+    <div class="sheet" role="dialog" aria-label="Transaction">
+      <div class="between">
+        <strong>{kind.label}</strong>
+        <button class="icon" aria-label="Close" onclick={() => (inspecting = undefined)}><ProtoIcon name="close" /></button>
+      </div>
+      <div class="col tx-amounts">
+        {#each entry.amounts as a (a.asset)}
+          <span class="big-ish" class:in={!a.amount.startsWith("-")}>{a.amount.startsWith("-") ? "" : "+"}{amountIn(a.asset, a.amount)}</span>
+          {#if named(a.asset)}<span class="muted small">{grouped(a.amount)} sats</span>{/if}
+        {/each}
+        {#if entry.hidden}<span class="muted small">Some amounts are confidential and not shown.</span>{/if}
+      </div>
+      <dl class="facts">
+        <dt>Status</dt>
+        <dd>{#if state}<span class="pill tiny-pill" class:warn={state === "Unconfirmed"}>{state}</span>{state === "Unconfirmed" ? " Sent by someone else; may still not arrive." : ""}{:else}Confirmed{/if}</dd>
+        {#if entry.time}<dt>Mined</dt><dd>{new Date(entry.time * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</dd>{/if}
+        <dt>Chain</dt><dd>{c.name} <span class="mono muted tiny">{c.chain}</span></dd>
+        <dt>Transaction</dt>
+        <dd class="txid-line">
+          <code>{entry.txid}</code>
+          <button class="icon small-icon" aria-label="Copy transaction id" onclick={() => copy(entry.txid)}><ProtoIcon name={copied ? "check" : "copy"} size={14} /></button>
+        </dd>
+      </dl>
+      {#if c.shown.report}<p class="reported-inline">Reported by {c.shown.report.server}. This wallet doesn't verify it.</p>{/if}
+    </div>
   {/if}
   {#if receiveChain}
     <div class="sheet" role="dialog" aria-label="Receive">
@@ -349,9 +444,10 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
-    padding: 12px 16px 80px;
+    padding: 12px 16px 24px;
   }
   header {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -514,22 +610,6 @@
     text-align: left;
     text-decoration: none;
   }
-  .filters {
-    display: flex;
-    gap: 6px;
-    margin-top: -4px;
-  }
-  .filters button {
-    min-height: 28px;
-    padding: 0 12px;
-    border-radius: 999px;
-    font-size: 0.8rem;
-  }
-  .filters button.on {
-    border-color: var(--text);
-    background: var(--text);
-    color: var(--bg);
-  }
   .token {
     position: relative;
     flex: none;
@@ -552,6 +632,183 @@
   .chain-badge.slot {
     background: #7b4fd6;
     color: #fff;
+  }
+  .menu {
+    position: absolute;
+    top: 40px;
+    right: 0;
+    z-index: 5;
+    gap: 2px;
+    min-width: 160px;
+    padding: 6px;
+  }
+  .menu-row {
+    justify-content: flex-start;
+    gap: 10px;
+    min-height: 36px;
+    padding: 0 10px;
+    border: none;
+    background: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+  .asset-row {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 12px;
+    min-height: 60px;
+    padding: 8px 0;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: none;
+    font-weight: 400;
+    text-align: left;
+  }
+  .asset-row:hover {
+    background: none;
+  }
+  .chain-group {
+    display: flex;
+    flex-direction: column;
+    margin-top: -6px;
+  }
+  .chain-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 48px;
+  }
+  .chain-name {
+    justify-content: flex-start;
+    gap: 8px;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    text-align: left;
+  }
+  .chain-name:hover {
+    background: none;
+    color: var(--accent);
+  }
+  .subtotal {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .fold {
+    width: 28px;
+    min-height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: var(--muted);
+    transition: transform 0.15s;
+  }
+  .fold.up {
+    transform: rotate(180deg);
+  }
+  .flight {
+    border: none;
+    min-height: 0;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+  }
+  .flight:hover {
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+  .tx {
+    width: 100%;
+    justify-content: flex-start;
+    min-height: 0;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: none;
+    font-weight: 400;
+    text-align: left;
+  }
+  .tx:hover {
+    background: color-mix(in srgb, var(--accent) 5%, transparent);
+  }
+  .tx-amounts {
+    align-items: center;
+    text-align: center;
+  }
+  .big-ish {
+    font-size: 1.5rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .facts {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 12px;
+    font-size: 0.85rem;
+  }
+  .facts dt {
+    color: var(--muted);
+  }
+  .txid-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .txid-line code {
+    font-size: 0.72rem;
+  }
+  .small-icon {
+    width: 24px;
+    min-height: 24px;
+    flex: none;
+  }
+  .count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    margin-left: 6px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 0.7rem;
+  }
+  .stop {
+    align-self: flex-start;
+    margin-top: 4px;
+  }
+  .day {
+    margin-top: 4px;
+  }
+  .day h2 {
+    padding-top: 6px;
+  }
+  .chain-group .asset-row {
+    padding-left: 12px;
+  }
+  .chain-group .token-avatar {
+    width: 30px;
+    height: 30px;
+    font-size: 0.85rem;
+  }
+  .unreachable {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 0 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .link {
+    min-height: 0;
+    padding: 0;
+    gap: 4px;
+    border: none;
+    background: none;
+    color: var(--accent);
+    font-size: 0.8rem;
   }
   .chain-row.pick {
     border-radius: var(--radius-sm);
@@ -707,30 +964,6 @@
     background: var(--surface-2);
     font-size: 0.75rem;
     user-select: all;
-  }
-  /* Fixed: in the popup, to the window; in the prototype frame, to the frame. */
-  .tabbar {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    border-top: 1px solid var(--border);
-    background: var(--surface);
-  }
-  .tabbar button {
-    flex-direction: column;
-    gap: 2px;
-    min-height: 56px;
-    border: none;
-    border-radius: 0;
-    background: none;
-    color: var(--muted);
-    font-size: 0.72rem;
-  }
-  .tabbar button.on {
-    color: var(--accent);
   }
   .scrim {
     position: fixed;
