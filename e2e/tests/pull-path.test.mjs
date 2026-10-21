@@ -9,6 +9,7 @@
 // in sidechain-servers.test.
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
+import { parseElementsTx } from "@ecx/stub-server/elements-tx";
 import { BROWSERS, launchWallet, openWalletPage, relock, serveEsplora, serveL1Esplora, setUpWallet, WALLET_PASSWORD } from "../harness.mjs";
 
 const GENESIS = "a7754ce0debc40baddbd8c47e79d19209685f22c63edaaf8b69cf54116374d7f";
@@ -22,6 +23,10 @@ const FOREIGN_ADDRESS = "elements1qepkhlwlq2qjggg89d5quqx8z59vz9mr2h6j4pc";
 /** What the stub Esplora server holds for the wallet's addresses (read on every request). */
 const ESPLORA = {
   identityBlock: { height: 0, hash: GENESIS },
+  // Broadcasts are Elements transactions; no fee estimates, as on explorer.bitnames.info.
+  elements: true,
+  feeEstimates: {},
+  tipHeight: 10,
   utxos: {
     [RECEIVE_0]: [
       { txid: "a0".repeat(32), vout: 0, value: 150000, asset: POLICY_ASSET, confirmed: true },
@@ -287,20 +292,82 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     }
   });
 
-  test("Send says sending isn't available yet, and asks the user for no approval", async () => {
+  test("Send to two recipients: built by the wallet, reviewed in the approval window, broadcast, and shown with its txid", async () => {
     const page = await openWalletPage(session, "#/send/24");
     await page.waitForSelector(`[data-send-asset] option[value="${POLICY_ASSET}"]`, { timeout: 20_000 });
-    await page.type("[data-send-amount]", "1000");
-    await page.type("[data-send-destination]", FOREIGN_ADDRESS);
+    const option = await page.$eval(`[data-send-row="0"] [data-send-asset] option[value="${POLICY_ASSET}"]`, (e) => e.textContent.trim());
+    assert.equal(option, "ECX (0.00179 ECX spendable)", "confirmed only: the unconfirmed 5 000 isn't the wallet's own change");
+
+    await page.type('[data-send-row="0"] [data-send-amount]', "0.0012");
+    await page.type('[data-send-row="0"] [data-send-destination]', FOREIGN_ADDRESS);
+    await page.click("[data-send-add]");
+    await page.waitForSelector('[data-send-row="1"]');
+    await page.type('[data-send-row="1"] [data-send-amount]', "0.0001");
+    await page.type('[data-send-row="1"] [data-send-destination]', RECEIVE_1);
+    const before = stub.broadcasts().length;
     await page.click("[data-send-submit]");
+
+    const approval = await session.waitForApprovalWindow({ timeout: 20_000 });
+    await approval.waitForSelector("[data-output]");
+    const review = await approval.evaluate(() => ({
+      origin: document.querySelector("[data-origin]").textContent.trim(),
+      destinations: [...document.querySelectorAll("[data-output] [data-destination]")].map((e) => e.textContent.trim()),
+    }));
+    assert.equal(review.origin, "This wallet (Send on Elements+)");
+    assert.deepEqual(review.destinations.slice(0, 2), [FOREIGN_ADDRESS, RECEIVE_1]);
+    assert.equal(review.destinations.length, 3, "and change");
+    await approval.click("[data-approve]");
+
     await page.waitForSelector("[data-send-done], [data-error]", { timeout: 20_000 });
-    const error = await page.evaluate(() => document.querySelector("[data-error]")?.textContent.trim());
-    assert.equal(error, "Sending on Elements+ isn't available yet.");
-    assert.equal((await session.approvalWindows()).length, 0);
+    assert.equal(await page.$eval("[data-error]", (e) => e.textContent).catch(() => null), null);
+    assert.equal(stub.broadcasts().length, before + 1);
+    const { txid, outputs } = parseElementsTx(stub.broadcasts().at(-1));
+    assert.equal(await page.$eval("[data-send-txid]", (e) => e.getAttribute("data-send-txid")), txid);
+    assert.deepEqual(outputs.slice(0, 2).map((o) => o.value), [120000, 10000]);
+
+    await page.click("[data-send-activity]");
+    await page.waitForSelector('[data-tab="activity"][aria-selected="true"]', { timeout: 10_000 });
+    await page.close();
+  });
+
+  test("a Send's spent coins are held: the next Send can't spend them", async () => {
+    const page = await openWalletPage(session, "#/send/24");
+    await page.waitForSelector(`[data-send-asset] option[value="${POLICY_ASSET}"]`, { timeout: 20_000 });
+    const option = await page.$eval(`[data-send-row="0"] [data-send-asset] option[value="${POLICY_ASSET}"]`, (e) => e.textContent.trim());
+    assert.notEqual(option, "ECX (0.00179 ECX spendable)", "the stub still lists the spent coin, but the wallet holds it back");
     await page.close();
   });
 
   test("none of the above raised extension runtime errors", async () => {
     assert.deepEqual((await session.extensionErrors()).runtimeErrors, []);
+  });
+
+  // After the runtime-errors check: closing the page while its `send.start` is pending makes Firefox
+  // log "Promise rejected after context unloaded", as a real popup closing does.
+  test("a Send refused after approval, with its page already closed (as the popup closes), shows why in Activity until closed", async () => {
+    ESPLORA.refuseBroadcast = 'sendrawtransaction RPC error: {"code":-26,"message":"min relay fee not met"}';
+    try {
+      const page = await openWalletPage(session, "#/send/24");
+      await page.waitForSelector(`[data-send-asset] option[value="${POLICY_ASSET}"]`, { timeout: 20_000 });
+      await page.type('[data-send-row="0"] [data-send-amount]', "0.0001");
+      await page.type('[data-send-row="0"] [data-send-destination]', FOREIGN_ADDRESS);
+      await page.click("[data-send-submit]");
+      const approval = await session.waitForApprovalWindow({ timeout: 20_000 });
+      await page.close();
+      await approval.click("[data-approve]");
+
+      const home = await session.openPage("index.html#/");
+      await home.waitForSelector("[data-send-refused]", { timeout: 20_000 });
+      await home.click('[data-tab="activity"]');
+      await home.waitForSelector("[data-send-refused-close]", { visible: true });
+      const refused = await home.$eval("[data-send-refused]", (e) => e.textContent.replace(/\s+/g, " ").trim());
+      assert.match(refused, /^Your Send of 0.0001 ECX failed: .*min relay fee not met.* Nothing was sent\./);
+      assert.equal(await home.$eval("[data-send-retry]", (e) => e.getAttribute("href")), "#/send/24");
+      await home.click("[data-send-refused-close]");
+      await home.waitForFunction(() => document.querySelector("[data-send-refused]") === null, { timeout: 5_000 });
+      await home.close();
+    } finally {
+      ESPLORA.refuseBroadcast = undefined;
+    }
   });
 });

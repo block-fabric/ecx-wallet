@@ -13,7 +13,8 @@
   const id: ChainId = page.params.id === "l1" ? "l1" : Number(page.params.id);
   const chains = new Chains();
   let locked = $state(false);
-  let tab = $state<"assets" | "activity">("assets");
+  /** `#/chain/<id>/activity` opens on the Activity tab (after a Send, say). */
+  let tab = $state<"assets" | "activity">(page.params.tab === "activity" ? "activity" : "assets");
   let actions = $state<Actions | undefined>(undefined);
 
   // Nothing here works while locked: the home page asks for the password.

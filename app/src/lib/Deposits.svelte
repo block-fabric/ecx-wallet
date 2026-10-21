@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { dismissDeposit, dismissRefusedDeposit } from "$lib/background";
+  import { dismissDeposit, dismissRefusedDeposit, dismissRefusedSend } from "$lib/background";
   import { depositState, type ChainView } from "$lib/chains.svelte";
   import Icon from "$lib/Icon.svelte";
   import { amountText } from "$lib/unit.svelte";
 
   /**
-   * The Deposits in progress to `slots`, and each one's last Deposit that failed after approval.
+   * The Deposits in progress to `slots`, and each one's last Deposit and Send that failed after approval.
    * `ecx` names the main chain's coin, in which a Deposit's value is counted.
    */
   let { slots, ecx, onchange }: { slots: ChainView[]; ecx: ChainView["info"]["assets"]; onchange: (slot: number) => void } = $props();
@@ -13,10 +13,21 @@
   const list = $derived(slots.flatMap((s) => (Array.isArray(s.deposits) ? s.deposits : [])));
   const errors = $derived(slots.flatMap((s) => (s.deposits !== undefined && "error" in s.deposits ? [{ name: s.info.name, error: s.deposits.error }] : [])));
   const refused = $derived(slots.flatMap((s) => (s.refused ? [s.refused] : [])));
+  const refusedSends = $derived(slots.flatMap((s) => (s.refusedSend ? [{ failed: s.refusedSend, assets: s.info.assets }] : [])));
   const sats = (value: string) => amountText(value, "", ecx);
 
   async function stopTracking(slot: number, txid: string) {
     await dismissDeposit(txid).catch(() => {});
+    onchange(slot);
+  }
+
+  /** A refused Send in a few words: its amount for one recipient, else how many. */
+  function sendText({ outputs }: { outputs: { asset: string; amount: string }[] }, assets: ChainView["info"]["assets"]) {
+    return outputs.length === 1 ? `of ${amountText(outputs[0].amount, outputs[0].asset, assets)}` : `to ${outputs.length} recipients`;
+  }
+
+  async function closeRefusedSend(slot: number) {
+    await dismissRefusedSend(slot).catch(() => {});
     onchange(slot);
   }
 
@@ -33,6 +44,15 @@
       <a href="#/deposit/{failed.slot}" data-deposit-retry>Try again</a>
     </div>
     <button class="close" aria-label="Close" title="Close" onclick={() => closeRefused(failed.slot)} data-deposit-refused-close>×</button>
+  </div>
+{/each}
+{#each refusedSends as { failed, assets } (failed.slot)}
+  <div class="error small refused" role="alert">
+    <div class="stack-tight">
+      <span data-send-refused>Your Send {sendText(failed, assets)} failed: {failed.reason}</span>
+      <a href="#/send/{failed.slot}" data-send-retry>Try again</a>
+    </div>
+    <button class="close" aria-label="Close" title="Close" onclick={() => closeRefusedSend(failed.slot)} data-send-refused-close>×</button>
   </div>
 {/each}
 {#each errors as { name, error } (name)}

@@ -11,6 +11,7 @@ import {
   listChains,
   listDeposits,
   refusedDeposit,
+  refusedSend,
   reportedHistory,
   reportedState,
   showReport,
@@ -20,6 +21,7 @@ import {
   type ChainInfo,
   type DepositStatus,
   type RefusedDeposit,
+  type RefusedSend,
   type ShownReport,
 } from "$lib/background";
 
@@ -33,6 +35,8 @@ export interface ChainView {
   deposits?: DepositStatus[] | { error: string };
   /** A Slot's last Deposit that failed after approval, or null; undefined until read. */
   refused?: RefusedDeposit | null;
+  /** A Slot's last Send that failed after approval, or null; undefined until read. */
+  refusedSend?: RefusedSend | null;
   /** Its transactions (this session's last while refreshing), once its Activity was opened. */
   history?: ShownReport<ChainHistory>;
 }
@@ -88,8 +92,12 @@ export class Chains {
     }
   }
 
-  /** Reads a Slot's Deposits again (after Stop tracking or closing a refused one). */
+  /** Reads a Slot's Deposits and refused Send again (after Stop tracking or closing a refused one). */
   readDeposits(slot: number) {
+    refusedSend(slot).then(
+      (r) => this.update(slot, { refusedSend: r }),
+      () => this.update(slot, { refusedSend: null }),
+    );
     refusedDeposit(slot).then(
       (r) => this.update(slot, { refused: r }),
       () => this.update(slot, { refused: null }),

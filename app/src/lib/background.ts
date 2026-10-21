@@ -14,6 +14,7 @@ import type {
   Grant,
   HistoryEntry,
   RefusedDeposit,
+  RefusedSend,
   SendResult,
   SlotAddress,
   SlotReport,
@@ -34,6 +35,7 @@ export type {
   Grant,
   HistoryEntry,
   RefusedDeposit,
+  RefusedSend,
   SendResult,
   SlotReport,
   Unit,
@@ -189,11 +191,21 @@ export const reportedHistory = (slot?: number) => send<ChainHistory>({ kind: "hi
 export const cachedHistory = (slot?: number) => send<ChainHistory | null>({ kind: "history.cached", slot });
 
 /**
- * Sends from the wallet's own Send screen: the Slot's Sidechain Server builds the transfer, the user
- * reviews it in an approval window, the wallet signs and submits it. Throws on refusal or rejection.
+ * Sends from the wallet's own Send screen, to one or more recipients: the Slot's Chain Module builds
+ * the transfer (over Esplora) or its Sidechain Server does (`/v1`), the user reviews it in an
+ * approval window, the wallet signs it and broadcasts or submits it. Throws on refusal or rejection.
  */
-export const startSend = (order: { slot: number; asset: string; amount: string; destination: string }) =>
-  send<SendResult>({ kind: "send.start", ...order });
+export const startSend = (slot: number, outputs: { asset: string; amount: string; to: { address: string } }[]) =>
+  send<SendResult>({ kind: "send.start", slot, outputs });
+
+/** Per asset, what a Send on the Slot can spend now (confirmed, plus the wallet's own trusted change). */
+export const spendable = (slot: number) => send<AssetAmount[]>({ kind: "send.spendable", slot });
+
+/** The Slot's last Send that failed after approval this session (null if none or closed). */
+export const refusedSend = (slot: number) => send<RefusedSend | null>({ kind: "send.refused", slot });
+
+/** Closes the Slot's refused Send. */
+export const dismissRefusedSend = (slot: number) => send<null>({ kind: "send.dismissRefused", slot });
 
 /**
  * Deposits `amount` sats of confirmed eCash to the Slot: the wallet builds the M5, the user reviews
