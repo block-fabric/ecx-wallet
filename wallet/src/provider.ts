@@ -3,6 +3,8 @@ import type { SlotAddress } from "./accounts";
 import { covers, GRANTABLE_METHODS, widen, type GrantableMethod, type GrantStore, type Scope } from "./grants";
 import { parseSigningRequest } from "./signing-request";
 import { chainModuleFor, rejected, reviewAndSign, type SignPrompt, type SigningDeps } from "./signing";
+import type { SendResult } from "./pull-path";
+import { SidechainServerError, type TransferOrder } from "./sidechain-server";
 
 export type { SignPrompt, SigningApproval } from "./signing";
 
@@ -44,6 +46,8 @@ export interface ProviderDeps extends SigningDeps {
   chains: { isOn(slot: number): Promise<boolean>; turnOn(slot: number): Promise<void> };
   /** Asks the user to turn chains on for a request; false if they refuse or close the window. */
   askToTurnOn(prompt: TurnOnPrompt): Promise<boolean>;
+  /** The wallet's Send, asked for by `from` (only called for a supported Slot). */
+  send(slot: number, order: TransferOrder, from: { origin: string }): Promise<SendResult>;
 }
 
 /**
@@ -51,7 +55,7 @@ export interface ProviderDeps extends SigningDeps {
  * origin the browser reported for it. All Grant decisions are made here.
  */
 export function createProviderHandler(deps: ProviderDeps) {
-  const { grants, askToConnect, supportedSlots, isUnlocked, receiveAddresses, chains, askToTurnOn } = deps;
+  const { grants, askToConnect, supportedSlots, isUnlocked, receiveAddresses, chains, askToTurnOn, send } = deps;
 
   /** The supported Slots among `slots` whose chain is off. */
   async function off(slots: number[]): Promise<number[]> {
@@ -84,22 +88,43 @@ export function createProviderHandler(deps: ProviderDeps) {
     return { slots: grant.slots, methods: grant.methods, ...(grant.blindSigning ? { blindSigning: true } : {}) };
   }
 
-  async function granted(origin: string, method: GrantableMethod, params: unknown): Promise<unknown> {
-    if (method === "signTransaction") return signTransaction(origin, params);
+  /** The Grant covers `method` on `slot`, and the wallet has the Slot's Chain Module. */
+  async function authorize(origin: string, method: GrantableMethod, slot: number): Promise<void> {
     const grant = await grants.get(origin);
     if (!grant?.methods.includes(method)) {
       throw new ProviderRpcError(ErrorCode.Unauthorized, `${origin} has no Grant for ${method}; call connect first.`);
     }
-    const slot = parseSlot(params);
     if (!grant.slots.includes(slot)) {
       throw new ProviderRpcError(ErrorCode.Unauthorized, `${origin} has no Grant for Slot ${slot}; call connect first.`);
     }
     if (!supportedSlots.includes(slot)) {
       throw new ProviderRpcError(ErrorCode.ChainDisconnected, `This wallet has no Chain Module for Slot ${slot}.`);
     }
+  }
+
+  async function granted(origin: string, method: GrantableMethod, params: unknown): Promise<unknown> {
+    if (method === "signTransaction") return signTransaction(origin, params);
+    if (method === "sendTransfer") return sendTransfer(origin, params);
+    const slot = parseSlot(method, params);
+    await authorize(origin, method, slot);
     if (!(await isUnlocked())) throw new ProviderRpcError(ErrorCode.Unauthorized, "The wallet is locked.");
     await turnOn(origin, [slot]);
     return receiveAddresses(slot);
+  }
+
+  /**
+   * The wallet's own Send, for an app (#39, docs/adr/0006): the app names the outputs, the wallet
+   * picks the coins and change, the user approves it Clear (never Blind), and the wallet broadcasts
+   * it and holds its coins. Works while locked: the approval window unlocks first.
+   */
+  async function sendTransfer(origin: string, params: unknown): Promise<{ txid?: string }> {
+    const slot = parseSlot("sendTransfer", params);
+    await authorize(origin, "sendTransfer", slot);
+    await turnOn(origin, [slot]);
+    const { outputs } = params as { outputs?: unknown };
+    const result = await send(slot, { outputs: outputs as TransferOrder["outputs"] }, { origin });
+    if (!result.accepted) throw new SidechainServerError(result.server, `The Sidechain Server at ${result.server} didn't accept the transaction.`);
+    return result.txid === undefined ? {} : { txid: result.txid };
   }
 
   /**
@@ -153,9 +178,9 @@ function isSlot(s: unknown): s is number {
   return Number.isInteger(s) && (s as number) >= 1 && (s as number) <= 255;
 }
 
-function parseSlot(params: unknown): number {
+function parseSlot(method: string, params: unknown): number {
   const { slot } = (params ?? {}) as { slot?: unknown };
-  if (!isSlot(slot)) throw new ProviderRpcError(ErrorCode.InvalidParams, "getAddresses needs `slot`: a Slot (1-255).");
+  if (!isSlot(slot)) throw new ProviderRpcError(ErrorCode.InvalidParams, `${method} needs \`slot\`: a Slot (1-255).`);
   return slot;
 }
 

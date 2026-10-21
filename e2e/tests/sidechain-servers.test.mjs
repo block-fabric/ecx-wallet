@@ -32,11 +32,19 @@ const wallet = await importWallet();
 const elements = await wallet.loadChainModule(await readFile(path.join(DIST.chromium, "elements.wasm")));
 const l1 = await wallet.loadChainModule(await readFile(path.join(DIST.chromium, "l1.wasm")));
 
+const APP = "https://dex.example";
+
+/**
+ * The wallet's lock for a test: `steps` records each unlock asked for and each approval shown, in
+ * order. The Starter is there only while unlocked.
+ */
+const lockState = (locked = false) => ({ unlocked: !locked, steps: [] });
+
 /**
  * The pull path for Slot 24 with betanet's server set to `server`. `approve` answers each approval
  * window; `prompts` records what each one was opened for and shown.
  */
-function pullPathWith(server, { approve = true } = {}) {
+function pullPathWith(server, { approve = true, lock = lockState() } = {}) {
   const entry = structuredClone(elements.chainEntry());
   entry.networks.betanet.sidechainServer = server;
   const module = { ...elements, chainEntry: () => structuredClone(entry) };
@@ -44,16 +52,9 @@ function pullPathWith(server, { approve = true } = {}) {
   const pullPath = wallet.createPullPath({
     supportedSlots: [24],
     chainModule: (slot) => (slot === 24 ? Promise.resolve(module) : undefined),
-    openSigningApproval: (context) => ({
-      unlock: async () => true,
-      confirm: async (prompt) => {
-        prompts.push({ context, prompt });
-        return approve;
-      },
-      close() {},
-    }),
-    isUnlocked: async () => true,
-    starter: async () => SLOT_24_STARTER,
+    openSigningApproval: (context) => approvalFor(context, { approve, lock, prompts }),
+    isUnlocked: async () => lock.unlocked,
+    starter: async () => starter(lock),
     l1Module: async () => l1,
     l1AccountKey: async () => assert.fail("Slot 24's pull path asked for the L1 Account Key"),
     now: () => Date.now(),
@@ -62,29 +63,44 @@ function pullPathWith(server, { approve = true } = {}) {
   return { pullPath, prompts, module };
 }
 
+/** A scripted approval window: unlocking always succeeds; `approve` answers the review. */
+function approvalFor(context, { approve, lock, prompts }) {
+  return {
+    unlock: async () => {
+      lock.steps.push("unlock");
+      lock.unlocked = true;
+      return true;
+    },
+    confirm: async (prompt) => {
+      lock.steps.push("confirm");
+      prompts.push({ context, prompt });
+      return approve;
+    },
+    close() {},
+  };
+}
+
+async function starter(lock) {
+  if (!lock.unlocked) throw new Error("The wallet is locked.");
+  return SLOT_24_STARTER;
+}
+
 /**
  * The wallet's Send for Slot 24 with betanet's server set to `server`, holding spends in `held`
  * (an in-memory store). `prompts` records what each approval window was opened for and shown.
  */
-function sendsWith(server, { approve = true, held = [], cache = new Map() } = {}) {
-  const { pullPath, prompts, module } = pullPathWith(server, { approve });
+function sendsWith(server, { approve = true, held = [], cache = new Map(), lock = lockState() } = {}) {
+  const { pullPath, prompts, module } = pullPathWith(server, { approve, lock });
   const sends = wallet.createSends({
     chainModule: (slot) => (slot === 24 ? Promise.resolve(module) : undefined),
     l1Module: async () => l1,
-    starter: async () => SLOT_24_STARTER,
+    starter: async () => starter(lock),
     l1AccountKey: async () => assert.fail("Slot 24's Send asked for the L1 Account Key"),
     pullPath,
     esplora: (entry, network) =>
       wallet.esploraClient({ url: network.sidechainServer.url, identityBlock: network.identityBlock, chainName: entry.name }, (...args) => fetch(...args)),
-    openSigningApproval: (context) => ({
-      unlock: async () => true,
-      confirm: async (prompt) => {
-        prompts.push({ context, prompt });
-        return approve;
-      },
-      close() {},
-    }),
-    isUnlocked: async () => true,
+    openSigningApproval: (context) => approvalFor(context, { approve, lock, prompts }),
+    isUnlocked: async () => lock.unlocked,
     held: {
       list: async () => [...held],
       put: async (h) => void held.push(h),
@@ -124,6 +140,8 @@ describe("Standard Sidechain API", () => {
         { outputs: [out("4")], payload: PSETS.clear.payload, expiresIn: -60 },
         { outputs: [out("5")], payload: PSETS.confidentialInput.payload },
         { outputs: [out("6")], payload: PSETS.confidentialOutput.payload },
+        // Asked for 7, it pays 120 000: not the transfer asked for.
+        { outputs: [out("7")], payload: PSETS.clear.payload },
       ],
     });
   });
@@ -236,10 +254,30 @@ describe("Standard Sidechain API", () => {
     assert.equal(stub.submissions().length, before);
   });
 
+  test("Send: a server-built transfer that isn't the one asked for is refused without an approval", async () => {
+    const before = stub.submissions().length;
+    const { pullPath, prompts } = pullPathWith(server());
+    await assert.rejects(send(pullPath, "7"), (e) => e instanceof wallet.SidechainServerError && /isn't the one asked for\. Nothing was sent\.$/.test(e.message));
+    assert.equal(prompts.length, 0);
+    assert.equal(stub.submissions().length, before);
+  });
+
   test("the wallet's Send hands a Slot whose server speaks `/v1` to the server", async () => {
     const before = stub.submissions().length;
     const result = await sendsWith(server()).sends.send(24, { outputs: [out("120000")] });
     assert.equal(result.server, stub.url);
+    assert.equal(stub.submissions().length, before + 1);
+  });
+
+  test("an app's Send: the approval names the app, and while locked the same window unlocks before the server builds", async () => {
+    const before = stub.submissions().length;
+    const lock = lockState(true);
+    const { sends, prompts } = sendsWith(server(), { lock });
+    const result = await sends.send(24, { outputs: [out("120000")] }, { origin: APP });
+    assert.equal(result.accepted, true);
+    assert.deepEqual(lock.steps, ["unlock", "confirm"]);
+    assert.deepEqual(prompts[0].context, { origin: APP, chain: CHAIN });
+    assert.equal(prompts[0].prompt.origin, APP);
     assert.equal(stub.submissions().length, before + 1);
   });
 
@@ -520,6 +558,53 @@ describe("Send over Esplora", () => {
     const sent = parseElementsTx(stub.broadcasts().at(-1)).txid;
     assert.deepEqual(held.map((h) => [h.txid, h.spent]), [[sent, [{ txid: "a0".repeat(32), vout: 0 }]]]);
     assert.equal(await sends.refused(24), undefined, "it went out: not shown as a failed Send");
+  });
+
+  test("an app's Send: the approval names the app, and while locked unlocks before the wallet builds", async () => {
+    config.utxos = { [RECEIVE_0]: [utxo("a0", 150000)] };
+    const lock = lockState(true);
+    const { sends, prompts, held } = sendsWith(esplora(), { lock });
+    const result = await sends.send(24, { outputs: [out("1000")] }, { origin: APP });
+    assert.deepEqual(lock.steps, ["unlock", "confirm"]);
+    assert.deepEqual(prompts[0].context, { origin: APP, chain: CHAIN });
+    assert.equal(prompts[0].prompt.origin, APP);
+    assert.equal(result.txid, parseElementsTx(stub.broadcasts().at(-1)).txid);
+    assert.deepEqual(held.map((h) => h.txid), [result.txid], "its coins are held like the wallet's own Send's");
+  });
+
+  test("an app's Send that fails after approval goes back to the app, not to the Activity feed", async () => {
+    config.utxos = { [RECEIVE_0]: [utxo("a0", 150000)] };
+    config.refuseBroadcast = "bad-txns-inputs-missingorspent";
+    try {
+      const { sends } = sendsWith(esplora());
+      await assert.rejects(sends.send(24, { outputs: [out("1000")] }, { origin: APP }), /Nothing was sent\.$/);
+      assert.equal(await sends.refused(24), undefined);
+    } finally {
+      config.refuseBroadcast = undefined;
+    }
+  });
+
+  test("two Sends at once go one after the other, so the second can't pick the first's coins", async () => {
+    config.utxos = { [RECEIVE_0]: [utxo("a0", 150000)] };
+    const before = stub.broadcasts().length;
+    const { sends } = sendsWith(esplora());
+    const [first, second] = await Promise.allSettled([
+      sends.send(24, { outputs: [out("1000")] }, { origin: APP }),
+      sends.send(24, { outputs: [out("2000")] }),
+    ]);
+    assert.equal(first.status, "fulfilled");
+    assert.equal(second.status, "rejected");
+    assert.match(second.reason.message, /Not enough ECX/);
+    assert.equal(stub.broadcasts().length, before + 1);
+  });
+
+  test("an output to anything but an address is refused, naming what is supported", async () => {
+    const { sends, prompts } = sendsWith(esplora());
+    await assert.rejects(
+      sends.send(24, { outputs: [{ asset: POLICY_ASSET, amount: "1000", to: { script: "6a" } }] }, { origin: APP }),
+      (e) => e.code === -32602 && /can only pay an address \(`to: \{ address \}`\), not `script`/.test(e.message),
+    );
+    assert.equal(prompts.length, 0);
   });
 
   test("rejecting the approval broadcasts nothing, and isn't kept as a failure", async () => {

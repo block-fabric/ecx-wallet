@@ -8,10 +8,10 @@
 // has forgotten it for HOLD_BLOCKS blocks: the server may not list the spend in its mempool yet.
 import { canSend, createKeyRouting, type ChainModules, type KeyedChain, type Keys } from "./accounts";
 import { cacheKey, type SessionCache } from "./cache";
-import { ChainModuleRefusal, type AssetAmount, type ChainEntry, type ClearView, type ModuleTransferOrder, type NetworkEntry, type Starter, type TransferOutput } from "./chain-module";
+import { ChainModuleRefusal, type AssetAmount, type BuiltTransfer, type ChainEntry, type ModuleTransferOrder, type NetworkEntry, type Starter, type TransferOutput } from "./chain-module";
 import { ErrorCode, ProviderRpcError } from "./errors";
 import { feeRate, QUERIES_AT_ONCE, type EsploraClient } from "./esplora";
-import { checkedOrder, WATCHED_CHANGE_ADDRESSES, WATCHED_RECEIVE_ADDRESSES, type PullPath, type SendResult } from "./pull-path";
+import { checkedOrder, isTransferAskedFor, WATCHED_CHANGE_ADDRESSES, WATCHED_RECEIVE_ADDRESSES, type PullPath, type SendResult } from "./pull-path";
 import { rejected, type SignPrompt, type SigningApproval } from "./signing";
 import { SidechainServerError, type TransferOrder } from "./sidechain-server";
 
@@ -66,20 +66,6 @@ export interface RefusedSend {
 
 /** A refusal the user reads where they asked for the Send. */
 const refusal = (message: string) => new ProviderRpcError(ErrorCode.InvalidParams, message);
-
-/**
- * Checks the Clear View is the transfer that was asked for: the payments first, in order, then
- * only outputs back to the wallet. Anything else is a wallet bug: refused, never shown.
- */
-function checkView(view: ClearView, order: TransferOrder): void {
-  const paid = view.outputs.slice(0, order.outputs.length);
-  const matches = order.outputs.every(({ asset, amount, to }, i) => {
-    const out = paid[i];
-    return out?.asset === asset && out.amount === amount && out.destination.kind === "address" && out.destination.address.toLowerCase() === to.address.toLowerCase();
-  });
-  const rest = view.outputs.slice(order.outputs.length).every((o) => o.destination.kind === "address" && o.destination.yours);
-  if (!matches || !rest) throw new Error("The built transfer isn't the one asked for.");
-}
 
 export function createSends(deps: SendDeps) {
   const routing = createKeyRouting(deps);
@@ -158,6 +144,91 @@ export function createSends(deps: SendDeps) {
     }
   }
 
+  /** One Send, once the Slot's previous one is done. */
+  async function sendNow(slot: number, order: TransferOrder, from: { origin: string } | undefined): Promise<SendResult> {
+    const checked = checkedOrder(order);
+    const target = await routing.slot(slot);
+    const server = esplora(target);
+    // An app may ask while the wallet is locked: the window unlocks first, then shows the transfer.
+    if (server === undefined) {
+      if (from === undefined) return deps.pullPath.send(slot, checked);
+      const approval = deps.openSigningApproval({ origin: from.origin, chain: target.chain });
+      try {
+        if (!(await deps.isUnlocked()) && !(await approval.unlock())) throw rejected();
+        return await deps.pullPath.send(slot, checked, { requester: from.origin, approval });
+      } finally {
+        approval.close();
+      }
+    }
+
+    const requester = from?.origin ?? sendRequester(target.entry.name);
+    const approval = deps.openSigningApproval({ origin: requester, chain: target.chain });
+    let approved = false;
+    let broadcast = false;
+    try {
+      let built: BuiltTransfer;
+      let tipHeight: number;
+      let finalized: { tx: string; txid: string };
+      try {
+        if (!(await deps.isUnlocked()) && !(await approval.unlock())) throw rejected();
+        await server.checkChain();
+        const key = await target.key();
+        const [{ coins, account }, estimates, tip] = await Promise.all([
+          spendableCoins(slot, target, server, key),
+          server.feeEstimates().catch(() => undefined),
+          server.tipHeight(),
+        ]);
+        tipHeight = tip;
+        const moduleOrder: ModuleTransferOrder = {
+          coins,
+          outputs: checked.outputs,
+          feeRate: feeRate(estimates),
+          changeIndex: await changeIndex(server, account.change),
+        };
+        built = await refusing(async () => target.module.buildTransfer(moduleOrder, key));
+        await refusing(async () => target.module.check(built.pset));
+
+        const decoded = await refusing(async () => target.module.decode(built.pset, await target.key()));
+        if (decoded.kind !== "clear") throw new Error(`The wallet can't fully explain the transfer it built: ${decoded.reason}`);
+        // Anything else is a wallet bug: refused, never shown.
+        if (!isTransferAskedFor(decoded.view, checked)) throw new Error("The built transfer isn't the one asked for.");
+        const prompt: SignPrompt = { origin: requester, chain: target.chain, requestId: `send-${slot}`, decoded };
+        if (!(await approval.confirm(prompt))) throw rejected();
+        approved = true;
+        const signed = await refusing(async () => target.module.sign(built.pset, await target.key()));
+        finalized = await refusing(async () => target.module.finalize(signed));
+      } finally {
+        approval.close();
+      }
+
+      let txid: string;
+      try {
+        txid = await server.broadcast(finalized.tx);
+        broadcast = true;
+      } catch (error) {
+        if (!(error instanceof SidechainServerError)) throw error;
+        throw new SidechainServerError(error.server, `${error.message} Nothing was sent.`);
+      }
+      // It went out, whatever the server answers: its coins are held from here on.
+      await deps.held.put({ slot, txid: finalized.txid, spent: built.spent, tipHeight });
+      if (txid !== finalized.txid) throw new SidechainServerError(server.url, `${server.url} reported txid ${txid} for transaction ${finalized.txid}.`);
+      if (from === undefined) await deps.cache?.set(cacheKey.sendRefused(slot), null);
+      return { server: server.url, accepted: true, txid };
+    } catch (error) {
+      // By now the page that asked may be gone (a popup closes when the approval window opens).
+      // Once broadcast it isn't a failed Send: Activity shows the transaction itself. An app's page
+      // is still there, and gets the error as its answer.
+      if (approved && !broadcast && from === undefined) {
+        const reason = error instanceof ProviderRpcError || error instanceof SidechainServerError ? error.message : "Internal wallet error.";
+        await deps.cache?.set(cacheKey.sendRefused(slot), { slot, outputs: checked.outputs, reason, at: deps.now() } satisfies RefusedSend);
+      }
+      throw error;
+    }
+  }
+
+  /** Each Slot's last Send, which the next one waits for. */
+  const queues = new Map<number, Promise<unknown>>();
+
   return {
     /** Per asset, what a Send on the Slot can spend now: over Esplora confirmed plus trusted, less held; else the reported balance. */
     async spendable(slot: number): Promise<AssetAmount[]> {
@@ -171,71 +242,17 @@ export function createSends(deps: SendDeps) {
       return [...totals].map(([asset, amount]) => ({ asset, amount: amount.toString() }));
     },
 
-    /** Sends `order` from the Slot. Resolves once broadcast (or accepted by a `/v1` server); throws on refusal or rejection. */
-    async send(slot: number, order: TransferOrder): Promise<SendResult> {
-      const checked = checkedOrder(order);
-      const target = await routing.slot(slot);
-      const server = esplora(target);
-      if (server === undefined) return deps.pullPath.send(slot, checked);
-
-      await server.checkChain();
-      const key = await target.key();
-      const [{ coins, account }, estimates, tipHeight] = await Promise.all([
-        spendableCoins(slot, target, server, key),
-        server.feeEstimates().catch(() => undefined),
-        server.tipHeight(),
-      ]);
-      const moduleOrder: ModuleTransferOrder = {
-        coins,
-        outputs: checked.outputs,
-        feeRate: feeRate(estimates),
-        changeIndex: await changeIndex(server, account.change),
-      };
-      const built = await refusing(async () => target.module.buildTransfer(moduleOrder, key));
-      await refusing(async () => target.module.check(built.pset));
-
-      const requester = sendRequester(target.entry.name);
-      const approval = deps.openSigningApproval({ origin: requester, chain: target.chain });
-      let approved = false;
-      let broadcast = false;
-      try {
-        let finalized: { tx: string; txid: string };
-        try {
-          if (!(await deps.isUnlocked()) && !(await approval.unlock())) throw rejected();
-          const decoded = await refusing(async () => target.module.decode(built.pset, await target.key()));
-          if (decoded.kind !== "clear") throw new Error(`The wallet can't fully explain the transfer it built: ${decoded.reason}`);
-          checkView(decoded.view, checked);
-          const prompt: SignPrompt = { origin: requester, chain: target.chain, requestId: `send-${slot}`, decoded };
-          if (!(await approval.confirm(prompt))) throw rejected();
-          approved = true;
-          const signed = await refusing(async () => target.module.sign(built.pset, await target.key()));
-          finalized = await refusing(async () => target.module.finalize(signed));
-        } finally {
-          approval.close();
-        }
-
-        let txid: string;
-        try {
-          txid = await server.broadcast(finalized.tx);
-          broadcast = true;
-        } catch (error) {
-          if (!(error instanceof SidechainServerError)) throw error;
-          throw new SidechainServerError(error.server, `${error.message} Nothing was sent.`);
-        }
-        // It went out, whatever the server answers: its coins are held from here on.
-        await deps.held.put({ slot, txid: finalized.txid, spent: built.spent, tipHeight });
-        if (txid !== finalized.txid) throw new SidechainServerError(server.url, `${server.url} reported txid ${txid} for transaction ${finalized.txid}.`);
-        await deps.cache?.set(cacheKey.sendRefused(slot), null);
-        return { server: server.url, accepted: true, txid };
-      } catch (error) {
-        // By now the page that asked may be gone (a popup closes when the approval window opens).
-        // Once broadcast it isn't a failed Send: Activity shows the transaction itself.
-        if (approved && !broadcast) {
-          const reason = error instanceof ProviderRpcError || error instanceof SidechainServerError ? error.message : "Internal wallet error.";
-          await deps.cache?.set(cacheKey.sendRefused(slot), { slot, outputs: checked.outputs, reason, at: deps.now() } satisfies RefusedSend);
-        }
-        throw error;
-      }
+    /**
+     * Sends `order` from the Slot. Resolves once broadcast (or accepted by a `/v1` server); throws on
+     * refusal or rejection. `from` is the Sidechain App that asked (`sendTransfer`): the approval
+     * names it, and a failure after approval goes back to it rather than to the Activity feed. One
+     * Send per Slot at a time, so two never pick the same coins.
+     */
+    send(slot: number, order: TransferOrder, from?: { origin: string }): Promise<SendResult> {
+      const run = () => sendNow(slot, order, from);
+      const result = (queues.get(slot) ?? Promise.resolve()).then(run, run);
+      queues.set(slot, result.catch(() => {}));
+      return result;
     },
 
     /** The Slot's last Send refused after approval this session, if not closed since. */

@@ -322,6 +322,7 @@ const handleProviderRequest = createProviderHandler({
   askToTurnOn,
   chains: chainsOn,
   receiveAddresses: (slot) => accounts.receiveAddresses(slot),
+  send: (slot, order, from) => sends.send(slot, order, from),
 });
 
 // The pull path: each Slot's Sidechain Server, in the Server API its Chain Entry names.

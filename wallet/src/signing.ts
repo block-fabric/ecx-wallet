@@ -2,7 +2,7 @@
 // it came by (a Sidechain App through the Provider, or the wallet's own Send through a Sidechain
 // Server): its Slot's Chain Module, one approval window, then signing.
 import { ErrorCode, ProviderRpcError } from "./errors";
-import { ChainModuleRefusal, type ChainModule, type Decoded, type Starter } from "./chain-module";
+import { ChainModuleRefusal, type ChainModule, type ClearView, type Decoded, type Starter } from "./chain-module";
 import type { SigningRequest } from "./signing-request";
 
 /** What the approval window shows for a Signing Request. */
@@ -65,23 +65,40 @@ export async function chainModuleFor(deps: SigningDeps, request: SigningRequest)
  * unlock if needed, Blind vs `blindRefusal` (needs the Starter to decode), the user's approval and
  * the signature. `blindRefusal` is why a Blind request must be refused, or undefined if the
  * requester may Blind-sign. The request only ever reaches its own Slot's Chain Module, with that
- * Slot's Starter. Returns the signed payload.
+ * Slot's Starter. Returns the signed payload. `approval` is a window the caller already opened (to
+ * unlock before the request was built); it is closed either way. `expect` checks a Clear View
+ * before the user sees it, and throws to refuse it.
  */
 export async function reviewAndSign(
   deps: SigningDeps,
-  { requester, request, module, blindRefusal }: { requester: string; request: SigningRequest; module: ChainModule; blindRefusal?: string },
+  {
+    requester,
+    request,
+    module,
+    blindRefusal,
+    approval: opened,
+    expect,
+  }: {
+    requester: string;
+    request: SigningRequest;
+    module: ChainModule;
+    blindRefusal?: string;
+    approval?: SigningApproval;
+    expect?: (view: ClearView) => void;
+  },
 ): Promise<string> {
   const nowSeconds = () => Math.floor(deps.now() / 1000);
-  // Everything that needs no Starter comes before the user is asked to unlock.
-  await refusing(async () => module.check(request.payload));
-  const approval = deps.openSigningApproval({ origin: requester, chain: request.chain });
+  const approval = opened ?? deps.openSigningApproval({ origin: requester, chain: request.chain });
   try {
+    // Everything that needs no Starter comes before the user is asked to unlock.
+    await refusing(async () => module.check(request.payload));
     if (!(await deps.isUnlocked()) && !(await approval.unlock())) throw rejected();
 
     const decoded = await refusing(async () => module.decode(request.payload, await deps.starter(request.slot)));
     if (decoded.kind === "blind" && blindRefusal !== undefined) {
       throw new ProviderRpcError(ErrorCode.Unauthorized, blindRefusal);
     }
+    if (decoded.kind === "clear") expect?.(decoded.view);
     const prompt: SignPrompt = {
       origin: requester,
       chain: request.chain,
