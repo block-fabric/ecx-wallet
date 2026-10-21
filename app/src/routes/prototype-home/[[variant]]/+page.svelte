@@ -10,8 +10,8 @@
   import VariantC from "../VariantC.svelte";
 
   const VARIANTS = [
-    { key: "A", name: "One chain at a time" },
-    { key: "B", name: "All chains, drill in" },
+    { key: "A", name: "Assets first" },
+    { key: "B", name: "No total, today's units" },
     { key: "C", name: "A's look on B's map" },
   ];
 
