@@ -10,7 +10,7 @@
   import VariantC from "../VariantC.svelte";
 
   const VARIANTS = [
-    { key: "A", name: "C, shares and filters" },
+    { key: "A", name: "B, fresh and addressed" },
     { key: "B", name: "A, unit switch, matching chains" },
     { key: "C", name: "B, folded" },
   ];
