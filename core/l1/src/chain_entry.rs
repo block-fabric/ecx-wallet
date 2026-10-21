@@ -14,7 +14,7 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
-pub use ecx_chain_entry::{IdentityBlock, ServerApi, SidechainServerEntry};
+pub use ecx_chain_entry::{AssetEntry, IdentityBlock, ServerApi, SidechainServerEntry};
 
 /// The raw JSON, as shipped.
 pub const CHAIN_ENTRY_JSON: &str = include_str!(env!("ECX_L1_CHAIN_ENTRY_PATH"));

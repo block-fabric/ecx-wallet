@@ -4,6 +4,8 @@
 import type {
   ApprovalPrompt,
   AssetAmount,
+  AssetEntry,
+  ChainDescription,
   ChainHistory,
   ChainReport,
   ClearView,
@@ -15,6 +17,7 @@ import type {
   SendResult,
   SlotAddress,
   SlotReport,
+  Unit,
   VaultStatus,
 } from "@ecx/wallet";
 
@@ -22,6 +25,7 @@ import type {
 export type {
   ApprovalPrompt,
   AssetAmount,
+  AssetEntry,
   ChainHistory,
   ChainReport,
   ClearView,
@@ -32,6 +36,7 @@ export type {
   RefusedDeposit,
   SendResult,
   SlotReport,
+  Unit,
   VaultStatus,
 };
 
@@ -84,6 +89,22 @@ export interface SlotAccount {
 
 /** Every Slot the wallet has a Chain Module for (needs the wallet unlocked). */
 export const listAccounts = () => send<SlotAccount[]>({ kind: "accounts.list" });
+
+/** A chain as the app names it: `l1` for eCash, the root, else its Slot. */
+export type ChainId = "l1" | number;
+
+/** How the wallet shows a chain, from its Chain Entry: its name, what it's for, and the assets it names. */
+export interface ChainInfo extends ChainDescription {
+  id: ChainId;
+}
+
+/** eCash first, then every Slot the wallet has a Chain Module for. Works while locked. */
+export const listChains = () => send<ChainInfo[]>({ kind: "chains.list" });
+
+/** How every ECX amount is shown: in ECX (the default) or in sats. */
+export const getUnit = () => send<Unit>({ kind: "settings.unit" });
+
+export const setUnit = (unit: Unit) => send<Unit>({ kind: "settings.setUnit", unit });
 
 /** eCash's own account: its receive address (needs the wallet unlocked). */
 export const l1Account = () => send<{ addresses: SlotAddress[] }>({ kind: "l1.account" });

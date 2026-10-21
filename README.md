@@ -38,8 +38,8 @@ Slot under it gets its Starter. `wallet/src/accounts.ts` checks the entry before
 (`createKeyRouting`), and refuses chains nested deeper. `accounts.receiveAddresses(slot)` hands that
 Slot's Starter (and nothing else) to that Slot's Chain Module, and `accounts.l1ReceiveAddresses()`
 hands the L1 Account Key to `l1.wasm` (BIP84 P2WPKH, `bc1q…`). Each module runs in its own lazily
-instantiated WASM instance. The home page shows them when unlocked (`l1.account` and
-`accounts.list` messages; eCash's card comes first); the Provider's `getAddresses({ slot })` returns
+instantiated WASM instance. Home's Receive sheet shows them when unlocked (`l1.account` and
+`accounts.list` messages; the main chain's comes first); the Provider's `getAddresses({ slot })` returns
 `[{ chain, address }]` to an origin whose Grant covers the method and the Slot (4100 otherwise, or
 while locked).
 
@@ -66,13 +66,19 @@ the extension build turns those URLs into `host_permissions` and CSP `connect-sr
   After approval the wallet submits the signed PSET to the server. No bundled chain speaks it in
   v0; `e2e/tests/sidechain-servers.test.mjs` tests it in node.
 
-The home page (`l1.reported`, `accounts.reported`) shows the confirmed balance per asset, with a
-"+N unconfirmed" line under it when the server reports any, labelled "Reported by <server URL>".
-Unconfirmed coins are only shown: a Deposit spends confirmed ones only. The Standard Sidechain
-API reports them in an optional `unconfirmed` list. The Send screen is `#/send/<slot>`
-(`send.start`), for Slots only.
+The home page (`l1.reported`, `accounts.reported`) shows one collapsible section per chain, with
+the confirmed balance per asset and "+N unconfirmed" beside it when the server reports any; a
+chain's own screen (`#/chain/<l1|slot>`) says "Reported by <server URL>". Unconfirmed coins are
+only shown: a Deposit spends confirmed ones only. The Standard Sidechain API reports them in an
+optional `unconfirmed` list. Above the sections, one total across chains adds up each chain's ECX
+(`totalAcrossChains`), the asset its Chain Entry marks `ecx` (docs/adr/0005); Deposits on the way
+show apart, never in it. The Chain Entry also names the chain ("Main chain", "Elements+") and its
+assets (`chains.list`); any other asset shows as "Unknown asset". Every ECX amount follows one
+unit, ECX or sats (`formatAmount`; `settings.unit`, kept in `storage.local`), switched by tapping
+the total. The Send screen is `#/send/<slot>` (`send.start`), for Slots only, picked from home's
+"Send from" sheet.
 
-History (#33): each home card links to `#/history/<chain>` (`l1` or the Slot), which reads the
+History (#33): home's Activity tab and each chain's screen link to `#/history/<chain>` (`l1` or the Slot), which reads the
 chain's transactions only when opened (`history.reported`; this session's last, `history.cached`,
 shows while it refreshes). Each entry is the wallet's net change per asset, fee included, with its
 block time, or "Pending" (trusted: it spends only the wallet's own coins, each confirmed or from a
@@ -99,8 +105,8 @@ built from is cached: its coins, Treasury, fee rate and confirmations are always
 lookups run 20 at once (`QUERIES_AT_ONCE`). Tests that change a server's chain lock and unlock first
 (`relock(session)` in the harness).
 
-Deposit (`wallet/src/deposit.ts`, #31; docs/adr/0004): "Deposit from eCash" on a Slot card opens
-`#/deposit/<slot>` (`deposit.start`). The Slot's Chain Module says what the Deposit is credited to
+Deposit (`wallet/src/deposit.ts`, #31; docs/adr/0004): home's "Deposit to" sheet, or a Slot's
+own screen, opens `#/deposit/<slot>` (`deposit.start`). The Slot's Chain Module says what the Deposit is credited to
 (`depositDestination`: Elements' first receive address as UTF-8, minimum 3,000 sats, credit exactly
 the value). `treasury.ts` finds the Slot's Treasury on eCash's Esplora by #15's strict exactly-one
 rule (`/scripthash/:h/utxo`, following pending M5s); with none, only a pinned `activation` in the
@@ -110,13 +116,13 @@ change address), and every input carries its previous transaction so the module 
 itself. The L1 Decoder's Clear View goes to the normal approval window; then `sign`, `finalize` and
 `POST /tx`. `l1.wasm` refuses to check, decode, sign or finalize any spend without the replay marker
 (betanet's `nLockTime` 499999999, non-final `nSequence`). Pending Deposits sit in `storage.local`
-(`deposit:<txid>`) and show under the Slot card's balance (`deposit.list`), each with its txid: "n / 100"
+(`deposit:<txid>`) and show under "In progress" on the Activity tabs (`deposit.list`), each with its txid: "n / 100"
 confirmations, then waiting for the operator's `importdrivechaindeposit` (with the claim
 arguments), then "credited" once the Slot's server reports an output of exactly the value.
 The toolbar popup closes when the approval window opens, so the Deposit screen that asked may be
 gone by the time a Deposit is sent or refused. A Deposit that fails after approval (a refused
-broadcast, say) is therefore also kept for the session (`deposit.refused`) and shown on the Slot
-card, "Your Deposit of N sats failed: <reason>" with "Try again", until closed (×) or the next
+broadcast, say) is therefore also kept for the session (`deposit.refused`) and shown on the
+Activity tabs, "Your Deposit of N ECX failed: <reason>" with "Try again", until closed (×) or the next
 Deposit is sent. A stuck Deposit (its server doesn't know it, or its status can't be read) offers
 "Stop tracking": the wallet forgets it, the transaction is unaffected. Healthy ones offer nothing.
 

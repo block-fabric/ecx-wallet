@@ -34,6 +34,14 @@ _Avoid_: Blinding key (ambiguous: also names the public half), viewing key
 
 ### Sidechains
 
+**Main chain**:
+eCash itself, the root of the chain tree, as the Wallet Base names it to users.
+_Avoid_: eCash (on screen: it also names the coin and the brand), mainchain, Betanet (the network, not the chain)
+
+**ECX**:
+The coin of eCash, and on a sidechain the asset its Chain Entry names as that chain's ECX; the Wallet Base adds these up as one total across chains.
+_Avoid_: eCash (for the coin, on screen), policy asset (Elements' word for its ECX), peg asset
+
 **Slot**:
 The BIP300 number (1–255) that identifies a sidechain on eCash.
 _Avoid_: Sidechain number, sidechain id
@@ -59,7 +67,7 @@ Moving coins from a sidechain back to eCash, paid out of its Treasury once miner
 _Avoid_: Peg-out
 
 **Chain Entry**:
-The description of one chain, eCash itself or a sidechain, that ships with a Wallet Base release: its Slot and parent chain (neither for eCash, the root), its networks, and on each its identity block, Activation (for a Slot, once pinned), default Sidechain Server and Official Apps.
+The description of one chain, eCash itself or a sidechain, that ships with a Wallet Base release: its name and what it's for, its Slot and parent chain (neither for eCash, the root), its networks, and on each its identity block, Activation (for a Slot, once pinned), default Sidechain Server, Official Apps and the assets it names, among them the chain's ECX.
 _Avoid_: Chain manifest, chain descriptor, network profile
 
 **Sidechain Server**:

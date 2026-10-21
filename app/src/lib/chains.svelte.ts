@@ -1,0 +1,133 @@
+// What the unlocked home and chain screens show about each chain: its Chain Entry's word on it, its
+// receive address, what its server reports, and (for a Slot) its Deposits. Each read is the
+// background's; this only keeps the answers, per chain, and asks again on Retry.
+import {
+  cachedState,
+  l1Account,
+  l1Cached,
+  l1Reported,
+  listAccounts,
+  listChains,
+  listDeposits,
+  refusedDeposit,
+  reportedState,
+  showReport,
+  type AssetEntry,
+  type ChainId,
+  type ChainInfo,
+  type DepositStatus,
+  type RefusedDeposit,
+  type ShownReport,
+} from "$lib/background";
+
+export interface ChainView {
+  info: ChainInfo;
+  /** Its first receive address, once derived. */
+  address?: string;
+  /** What its server reports (the last report while refreshing), or why it couldn't be read. */
+  shown: ShownReport;
+  /** A Slot's pending Deposits, or why their status couldn't be read; undefined until read. */
+  deposits?: DepositStatus[] | { error: string };
+  /** A Slot's last Deposit that failed after approval, or null; undefined until read. */
+  refused?: RefusedDeposit | null;
+}
+
+export class Chains {
+  list = $state<ChainView[] | undefined>(undefined);
+  error = $state("");
+
+  /** Reads every chain; `only` limits the reads to one (a chain's own screen), though every chain is named. */
+  async load(only?: ChainId) {
+    try {
+      this.list = (await listChains()).map((info) => ({ info, shown: { refreshing: true } }));
+    } catch (e) {
+      this.error = (e as Error).message;
+      return;
+    }
+    this.readAddresses(only);
+    for (const { info } of this.list) {
+      if (only !== undefined && info.id !== only) continue;
+      this.readReport(info.id);
+      if (info.id !== "l1") this.readDeposits(info.id);
+    }
+  }
+
+  get(id: ChainId): ChainView | undefined {
+    return this.list?.find((c) => c.info.id === id);
+  }
+
+  /** Asks the chain's server again. */
+  retry(id: ChainId) {
+    this.readReport(id);
+  }
+
+  /** Reads a Slot's Deposits again (after Stop tracking or closing a refused one). */
+  readDeposits(slot: number) {
+    refusedDeposit(slot).then(
+      (r) => this.update(slot, { refused: r }),
+      () => this.update(slot, { refused: null }),
+    );
+    listDeposits(slot).then(
+      (d) => this.update(slot, { deposits: d }),
+      (e) => this.update(slot, { deposits: { error: (e as Error).message } }),
+    );
+  }
+
+  private update(id: ChainId, change: Partial<ChainView>) {
+    const view = this.get(id);
+    if (view) Object.assign(view, change);
+  }
+
+  private readReport(id: ChainId) {
+    const show = (shown: ShownReport) => this.update(id, { shown });
+    if (id === "l1") showReport(l1Cached, l1Reported, show);
+    else showReport(() => cachedState(id), () => reportedState(id), show);
+  }
+
+  private readAddresses(only?: ChainId) {
+    const fail = (e: unknown) => (this.error = (e as Error).message);
+    if (only === undefined || only === "l1") l1Account().then(({ addresses }) => this.update("l1", { address: addresses[0]?.address }), fail);
+    if (only !== "l1") {
+      listAccounts().then((accounts) => {
+        for (const { slot, addresses } of accounts) this.update(slot, { address: addresses[0]?.address });
+      }, fail);
+    }
+  }
+}
+
+/** Where a Deposit stands, in words. */
+export function depositState(d: DepositStatus): string {
+  switch (d.state) {
+    case "confirming":
+      return `${d.confirmations} / 100 confirmations on the main chain`;
+    case "awaitingCredit":
+      return `Waiting for the ${d.chainName} operator to credit it (not automatic)`;
+    case "credited":
+      return `Credited, as reported by ${d.creditServer}`;
+    case "notFound":
+      return `${d.server} doesn't know this transaction: it may have lost the race for the Treasury, or been dropped`;
+    case "unavailable":
+      return `Status unavailable: ${d.error}`;
+  }
+}
+
+/** Sats that left the main chain in a Deposit and aren't credited yet: in neither chain's balance. */
+export function onTheWay(deposits: DepositStatus[]): string {
+  return deposits
+    .filter((d) => d.state === "confirming" || d.state === "awaitingCredit")
+    .reduce((sum, d) => sum + BigInt(d.value), 0n)
+    .toString();
+}
+
+/** A chain's mark: eCash's for the main chain, else its initials ("Elements+" is "E+"). */
+export function chainMark(info: ChainInfo): { kind: "ecash" | "chain"; label?: string } {
+  if (info.id === "l1") return { kind: "ecash" };
+  const words = info.name.replace(/\+$/, "").split(/\s+/).filter(Boolean);
+  return { kind: "chain", label: words.map((w) => w[0].toUpperCase()).slice(0, 2).join("") + (info.name.endsWith("+") ? "+" : "") };
+}
+
+/** An asset's mark: eCash's for every ECX, a named asset's first letter, or unknown. */
+export function assetMark(entry: AssetEntry | undefined): { kind: "ecash" | "asset" | "unknown"; label?: string } {
+  if (entry === undefined) return { kind: "unknown" };
+  return entry.ecx ? { kind: "ecash" } : { kind: "asset", label: entry.ticker[0] };
+}

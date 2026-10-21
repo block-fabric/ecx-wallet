@@ -12,6 +12,8 @@ import {
   createL1Module,
   createProviderHandler,
   createPullPath,
+  createSettings,
+  describeChain,
   sidechainServer,
   SidechainServerError,
   SUPPORTED_SLOTS,
@@ -246,6 +248,7 @@ const chainModule = createChainModules(fetchWasm);
 const l1Module = createL1Module(fetchWasm);
 const keys = { starter: (slot: number) => vault.starter(slot), l1AccountKey: () => vault.l1AccountKey() };
 const accounts = createAccounts({ ...keys, chainModule, l1Module });
+const settings = createSettings(keyValueStore(chrome.storage.local));
 
 /** One review for every Signing Request, whichever path it came by. */
 const signing = {
@@ -345,6 +348,20 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
       return Promise.all(
         SUPPORTED_SLOTS.map(async (slot) => ({ slot, addresses: await accounts.receiveAddresses(slot) })),
       );
+    case "chains.list":
+      // Public: what the Chain Entries say, so the page can name chains and assets even while locked.
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      return [
+        { id: "l1", ...describeChain(await l1Module()) },
+        ...(await Promise.all(SUPPORTED_SLOTS.map(async (slot) => ({ id: slot, ...describeChain(await chainModule(slot)!) })))),
+      ];
+    case "settings.unit":
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      return settings.unit();
+    case "settings.setUnit":
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      await settings.setUnit(String(message.unit ?? ""));
+      return settings.unit();
     case "l1.account":
       // eCash's own account: its receive address and what its server reports are asked separately.
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");

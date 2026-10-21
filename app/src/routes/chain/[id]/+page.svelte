@@ -1,0 +1,201 @@
+<script lang="ts">
+  import { page } from "$app/state";
+  import { vaultStatus, type ChainId } from "$lib/background";
+  import Actions from "$lib/Actions.svelte";
+  import AssetRows from "$lib/AssetRows.svelte";
+  import ChainMark from "$lib/ChainMark.svelte";
+  import { chainMark, Chains } from "$lib/chains.svelte";
+  import Deposits from "$lib/Deposits.svelte";
+  import Icon from "$lib/Icon.svelte";
+  import { amountText, unit } from "$lib/unit.svelte";
+
+  /** `l1` for the main chain, else a Slot. */
+  const id: ChainId = page.params.id === "l1" ? "l1" : Number(page.params.id);
+  const chains = new Chains();
+  let locked = $state(false);
+  let tab = $state<"assets" | "activity">("assets");
+  let actions = $state<Actions | undefined>(undefined);
+
+  // Nothing here works while locked: the home page asks for the password.
+  vaultStatus().then((s) => {
+    if (s.unlocked) chains.load(id);
+    else locked = true;
+  });
+
+  const view = $derived(chains.get(id));
+  /** Every ECX is counted in the main chain's coin, so a Deposit reads the same on every screen. */
+  const ecx = $derived(chains.get("l1")?.info.assets ?? []);
+  const ecxAsset = $derived(view?.info.assets.find((a) => a.ecx));
+  const balance = $derived(ecxAsset && view?.shown.report?.balances.find((b) => b.asset === ecxAsset.id));
+  const pending = $derived(ecxAsset && view?.shown.report?.unconfirmed.find((u) => u.asset === ecxAsset.id));
+  const deposits = $derived(view && Array.isArray(view.deposits) ? view.deposits : []);
+</script>
+
+<main class="screen" data-screen-ready={view || locked ? "" : undefined} data-chain-screen={id}>
+  <header>
+    <a class="back" href="#/" aria-label="Back"><Icon name="back" size={20} /></a>
+    {#if view}
+      <ChainMark {...chainMark(view.info)} size={26} />
+      <span class="title-block">
+        <span class="title">{view.info.name}</span>
+        <span class="mono muted tiny" data-chain-id>{view.info.chain}</span>
+      </span>
+    {/if}
+  </header>
+
+  {#if locked}
+    <p class="notice">The wallet is locked. <a href="#/">Unlock it</a> to see this chain.</p>
+  {:else if view}
+    <section class="hero">
+      {#if ecxAsset && view.shown.report}
+        <button class="big" onclick={() => unit.toggle()} title="Show amounts in {unit.value === "ecx" ? "sats" : "ECX"}" data-total data-unit={unit.value}>
+          {amountText(balance?.amount ?? "0", ecxAsset.id, view.info.assets)}
+        </button>
+        {#if pending}<span class="pill pending" data-total-unconfirmed>+{amountText(pending.amount, ecxAsset.id, view.info.assets)} unconfirmed</span>{/if}
+      {:else}
+        <span class="big muted">—</span>
+      {/if}
+    </section>
+
+    <Actions chains={chains.list ?? []} focus={view} bind:this={actions} />
+
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected={tab === "assets"} onclick={() => (tab = "assets")} data-tab="assets">Assets</button>
+      <button role="tab" aria-selected={tab === "activity"} onclick={() => (tab = "activity")} data-tab="activity">
+        Activity{#if deposits.length > 0}<span class="count" title="Deposits in progress">{deposits.length}</span>{/if}
+      </button>
+    </div>
+
+    <div class="panel" role="tabpanel" hidden={tab !== "assets"} data-account={view.info.id} data-refreshing={view.shown.refreshing ? "" : undefined}>
+      <AssetRows {view} onretry={() => chains.retry(id)} onreceive={() => actions?.receive()} />
+      {#if view.shown.report}
+        <p class="reported" data-reported-by>Reported by {view.shown.report.server}. This wallet doesn't verify it.</p>
+      {/if}
+    </div>
+    <div class="panel" role="tabpanel" hidden={tab !== "activity"}>
+      {#if id !== "l1"}
+        <Deposits slots={[view]} {ecx} onchange={(slot) => chains.readDeposits(slot)} />
+      {/if}
+      <a class="card nav-row" href="#/history/{id}" data-history-link={id}>
+        <Icon name="history" />
+        <span class="grow small"><strong>Transactions</strong></span>
+        <Icon name="forward" size={16} />
+      </a>
+    </div>
+  {/if}
+
+  {#if chains.error}
+    <p class="error" role="alert" data-error>{chains.error}</p>
+  {/if}
+</main>
+
+<style>
+  header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 40px;
+  }
+  .back {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    margin-left: -6px;
+    border-radius: 50%;
+    color: var(--text);
+  }
+  .back:hover {
+    background: var(--surface-2);
+  }
+  .title-block {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .title {
+    font-weight: 700;
+    font-size: 1.05rem;
+    line-height: 1.2;
+  }
+  .hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .big {
+    min-height: 0;
+    padding: 0 6px;
+    border: none;
+    background: none;
+    color: var(--text);
+    font-size: 2rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.15;
+  }
+  .pill {
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  .pending {
+    background: var(--pending-bg);
+    color: var(--pending);
+  }
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+  }
+  .tabs button {
+    flex: 1;
+    min-height: 40px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: none;
+    color: var(--muted);
+  }
+  .tabs button[aria-selected="true"] {
+    border-bottom-color: var(--accent);
+    color: var(--accent-text);
+  }
+  .count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    margin-left: 6px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 0.7rem;
+  }
+  .panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: -6px;
+  }
+  .panel[hidden] {
+    display: none;
+  }
+  .nav-row {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    color: var(--text);
+    text-decoration: none;
+  }
+  .nav-row:hover {
+    background: var(--surface-2);
+  }
+  .grow {
+    flex: 1;
+  }
+</style>

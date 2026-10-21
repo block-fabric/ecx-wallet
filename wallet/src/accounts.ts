@@ -2,6 +2,7 @@
 // #18, story 44; docs/adr/0003): a module only ever receives the key its chain's place in the tree
 // calls for. eCash (the root) gets the L1 Account Key; a Slot under it gets that Slot's Starter.
 import {
+  type AssetEntry,
   loadChainModule,
   loadL1Module,
   type ChainEntry,
@@ -64,6 +65,23 @@ export function servedNetwork(module: ChainModule<never>): { entry: ChainEntry; 
   const network = Object.values(entry.networks).find((n) => n.chain === chain);
   if (network === undefined) throw new Error(`${entry.name}'s Chain Entry has no network for ${chain}.`);
   return { entry, network, chain };
+}
+
+/** How the wallet shows a chain: what its Chain Entry says about the network its module serves. */
+export interface ChainDescription {
+  name: string;
+  description: string;
+  /** CAIP-2. */
+  chain: string;
+  /** The network's key in the Chain Entry ("betanet"). */
+  network: string;
+  assets: AssetEntry[];
+}
+
+export function describeChain(module: ChainModule<never>): ChainDescription {
+  const { entry, network, chain } = servedNetwork(module);
+  const key = Object.keys(entry.networks).find((k) => entry.networks[k] === network)!;
+  return { name: entry.name, description: entry.description, chain, network: key, assets: network.assets };
 }
 
 /** Throws unless the entry puts the chain at the root: no Slot and no parent. */

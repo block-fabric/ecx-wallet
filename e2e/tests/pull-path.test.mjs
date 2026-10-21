@@ -53,7 +53,7 @@ const L1_ESPLORA = {
   },
 };
 
-/** One account card's fresh reported balances (or why there are none), as a user reads them. */
+/** One chain's section on home: its fresh reported balances (or why there are none), as a user reads them. */
 async function readHome(session, account = "24") {
   const page = await session.openPage("index.html#/");
   await page.waitForSelector("[data-wallet-ready]", { timeout: 10_000 });
@@ -63,15 +63,38 @@ async function readHome(session, account = "24") {
     const text = (e) => e?.textContent.replace(/\s+/g, " ").trim();
     const within = document.querySelector(card);
     return {
-      label: text(within.querySelector("[data-reported-by]")),
+      server: within.getAttribute("data-server") ?? undefined,
       error: text(within.querySelector("[data-balance-error]")),
       balances: [...within.querySelectorAll("[data-balance]")].map((e) => ({ asset: e.getAttribute("data-asset"), text: text(e) })),
       unconfirmed: [...within.querySelectorAll("[data-unconfirmed]")].map((e) => ({ asset: e.getAttribute("data-asset"), text: text(e) })),
-      send: within.querySelector("[data-send-link]") !== null,
     };
   }, card);
+  // Send asks which chain first; a chain that can't send yet is greyed out there.
+  await page.click("[data-send-action]");
+  await page.waitForSelector("[data-send-sheet]");
+  shown.send = await page.$eval(`[data-send-link="${account}"]`, (e) => !e.hasAttribute("data-disabled"));
   await page.close();
   return shown;
+}
+
+/** The home page's total and every chain's section, once each chain's fresh report is in. */
+async function readTotal(page) {
+  await page.waitForSelector("[data-total-ready]", { timeout: 20_000 });
+  return page.evaluate(() => {
+    const text = (e) => e?.textContent.replace(/\s+/g, " ").trim();
+    return {
+      label: text(document.querySelector("[data-total]").previousElementSibling),
+      total: text(document.querySelector("[data-total]")),
+      unconfirmed: text(document.querySelector("[data-total-unconfirmed]")),
+      unavailable: text(document.querySelector("[data-unavailable]")),
+      network: text(document.querySelector("[data-network]")),
+      chains: [...document.querySelectorAll("[data-account]")].map((e) => ({
+        name: text(e.querySelector("[data-chain-link] strong")),
+        subtotal: text(e.querySelector("[data-subtotal]")),
+        assets: [...e.querySelectorAll("li[data-asset]")].map((li) => [text(li.querySelector("strong")), text(li.querySelector("[data-balance]"))]),
+      })),
+    };
+  });
 }
 
 for (const browserName of BROWSERS) describe(browserName, () => {
@@ -91,12 +114,12 @@ for (const browserName of BROWSERS) describe(browserName, () => {
   test("the home page shows each asset's confirmed balance over the receive and change addresses, and what's unconfirmed apart, labelled as reported by the server", async () => {
     const shown = await readHome(session);
     assert.equal(shown.error, undefined);
-    assert.match(shown.label, new RegExp(`Reported by ${stub.url.replace(/[.]/g, "\\.")}`));
+    assert.equal(shown.server, stub.url);
     assert.deepEqual(shown.balances.map((b) => b.asset), [POLICY_ASSET, OTHER_ASSET]);
-    assert.match(shown.balances[0].text, /\b179000\b/, "150 000 received + 29 000 change, not the unconfirmed 5 000");
-    assert.match(shown.balances[1].text, /\b7\b/);
+    assert.equal(shown.balances[0].text, "0.00179 ECX", "150 000 received + 29 000 change, not the unconfirmed 5 000");
+    assert.equal(shown.balances[1].text, "7", "an asset the Chain Entry doesn't name, in base units");
     assert.deepEqual(shown.unconfirmed.map((u) => u.asset), [POLICY_ASSET], "no line for an asset with nothing unconfirmed");
-    assert.match(shown.unconfirmed[0].text, /^\+5000 .*unconfirmed$/);
+    assert.equal(shown.unconfirmed[0].text, "+0.00005 ECX unconfirmed");
 
     const requests = stub.requests();
     assert.equal(requests[0], "/block-height/0", "the server's chain is checked first");
@@ -118,10 +141,10 @@ for (const browserName of BROWSERS) describe(browserName, () => {
   test("the eCash card shows the confirmed sats of the L1 receive and change addresses, and the unconfirmed ones apart, labelled as reported by its server", async () => {
     const shown = await readHome(session, "l1");
     assert.equal(shown.error, undefined);
-    assert.match(shown.label, new RegExp(`Reported by ${l1Stub.url.replace(/[.]/g, "\\.")}`));
+    assert.equal(shown.server, l1Stub.url);
     assert.deepEqual(shown.balances.map((b) => b.asset), [""]);
-    assert.match(shown.balances[0].text, /^102500 sats$/, "100 000 received + 2 500 change, not the unconfirmed 900");
-    assert.deepEqual(shown.unconfirmed, [{ asset: "", text: "+900 sats unconfirmed" }]);
+    assert.equal(shown.balances[0].text, "0.001025 ECX", "100 000 received + 2 500 change, not the unconfirmed 900");
+    assert.deepEqual(shown.unconfirmed, [{ asset: "", text: "+0.000009 ECX unconfirmed" }]);
     assert.equal(shown.send, false, "no Send on L1 yet");
 
     const requests = l1Stub.requests();
@@ -179,12 +202,12 @@ for (const browserName of BROWSERS) describe(browserName, () => {
         unconfirmed: e.querySelector("[data-unconfirmed]")?.textContent.replace(/\s+/g, " ").trim(),
         readAt: e.querySelector("[data-read-at]").textContent.replace(/\s+/g, " ").trim(),
       }));
-      assert.equal(stale.balance, "102500 sats");
-      assert.equal(stale.unconfirmed, "+900 sats unconfirmed");
+      assert.equal(stale.balance, "0.001025 ECX");
+      assert.equal(stale.unconfirmed, "+0.000009 ECX unconfirmed");
       assert.match(stale.readAt, /^Last read at .+; refreshing…$/);
       await page.waitForSelector(`${card}:not([data-refreshing]) [data-balance]`, { timeout: 20_000 });
-      assert.equal(await page.$eval(`${card} [data-balance]`, (e) => e.textContent.replace(/\s+/g, " ").trim()), "107500 sats");
-      assert.equal(await page.$eval(`${card} [data-unconfirmed]`, (e) => e.textContent.replace(/\s+/g, " ").trim()), "+1200 sats unconfirmed");
+      assert.equal(await page.$eval(`${card} [data-balance]`, (e) => e.textContent.replace(/\s+/g, " ").trim()), "0.001075 ECX");
+      assert.equal(await page.$eval(`${card} [data-unconfirmed]`, (e) => e.textContent.replace(/\s+/g, " ").trim()), "+0.000012 ECX unconfirmed");
       assert.equal(await page.$(`${card} [data-read-at]`), null);
       await page.close();
     } finally {
@@ -206,6 +229,64 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     await page.close();
   });
 
+  test("the home page adds up each chain's ECX into one total, names chains and assets by their Chain Entries, and counts nothing else", async () => {
+    const page = await session.openPage("index.html#/");
+    const home = await readTotal(page);
+    await page.close();
+    assert.equal(home.label, "Total across chains");
+    assert.equal(home.total, "0.002815 ECX", "102 500 on the main chain + 179 000 on Elements+; the unnamed asset isn't counted");
+    assert.equal(home.unconfirmed, "+0.000059 ECX unconfirmed", "900 + 5 000");
+    assert.equal(home.unavailable, undefined);
+    assert.equal(home.network, "betanet");
+    assert.deepEqual(home.chains, [
+      { name: "Main chain", subtotal: "0.001025 ECX", assets: [["ECX", "0.001025 ECX"]] },
+      { name: "Elements+", subtotal: "0.00179 ECX", assets: [["ECX", "0.00179 ECX"], ["Unknown asset", "7"]] },
+    ]);
+  });
+
+  test("tapping the total shows every ECX amount in sats, everywhere, until tapped again; the wallet remembers the pick", async () => {
+    const page = await session.openPage("index.html#/");
+    await readTotal(page);
+    await page.click("[data-total]");
+    await page.waitForSelector('[data-total][data-unit="sats"]');
+    let home = await readTotal(page);
+    assert.equal(home.total, "281,500 sats");
+    assert.equal(home.unconfirmed, "+5,900 sats unconfirmed");
+    assert.deepEqual(home.chains[1].assets, [["ECX", "179,000 sats"], ["Unknown asset", "7"]], "only ECX switches");
+    await page.close();
+
+    const again = await session.openPage("index.html#/");
+    await again.waitForSelector('[data-total][data-unit="sats"]', { timeout: 10_000 });
+    home = await readTotal(again);
+    assert.equal(home.chains[0].subtotal, "102,500 sats", "remembered across pages");
+    const chain = await openWalletPage(session, "#/chain/24");
+    await chain.waitForSelector('[data-account="24"]:not([data-refreshing]) [data-balance]', { timeout: 20_000 });
+    assert.equal(await chain.$eval("[data-total]", (e) => e.textContent.trim()), "179,000 sats", "and on a chain's own screen");
+    await chain.close();
+    await again.click("[data-total]");
+    await again.waitForSelector('[data-total][data-unit="ecx"]');
+    assert.equal((await readTotal(again)).total, "0.002815 ECX");
+    await again.close();
+  });
+
+  test("a chain that can't be read is left out of the total, and says so", async () => {
+    L1_ESPLORA.identityBlock = { ...L1_FORK_BLOCK, hash: BITCOIN_AT_FORK };
+    await relock(session);
+    try {
+      const page = await session.openPage("index.html#/");
+      const home = await readTotal(page);
+      assert.equal(home.total, "0.00179 ECX");
+      assert.equal(home.unavailable, "Main chain unavailable, not counted");
+      L1_ESPLORA.identityBlock = L1_FORK_BLOCK;
+      await page.click('[data-account="l1"] [data-retry]');
+      await page.waitForFunction(() => document.querySelector("[data-unavailable]") === null, { timeout: 20_000 });
+      assert.equal((await readTotal(page)).total, "0.002815 ECX", "Retry asks the server again");
+      await page.close();
+    } finally {
+      L1_ESPLORA.identityBlock = L1_FORK_BLOCK;
+    }
+  });
+
   test("Send says sending isn't available yet, and asks the user for no approval", async () => {
     const page = await openWalletPage(session, "#/send/24");
     await page.waitForSelector(`[data-send-asset] option[value="${POLICY_ASSET}"]`, { timeout: 20_000 });
@@ -214,7 +295,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     await page.click("[data-send-submit]");
     await page.waitForSelector("[data-send-done], [data-error]", { timeout: 20_000 });
     const error = await page.evaluate(() => document.querySelector("[data-error]")?.textContent.trim());
-    assert.equal(error, "Sending on Elements isn't available yet.");
+    assert.equal(error, "Sending on Elements+ isn't available yet.");
     assert.equal((await session.approvalWindows()).length, 0);
     await page.close();
   });

@@ -57,6 +57,13 @@ fn ecash_is_the_root_identified_by_its_fork_block() {
 }
 
 #[test]
+fn ecash_is_the_main_chain_and_its_native_coin_is_its_ecx() {
+    assert_eq!(chain_entry().name, "Main chain");
+    let ecx = network().ecx_asset().expect("betanet names its ECX");
+    assert_eq!((ecx.id.as_str(), ecx.ticker.as_str(), ecx.name.as_str(), ecx.decimals), ("", "ECX", "eCash", 8));
+}
+
+#[test]
 fn betanet_marks_spends_with_its_replay_locktime_and_reads_nop8_as_op_drivechain() {
     assert_eq!(network().params.replay_lock_time, 499_999_999);
     assert_eq!(network().params.op_drivechain, OpDrivechain::Nop8);

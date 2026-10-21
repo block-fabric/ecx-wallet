@@ -278,7 +278,7 @@ describe("Esplora", () => {
     const { pullPath, prompts } = pullPathWith({ api: "esplora", url });
     await assert.rejects(
       pullPath.send(24, { asset: POLICY_ASSET, amount: "1000", destination: FOREIGN_ADDRESS }),
-      (e) => e instanceof wallet.SidechainServerError && e.message === "Sending on Elements isn't available yet.",
+      (e) => e instanceof wallet.SidechainServerError && e.message === "Sending on Elements+ isn't available yet.",
     );
     assert.equal(prompts.length, 0);
   });

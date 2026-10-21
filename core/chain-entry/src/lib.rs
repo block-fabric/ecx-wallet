@@ -4,6 +4,9 @@
 //!
 //! The root (eCash) has neither `slot` nor `parent`; every other chain has both: its BIP300 Slot is
 //! its number under its parent.
+//!
+//! The entry also says how the wallet shows the chain: its name, a line on what it's for, and on
+//! each network the assets it names, one of which may be the chain's ECX (docs/adr/0005).
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -14,7 +17,10 @@ pub struct ChainEntry<P> {
     /// The chain's Slot under its parent; absent for the root.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot: Option<u32>,
+    /// The name the wallet shows for the chain ("Main chain", "Elements+").
     pub name: String,
+    /// One line on what the chain is for, shown where the wallet lists its chains.
+    pub description: String,
     pub networks: BTreeMap<String, NetworkEntry<P>>,
 }
 
@@ -37,6 +43,8 @@ pub struct NetworkEntry<P> {
     pub sidechain_server: SidechainServerEntry,
     /// Official App origins (placeholder).
     pub official_apps: Vec<String>,
+    /// The assets the wallet names on this network; it shows any other as an unknown asset.
+    pub assets: Vec<AssetEntry>,
     /// The module's own per-network values.
     pub params: P,
 }
@@ -48,6 +56,26 @@ pub struct NetworkEntry<P> {
 pub struct IdentityBlock {
     pub height: u32,
     pub hash: String,
+}
+
+/// An asset the wallet shows by name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AssetEntry {
+    /// The asset id, lowercase display hex as servers report it; empty for the root's native coin,
+    /// which has no id.
+    pub id: String,
+    pub ticker: String,
+    pub name: String,
+    /// Places after the point in one whole unit: an amount is reported in base units.
+    pub decimals: u8,
+    /// This network's ECX: what the wallet adds up across chains. At most one per network.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub ecx: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -89,13 +117,48 @@ impl<P> ChainEntry<P> {
                 }
                 _ => {}
             }
+            self.check_assets(name, network)?;
+        }
+        Ok(())
+    }
+
+    fn check_assets(&self, name: &str, network: &NetworkEntry<P>) -> Result<(), String> {
+        let chain = &self.name;
+        for (i, asset) in network.assets.iter().enumerate() {
+            let id = &asset.id;
+            if id.is_empty() && network.parent.is_some() {
+                return Err(format!("{chain}'s {name}: only the root chain's native coin has no asset id"));
+            }
+            if !id.is_empty() && !is_lower_hex_32(id) {
+                return Err(format!("{chain}'s {name}: asset {id} isn't 32 bytes of lowercase hex"));
+            }
+            if asset.ticker.trim().is_empty() || asset.name.trim().is_empty() {
+                return Err(format!("{chain}'s {name}: asset {id:?} needs a ticker and a name"));
+            }
+            if network.assets[..i].iter().any(|a| a.id == *id) {
+                return Err(format!("{chain}'s {name}: asset {id:?} is named twice"));
+            }
+        }
+        if network.assets.iter().filter(|a| a.ecx).count() > 1 {
+            return Err(format!("{chain}'s {name}: more than one asset is marked as ECX"));
         }
         Ok(())
     }
 }
 
+impl<P> NetworkEntry<P> {
+    /// The network's ECX, if it names one.
+    pub fn ecx_asset(&self) -> Option<&AssetEntry> {
+        self.assets.iter().find(|a| a.ecx)
+    }
+}
+
 fn is_block_hash(hash: &str) -> bool {
     hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn is_lower_hex_32(id: &str) -> bool {
+    id.len() == 64 && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 #[cfg(test)]
@@ -110,9 +173,47 @@ mod tests {
             activation: None,
             sidechain_server: SidechainServerEntry { api: ServerApi::Esplora, url: "https://example.invalid".into() },
             official_apps: vec![],
+            assets: vec![],
             params: (),
         };
-        ChainEntry { slot, name: "Test".into(), networks: [("betanet".into(), network)].into() }
+        ChainEntry { slot, name: "Test".into(), description: "A test chain".into(), networks: [("betanet".into(), network)].into() }
+    }
+
+    fn asset(id: &str, ecx: bool) -> AssetEntry {
+        AssetEntry { id: id.into(), ticker: "ECX".into(), name: "eCash".into(), decimals: 8, ecx }
+    }
+
+    fn with_assets(mut entry: ChainEntry<()>, assets: Vec<AssetEntry>) -> ChainEntry<()> {
+        entry.networks.get_mut("betanet").unwrap().assets = assets;
+        entry
+    }
+
+    #[test]
+    fn a_named_asset_is_an_asset_id_or_the_roots_native_coin() {
+        let child = || entry(Some(24), Some("ecash:betanet"));
+        assert!(with_assets(child(), vec![asset(&"5a".repeat(32), true)]).check().is_ok());
+        assert!(with_assets(entry(None, None), vec![asset("", true)]).check().is_ok());
+        assert!(with_assets(child(), vec![asset("", true)]).check().is_err(), "only the root's coin has no asset id");
+        assert!(with_assets(child(), vec![asset("5a", false)]).check().is_err());
+        assert!(with_assets(child(), vec![asset(&"5A".repeat(32), false)]).check().is_err(), "lowercase hex, as servers report it");
+    }
+
+    #[test]
+    fn a_network_names_each_asset_once_and_has_at_most_one_ecx() {
+        let child = || entry(Some(24), Some("ecash:betanet"));
+        let (a, b) = ("5a".repeat(32), "6b".repeat(32));
+        assert!(with_assets(child(), vec![asset(&a, true), asset(&b, false)]).check().is_ok());
+        assert!(with_assets(child(), vec![asset(&a, false), asset(&b, false)]).check().is_ok(), "a chain may have no ECX");
+        assert!(with_assets(child(), vec![asset(&a, true), asset(&b, true)]).check().is_err());
+        assert!(with_assets(child(), vec![asset(&a, false), asset(&a, false)]).check().is_err());
+    }
+
+    #[test]
+    fn a_named_asset_has_a_ticker_and_a_name() {
+        let child = || entry(Some(24), Some("ecash:betanet"));
+        let id = "5a".repeat(32);
+        assert!(with_assets(child(), vec![AssetEntry { ticker: "".into(), ..asset(&id, false) }]).check().is_err());
+        assert!(with_assets(child(), vec![AssetEntry { name: " ".into(), ..asset(&id, false) }]).check().is_err());
     }
 
     #[test]

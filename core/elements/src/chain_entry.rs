@@ -15,7 +15,7 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
-pub use ecx_chain_entry::{IdentityBlock, ServerApi, SidechainServerEntry};
+pub use ecx_chain_entry::{AssetEntry, IdentityBlock, ServerApi, SidechainServerEntry};
 
 /// The raw JSON, as shipped.
 pub const CHAIN_ENTRY_JSON: &str = include_str!(env!("ECX_ELEMENTS_CHAIN_ENTRY_PATH"));
@@ -69,7 +69,21 @@ pub fn chain_entry() -> &'static ChainEntry {
     static ENTRY: OnceLock<ChainEntry> = OnceLock::new();
     ENTRY.get_or_init(|| {
         let entry: ChainEntry = serde_json::from_str(CHAIN_ENTRY_JSON).expect("chain-entry.json is valid");
-        entry.check().expect("chain-entry.json is valid");
+        check_chain_entry(&entry).expect("chain-entry.json is valid");
         entry
     })
+}
+
+/// The envelope's rules, and Elements' own: a network's ECX, if it names one, is its policy asset,
+/// the asset a Deposit from eCash is credited in.
+pub fn check_chain_entry(entry: &ChainEntry) -> Result<(), String> {
+    entry.check()?;
+    for (name, network) in &entry.networks {
+        if let Some(ecx) = network.ecx_asset() {
+            if ecx.id != network.params.policy_asset {
+                return Err(format!("{}'s {name}: its ECX must be its policy asset, {}", entry.name, network.params.policy_asset));
+            }
+        }
+    }
+    Ok(())
 }

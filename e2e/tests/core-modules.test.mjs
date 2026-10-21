@@ -99,3 +99,23 @@ test("the shipped Elements Chain Module signs its own input exactly as LWK does,
     (e) => e instanceof ChainModuleRefusal && e.code === "confidential",
   );
 });
+
+test("the shipped modules name their chains, what they're for, and their ECX", async () => {
+  const { loadChainModule, loadL1Module, describeChain } = await importWallet();
+  const l1 = await loadL1Module(await readFile(path.join(DIST.chromium, "l1.wasm")));
+  const elements = await loadChainModule(await readFile(path.join(DIST.chromium, "elements.wasm")));
+  assert.deepEqual(describeChain(l1), {
+    name: "Main chain",
+    description: "eCash itself",
+    chain: "ecash:betanet",
+    network: "betanet",
+    assets: [{ id: "", ticker: "ECX", name: "eCash", decimals: 8, ecx: true }],
+  });
+  assert.deepEqual(describeChain(elements), {
+    name: "Elements+",
+    description: "Assets and confidential transfers",
+    chain: "ecash:betanet-s24",
+    network: "betanet",
+    assets: [{ id: "5836dcc06130dcf6a65b6ac493813fd65559955283e44cc3f07966294eccb2c8", ticker: "ECX", name: "eCash on Elements+", decimals: 8, ecx: true }],
+  });
+});
