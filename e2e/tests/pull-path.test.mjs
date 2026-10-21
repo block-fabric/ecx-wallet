@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import { parseElementsTx } from "@ecx/stub-server/elements-tx";
-import { BROWSERS, launchWallet, openWalletPage, relock, serveEsplora, serveL1Esplora, setUpWallet, WALLET_PASSWORD } from "../harness.mjs";
+import { BROWSERS, homeSettled, launchWallet, openTestApp, openWalletPage, relock, serveEsplora, serveL1Esplora, serveTestApp, setUpWallet, WALLET_PASSWORD } from "../harness.mjs";
 
 const GENESIS = "a7754ce0debc40baddbd8c47e79d19209685f22c63edaaf8b69cf54116374d7f";
 const RECEIVE_0 = "elements1qew44aehkjstjm56ng2rjrz57vwxh5g9su6dlpm";
@@ -106,14 +106,16 @@ for (const browserName of BROWSERS) describe(browserName, () => {
   let session;
   let stub;
   let l1Stub;
+  let app;
   before(async () => {
-    [session, stub, l1Stub] = await Promise.all([launchWallet(browserName), serveEsplora(ESPLORA), serveL1Esplora(L1_ESPLORA)]);
+    [session, stub, l1Stub, app] = await Promise.all([launchWallet(browserName), serveEsplora(ESPLORA), serveL1Esplora(L1_ESPLORA), serveTestApp()]);
     await setUpWallet(session); // ABANDON, no passphrase
   });
   after(async () => {
     await session?.close();
     await stub?.close();
     await l1Stub?.close();
+    await app?.close();
   });
 
   test("the home page shows each asset's confirmed balance over the receive and change addresses, and what's unconfirmed apart, labelled as reported by the server", async () => {
@@ -342,6 +344,50 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     await page.waitForSelector("[data-send-overspent]", { timeout: 5_000 });
     assert.equal(await page.$eval("[data-send-overspent]", (e) => e.textContent.trim()), "These recipients add up to more ECX than the wallet can spend.");
     await page.close();
+  });
+
+  test("an app's sendTransfer while locked: the approval window unlocks, then shows the transfer naming the app, and the app gets the txid", async () => {
+    const page = await openTestApp(session, app, "dex.localhost");
+    const connecting = page.evaluate(() => window.testApp.request("connect", { slots: [24], methods: ["sendTransfer"] }));
+    await (await session.waitForApprovalWindow()).click("[data-approve]");
+    assert.ok((await connecting).result, "connected");
+
+    const home = await session.openPage("index.html#/");
+    await home.waitForSelector('[data-vault-state="unlocked"]', { timeout: 10_000 });
+    await homeSettled(home);
+    await home.click("[data-lock]");
+    await home.waitForSelector('[data-vault-state="locked"]');
+    await home.close();
+
+    // A coin of its own (the largest, so picked first), so the Sends after this one still have
+    // theirs; removed after, as both browsers share ESPLORA.
+    ESPLORA.utxos[RECEIVE_0].push({ txid: "a4".repeat(32), vout: 0, value: 200000, asset: POLICY_ASSET, confirmed: true });
+    try {
+      const before = stub.broadcasts().length;
+      const sending = page.evaluate(
+        (output) => window.testApp.request("sendTransfer", { slot: 24, outputs: [output] }),
+        { asset: POLICY_ASSET, amount: "1000", to: { address: FOREIGN_ADDRESS } },
+      );
+      const approval = await session.waitForApprovalWindow({ timeout: 20_000 });
+      await approval.waitForSelector("[data-unlock-required]");
+      await approval.type("[data-password]", WALLET_PASSWORD);
+      await approval.click("[data-unlock]");
+      await approval.waitForSelector("[data-output]", { timeout: 20_000 });
+      const review = await approval.evaluate(() => ({
+        origin: document.querySelector("[data-origin]").textContent.trim(),
+        destinations: [...document.querySelectorAll("[data-output] [data-destination]")].map((e) => e.textContent.trim()),
+      }));
+      assert.equal(review.origin, app.origin("dex.localhost"));
+      assert.equal(review.destinations[0], FOREIGN_ADDRESS);
+      await approval.click("[data-approve]");
+
+      const answer = await sending;
+      assert.equal(stub.broadcasts().length, before + 1);
+      assert.deepEqual(answer, { result: { txid: parseElementsTx(stub.broadcasts().at(-1)).txid } });
+      await page.close();
+    } finally {
+      ESPLORA.utxos[RECEIVE_0].pop();
+    }
   });
 
   test("none of the above raised extension runtime errors", async () => {

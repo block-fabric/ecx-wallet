@@ -6,11 +6,11 @@
 // review as any other.
 import { createKeyRouting, type ChainModules, type KeyedChain, type Keys } from "./accounts";
 import { cacheKey, type SessionCache } from "./cache";
-import type { AssetAmount, ChainEntry, ChainKey, NetworkEntry, Starter } from "./chain-module";
+import type { AssetAmount, ChainEntry, ChainKey, ClearView, NetworkEntry, Starter } from "./chain-module";
 import { ErrorCode, ProviderRpcError } from "./errors";
-import type { HistoryEntry, SidechainServer, TransferOrder, TreasuryScript, WatchData } from "./sidechain-server";
-import { parseSigningRequest } from "./signing-request";
-import { chainModuleFor, reviewAndSign, type SigningDeps } from "./signing";
+import { SidechainServerError, type HistoryEntry, type SidechainServer, type TransferOrder, type TreasuryScript, type WatchData } from "./sidechain-server";
+import { parseSigningRequest, type SigningRequest } from "./signing-request";
+import { chainModuleFor, reviewAndSign, type SigningApproval, type SigningDeps } from "./signing";
 
 /** Receive addresses the wallet watches: the gap a server watches ahead of the first unused one. */
 export const WATCHED_RECEIVE_ADDRESSES = 20;
@@ -75,11 +75,29 @@ export function checkedOrder(order: TransferOrder): TransferOrder {
       if (typeof amount !== "string" || !/^[1-9][0-9]*$/.test(amount)) {
         throw new ProviderRpcError(ErrorCode.InvalidParams, `The amount must be a whole number of base units${which}.`);
       }
+      const kinds = to !== null && typeof to === "object" ? Object.keys(to).filter((k) => k !== "address") : [];
+      if (kinds.length > 0) {
+        throw new ProviderRpcError(ErrorCode.InvalidParams, `This wallet can only pay an address (\`to: { address }\`), not \`${kinds.join(", ")}\`${which}.`);
+      }
       const address = typeof to?.address === "string" ? to.address.trim() : "";
       if (address === "") throw new ProviderRpcError(ErrorCode.InvalidParams, `Enter a destination address${which}.`);
       return { asset, amount, to: { address } };
     }),
   };
+}
+
+/**
+ * Whether a Clear View is the transfer `order` asked for: the payments first, in order, then only
+ * outputs back to the wallet.
+ */
+export function isTransferAskedFor(view: ClearView, order: TransferOrder): boolean {
+  const paid = view.outputs.slice(0, order.outputs.length);
+  const matches = order.outputs.every(({ asset, amount, to }, i) => {
+    const out = paid[i];
+    return out?.asset === asset && out.amount === amount && out.destination.kind === "address" && out.destination.address.toLowerCase() === to.address.toLowerCase();
+  });
+  const rest = view.outputs.slice(order.outputs.length).every((o) => o.destination.kind === "address" && o.destination.yours);
+  return matches && rest;
 }
 
 /** Why a server-built request that needs Blind Signing is refused: there is no Grant to opt in. */
@@ -168,22 +186,43 @@ export function createPullPath(deps: PullPathDeps) {
     /**
      * The wallet's own Send: the Slot's server builds the transfer; the Signing Request it returns
      * gets the whole validation order (no Grant step: the wallet asked for it), must be Clear (no
-     * Grant, so no Blind opt-in), is approved in the approval window naming the server, then signed
-     * and submitted back.
+     * Grant, so no Blind opt-in) and be the transfer asked for, is approved in the approval window
+     * naming the server, then signed and submitted back. A Sidechain App's Send (`via`) names the
+     * app instead, in the window it already opened.
      */
-    async send(slot: number, order: TransferOrder): Promise<SendResult> {
+    async send(slot: number, order: TransferOrder, via?: { requester: string; approval: SigningApproval }): Promise<SendResult> {
       const checked = checkedOrder(order);
       const target: ChainServer<Starter> = withServer(await routing.slot(slot));
       const { server } = target;
       const watched = await watch(target);
       const built = await server.buildTransfer(watched, checked);
 
-      const request = parseSigningRequest(built, Math.floor(deps.now() / 1000));
-      if (request.slot !== slot) {
-        throw new ProviderRpcError(ErrorCode.InvalidParams, `Slot ${slot}'s Sidechain Server sent a request for ${request.chain}.`);
+      // From here, whatever is wrong with the request is the server's doing: the requester reads it
+      // as the server's error, not its own (only rejecting stays the user's).
+      let request: SigningRequest;
+      let signed: string;
+      try {
+        request = parseSigningRequest(built, Math.floor(deps.now() / 1000));
+        if (request.slot !== slot) {
+          throw new ProviderRpcError(ErrorCode.InvalidParams, `Slot ${slot}'s Sidechain Server sent a request for ${request.chain}.`);
+        }
+        const module = await chainModuleFor(deps, request);
+        signed = await reviewAndSign(deps, {
+          requester: via?.requester ?? server.url,
+          request,
+          module,
+          blindRefusal: BLIND_REFUSED,
+          approval: via?.approval,
+          expect: (view) => {
+            if (!isTransferAskedFor(view, checked)) {
+              throw new SidechainServerError(server.url, `The Sidechain Server at ${server.url} built a transfer that isn't the one asked for. Nothing was sent.`);
+            }
+          },
+        });
+      } catch (error) {
+        if (error instanceof ProviderRpcError && error.code !== ErrorCode.UserRejected) throw new SidechainServerError(server.url, error.message);
+        throw error;
       }
-      const module = await chainModuleFor(deps, request);
-      const signed = await reviewAndSign(deps, { requester: server.url, request, module, blindRefusal: BLIND_REFUSED });
       const { accepted, txid } = await server.submit(watched, request.id, signed);
       return { server: server.url, accepted, ...(txid ? { txid } : {}) };
     },
