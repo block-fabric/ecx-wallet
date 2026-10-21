@@ -18,4 +18,4 @@ Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents
 
 ### Build and test
 
-One command: `pnpm test` (builds, then runs the e2e suite in headless Brave and Firefox). Layout and harness: `README.md`.
+One command: `pnpm test` (builds, then runs the e2e suite in headless Brave and Firefox). Layout: `README.md`; how each feature works: `docs/how-it-works.md`; the e2e build and harness: `docs/testing.md`.

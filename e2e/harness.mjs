@@ -169,7 +169,7 @@ export async function launchFirefox({ extensionPath = DIST_E2E.firefox, profile:
       "extensions.webextensions.uuids": JSON.stringify({ [FIREFOX_EXTENSION_ID]: FIREFOX_EXTENSION_UUID }),
       // A temporary add-on is uninstalled when Firefox closes, and uninstalling deletes its
       // storage. Keeping it lets a relaunch on the same profile reinstall the add-on and find its
-      // `storage.local` as a permanently installed add-on would (see "Firefox" in README.md).
+      // `storage.local` as a permanently installed add-on would (see "Firefox" in docs/testing.md).
       "extensions.webextensions.keepStorageOnUninstall": true,
       "extensions.webextensions.keepUuidOnUninstall": true,
     },
