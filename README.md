@@ -82,7 +82,9 @@ them by txid and works the rest out itself: "Fee, to yourself" when every output
 "Deposit to Slot N" for an M5 it funded to a Treasury script of a Slot it supports, and "+
 confidential amounts not shown" for its outputs with no explicit value. There's no paging: when an
 address's list is full (25 confirmed or 50 unconfirmed) the screen says older transactions may not
-be shown. The Standard Sidechain API reports history in its `state` (draft 2,
+be shown. Trust needs each input's parent, and over Esplora the wallet assumes a parent missing
+from the lists is confirmed: it paid a watched address, whose list has every one of its mempool's
+transactions (up to 50), so only an older confirmed one can be left out. The Standard Sidechain API reports history in its `state` (draft 2,
 `stub-server/README.md`).
 
 Session cache (`wallet/src/cache.ts`): mostly to answer faster, the background keeps four things in

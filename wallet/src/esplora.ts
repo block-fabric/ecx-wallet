@@ -351,7 +351,11 @@ export function esploraServer(config: EsploraServerConfig, fetchFn: Fetch): Side
         return confirmed >= LISTED_CONFIRMED_TXS || list.length - confirmed >= LISTED_MEMPOOL_TXS;
       });
       const ours = new Set([...watch.receive, ...watch.change].map((a) => a.scriptPubkey));
-      // A parent that isn't listed is confirmed: an address's list has all of its mempool's transactions.
+      // Trust (Bitcoin Core's `IsTrusted`) needs each input's parent. A parent missing from the lists
+      // counts as confirmed: it paid one of the wallet's addresses, and an address's list has all of
+      // its mempool's transactions (up to 50), so only a confirmed parent can be left out (one older
+      // than the latest 25). Past 50 pending transactions on one address, an unlisted pending parent
+      // would pass for confirmed; the list is then marked `partial`.
       const trust = new Map<string, boolean>();
       const trusted = (tx: EsploraTx | undefined): boolean => {
         if (tx === undefined || tx.status.confirmed) return true;
