@@ -112,7 +112,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     assert.equal(shown.entries[0].label, undefined);
   });
 
-  test("a transfer to yourself shows the fee it cost, labelled as such", async () => {
+  test("a transaction to yourself shows the fee it cost, labelled as such", async () => {
     const funding = tx("c2", [{ value: 50000, script: addressScript(L1_RECEIVE_0) }], { blockHeight: 970800 });
     const consolidation = tx("", [{ value: 49000, script: addressScript(L1_CHANGE_0) }], {
       inputs: [{ txid: funding.txid, vout: 0 }],

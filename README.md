@@ -84,15 +84,16 @@ confidential amounts not shown" for its outputs with no explicit value. There's 
 address's list is full (25 confirmed or 50 unconfirmed) the screen says older transactions may not
 be shown. Trust needs each input's parent, and over Esplora the wallet assumes a parent missing
 from the lists is confirmed: it paid a watched address, whose list has every one of its mempool's
-transactions (up to 50), so only an older confirmed one can be left out. The Standard Sidechain API reports history in its `state` (draft 2,
-`stub-server/README.md`).
+transactions (up to 50), so only an older confirmed one can be left out. The Standard Sidechain
+API reports history in its `state` (draft 2, `stub-server/README.md`).
 
-Session cache (`wallet/src/cache.ts`): mostly to answer faster, the background keeps four things in
+Session cache (`wallet/src/cache.ts`): mostly to answer faster, the background keeps five things in
 `storage.session` (memory only), read and written only while unlocked, and forgotten on every lock:
 a server's passed identity check (once per URL, as ADR 0002 has it; a failure is never kept), the
 last balance each chain's server reported (`l1.cached`, `accounts.cached`: shown at once, marked
 "Last read at …; refreshing…" and `data-refreshing` on the card, until the fresh one arrives), and
-raw transactions, kept only once the L1 module hashes them to their txid, and each Slot's last
+raw transactions, kept only once the L1 module hashes them to their txid, each chain's last
+history (`history.cached`, shown the same way on its History screen), and each Slot's last
 Deposit that failed after approval (below). Nothing else a Deposit is
 built from is cached: its coins, Treasury, fee rate and confirmations are always read fresh. Esplora
 lookups run 20 at once (`QUERIES_AT_ONCE`). Tests that change a server's chain lock and unlock first

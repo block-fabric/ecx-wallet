@@ -70,12 +70,12 @@ export function standardSidechainServer(baseUrl: string, fetchFn: Fetch): Sidech
     async history(watch) {
       const { history } = await call<{ history?: unknown }>("GET", `${await register(watch)}/state`);
       if (!Array.isArray(history) || !history.every(isHistoryEntry)) throw malformed("history");
-      const entries = history.map(({ txid, amounts: net, confirmed, time, trusted }) => ({
-        txid,
-        amounts: amounts(net),
-        confirmed,
-        ...(time === undefined ? {} : { time }),
-        ...(trusted === undefined ? {} : { trusted }),
+      const entries = history.map((entry) => ({
+        txid: entry.txid,
+        amounts: amounts(entry.amounts),
+        confirmed: entry.confirmed,
+        ...(entry.time === undefined ? {} : { time: entry.time }),
+        ...(entry.trusted === undefined ? {} : { trusted: entry.trusted }),
       }));
       return { entries, partial: false };
     },

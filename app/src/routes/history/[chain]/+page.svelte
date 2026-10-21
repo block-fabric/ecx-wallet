@@ -11,7 +11,7 @@
   /** What the chain's server reports (this session's last while refreshing), or why it couldn't be read. */
   let shown = $state<ShownReport<ChainHistory>>({ refreshing: true });
 
-  showReport(() => cachedHistory(slot), () => reportedHistory(slot), (s) => (shown = s));
+  showReport(() => cachedHistory(slot), () => reportedHistory(slot), (next) => (shown = next));
 
   const readAt = (history: ChainHistory) => new Date(history.readAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const minedAt = (time: number) => new Date(time * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
@@ -23,43 +23,47 @@
   }
 </script>
 
-{#snippet amount({ asset, amount }: { asset: string; amount: string })}
+{#snippet netAmount({ asset, amount }: { asset: string; amount: string })}
   <span class="amount" class:out={amount.startsWith("-")} data-history-amount data-asset={asset}>
     {signed(amount)}
     {#if asset === ""}sats{:else}<span class="muted small">asset <code title={asset}>{shortAsset(asset)}</code></span>{/if}
   </span>
 {/snippet}
 
-{#snippet entry(e: HistoryEntry)}
-  <li class="entry" data-history-entry={e.txid} data-history-state={e.confirmed ? "confirmed" : e.trusted ? "pending" : "unconfirmed"}>
+{#snippet historyEntry(entry: HistoryEntry)}
+  <li
+    class="entry"
+    data-history-entry={entry.txid}
+    data-history-state={entry.confirmed ? "confirmed" : entry.trusted ? "pending" : "unconfirmed"}
+  >
     <div class="amounts">
-      {#each e.amounts as a (a.asset)}
-        {@render amount(a)}
+      {#each entry.amounts as net (net.asset)}
+        {@render netAmount(net)}
       {/each}
-      {#if e.hidden}
+      {#if entry.hidden}
         <span class="muted small" data-history-hidden>
-          {e.amounts.length > 0 ? "+ confidential amounts not shown" : "Amount hidden (confidential)"}
+          {entry.amounts.length > 0 ? "+ confidential amounts not shown" : "Amount hidden (confidential)"}
         </span>
       {/if}
     </div>
-    {#if e.depositTo !== undefined}
-      <span class="small" data-history-label>Deposit to Slot {e.depositTo}</span>
-    {:else if e.toSelf}
+    {#if entry.depositTo !== undefined}
+      <span class="small" data-history-label>Deposit to Slot {entry.depositTo}</span>
+    {:else if entry.toSelf}
       <span class="small" data-history-label>Fee, to yourself</span>
     {/if}
     <div class="meta small">
-      {#if e.confirmed}
+      {#if entry.confirmed}
         <span class="muted" data-history-status>
-          {#if e.time !== undefined}<time datetime={new Date(e.time * 1000).toISOString()}>{minedAt(e.time)}</time>{:else}Confirmed{/if}
+          {#if entry.time !== undefined}<time datetime={new Date(entry.time * 1000).toISOString()}>{minedAt(entry.time)}</time>{:else}Confirmed{/if}
         </span>
-      {:else if e.trusted}
+      {:else if entry.trusted}
         <span class="badge" data-history-status>Pending</span>
       {:else}
         <span class="badge warn" title="Sent by someone else; may still not arrive" data-history-status>Unconfirmed</span>
       {/if}
       <span class="txid">
-        <code title={e.txid} data-history-txid>{shortTxid(e.txid)}</code>
-        <button class="icon-button" aria-label="Copy transaction id" title="Copy transaction id" onclick={() => copy(e.txid)}>
+        <code title={entry.txid} data-history-txid>{shortTxid(entry.txid)}</code>
+        <button class="icon-button" aria-label="Copy transaction id" title="Copy transaction id" onclick={() => copy(entry.txid)}>
           <Icon name="copy" size={14} />
         </button>
       </span>
@@ -85,8 +89,8 @@
         <p class="muted" data-history-empty>No transactions yet.</p>
       {:else}
         <ul class="entries">
-          {#each shown.report.entries as e (e.txid)}
-            {@render entry(e)}
+          {#each shown.report.entries as entry (entry.txid)}
+            {@render historyEntry(entry)}
           {/each}
         </ul>
         {#if shown.report.partial}
@@ -148,8 +152,8 @@
     color: var(--muted);
   }
   .badge.warn {
-    background: var(--danger-bg);
-    color: var(--danger);
+    background: var(--warn-bg);
+    color: var(--warn);
     cursor: help;
   }
   .icon-button {

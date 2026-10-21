@@ -18,6 +18,9 @@
   --danger: #c4232b;
   --danger-bg: #fdeced;
   --danger-border: #f2b8bb;
+  /* A caution short of an error (an unconfirmed payment from someone else). */
+  --warn: #8a5300;
+  --warn-bg: #fdf1dc;
   /* Solid red fills (Blind banner, red buttons): white text on them in both themes. */
   --danger-solid: #c4232b;
   --danger-solid-hover: #a51b22;
@@ -47,6 +50,8 @@
     --danger: #ff6369;
     --danger-bg: #3a1417;
     --danger-border: #6e2328;
+    --warn: #f0b85a;
+    --warn-bg: #352610;
     --danger-solid: #d0303a;
     --danger-solid-hover: #b8262f;
     --on-danger: #ffffff;

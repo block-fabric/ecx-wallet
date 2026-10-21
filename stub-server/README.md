@@ -105,7 +105,7 @@ The server needs the descriptor, not only addresses, to build transfers the wall
   once confirmed. Omit assets with nothing pending. `balances` already leaves out outputs that
   unconfirmed transactions spend, as Esplora does. The wallet shows it apart from the balance and
   never spends it; it refuses malformed entries the same way, and reads a missing field as nothing pending.
-- `history` (draft 2): the watch's latest transactions, newest first, each one a History entry:
+- `history` (draft 2): the watch's latest transactions, newest first, each one a History Entry:
   - `txid`: hex64.
   - `amounts`: the watch's net change per asset, fee included: what its outputs received minus
     what its inputs spent. Negative for what left it (`"-120300"`); omit assets that net to zero.
