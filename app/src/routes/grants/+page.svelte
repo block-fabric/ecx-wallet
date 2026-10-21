@@ -26,7 +26,7 @@
 </script>
 
 <main class="screen" data-screen-ready={grants !== undefined ? "" : undefined}>
-  <TopBar title="Grants" back="#/" />
+  <TopBar title="Grants" back="#/settings" />
   <p class="muted small">Each site below holds a Grant: it may ask for the listed methods on the listed sidechains.</p>
 
   {#if grants === undefined}

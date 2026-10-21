@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { importWallet } from "../harness.mjs";
 
-const { formatAmount, totalAcrossChains, createSettings } = await importWallet();
+const { formatAmount, parseAmount, totalAcrossChains, createSettings } = await importWallet();
 
 const ECX_L1 = { id: "", ticker: "ECX", name: "eCash", decimals: 8, ecx: true };
 const POLICY_ASSET = "5836dcc06130dcf6a65b6ac493813fd65559955283e44cc3f07966294eccb2c8";
@@ -41,6 +41,38 @@ describe("formatAmount", () => {
   test("an unknown asset is in base units, with no ticker", () => {
     assert.equal(formatAmount("1000", undefined, "ecx"), "1,000");
     assert.equal(formatAmount("7", undefined, "sats"), "7");
+  });
+});
+
+describe("parseAmount", () => {
+  test("reads ECX in the unit the user picked, into base units", () => {
+    assert.equal(parseAmount("0.0005", ECX_L1, "ecx"), "50000");
+    assert.equal(parseAmount("1", ECX_L1, "ecx"), "100000000");
+    assert.equal(parseAmount("1,234.5", ECX_L1, "ecx"), "123450000000");
+    assert.equal(parseAmount(" .5 ", ECX_L1, "ecx"), "50000000");
+    assert.equal(parseAmount("50000", ECX_L1, "sats"), "50000");
+    assert.equal(parseAmount("50,000", ECX_L1, "sats"), "50000");
+  });
+
+  test("reads another named asset in whole units, and an unknown one in base units", () => {
+    assert.equal(parseAmount("10.5", TOKEN, "sats"), "1050");
+    assert.equal(parseAmount("1000", undefined, "ecx"), "1000");
+  });
+
+  test("refuses more decimals than the unit has, and anything that isn't a positive amount", () => {
+    assert.throws(() => parseAmount("0.000000001", ECX_L1, "ecx"), /at most 8 decimal places/);
+    assert.throws(() => parseAmount("1.5", ECX_L1, "sats"), /whole number of sats/);
+    assert.throws(() => parseAmount("1.5", undefined, "ecx"), /whole number/);
+    for (const text of ["", "abc", "-1", "1e5", "0", "0.0", "1.2.3"]) assert.throws(() => parseAmount(text, ECX_L1, "ecx"), Error, text);
+  });
+
+  test("round-trips with formatAmount", () => {
+    for (const amount of ["1", "50000", "100000000", "123456789012345678"]) {
+      for (const unit of ["ecx", "sats"]) {
+        const shown = formatAmount(amount, ECX_L1, unit).replace(/ (ECX|sats)$/, "");
+        assert.equal(parseAmount(shown, ECX_L1, unit), amount, `${amount} in ${unit}`);
+      }
+    }
   });
 });
 

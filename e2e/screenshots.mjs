@@ -163,6 +163,11 @@ try {
   await approval("11-approve-blind");
   await signing;
 
+  page = await openWalletPage(session, "#/settings");
+  await page.setViewport(POPUP);
+  await shot(page, "12-settings");
+  await page.close();
+
   page = await openWalletPage(session, "#/grants");
   await page.setViewport(POPUP);
   await shot(page, "12-grants");

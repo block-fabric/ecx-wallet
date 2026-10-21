@@ -22,7 +22,7 @@ import { findTreasury, TreasuryError } from "./treasury";
 export const CONFIRMATIONS_TO_CREDIT = 100;
 
 /** Who the approval window names for a Deposit: the wallet itself asks. */
-export const DEPOSIT_REQUESTER = "This wallet (Deposit from eCash)";
+export const DEPOSIT_REQUESTER = "This wallet (Deposit from the main chain)";
 
 /** The fee rate's confirmation target, in blocks. */
 const FEE_TARGET = "6";

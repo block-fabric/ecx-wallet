@@ -97,9 +97,9 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     assert.equal(shown.origin, app.origin("blind.localhost"));
     assert.equal(shown.chain, CHAIN);
     assert.equal(shown.ownedInputs.length, 1);
-    assert.match(shown.ownedInputs[0], /100000/);
-    assert.match(shown.totalLeaving.join(" "), /71000/);
-    assert.match(shown.fee.join(" "), /1000/);
+    assert.match(shown.ownedInputs[0], /: 0\.001 ECX$/);
+    assert.match(shown.totalLeaving.join(" "), /^0\.00071 ECX$/);
+    assert.match(shown.fee.join(" "), /^0\.00001 ECX$/);
     assert.equal(shown.unknownFields.length, 4);
 
     await approval.click("[data-approve]");

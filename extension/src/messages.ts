@@ -55,7 +55,7 @@ export type BackgroundMessage =
   | { kind: "history.cached"; slot?: number }
   // The wallet's own Send (pull path): wallet pages only.
   | { kind: "send.start"; slot: number; asset: string; amount: string; destination: string }
-  // Deposit from eCash to a Slot, and the Slot's pending Deposits: wallet pages only.
+  // Deposit from the main chain to a Slot, and the Slot's pending Deposits: wallet pages only.
   | { kind: "deposit.start"; slot: number; amount: string }
   | { kind: "deposit.list"; slot: number }
   | { kind: "deposit.dismiss"; txid: string }
@@ -68,3 +68,6 @@ export type BackgroundMessage =
   | { kind: "vault.unlock"; password: string }
   | { kind: "vault.lock" }
   | { kind: "vault.setAutoLock"; minutes: number };
+
+/** The port wallet pages report use on (activity for the auto-lock): one "used" message per use. */
+export const ACTIVITY_PORT = "vault.activity";

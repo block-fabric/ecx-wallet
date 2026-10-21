@@ -56,11 +56,14 @@ const l1Config = (txs) => ({
 });
 const ESPLORA = { identityBlock: { height: 0, hash: GENESIS }, utxos: {} };
 
-/** Starts a Deposit of `amount` from the Deposit screen; returns the page (the deposit is pending). */
+/** Sats as the Deposit screen takes them by default: in ECX ("50000" is "0.0005"). */
+const inEcx = (sats) => (Number(sats) / 1e8).toFixed(8).replace(/\.?0+$/, "");
+
+/** Starts a Deposit of `amount` sats from the Deposit screen; returns the page (the deposit is pending). */
 async function startDeposit(session, amount) {
   const page = await openWalletPage(session, "#/deposit/24");
   await page.waitForSelector("[data-deposit-available]", { timeout: 20_000 });
-  await page.type("[data-deposit-amount]", amount);
+  await page.type("[data-deposit-amount]", inEcx(amount));
   await page.click("[data-deposit-submit]");
   return page;
 }
@@ -147,9 +150,9 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       assert.ok(await page.$("[data-deposit-amount]"), "the form doesn't wait for the scan");
       await page.waitForSelector("[data-deposit-scanning]", { timeout: 5_000 });
       await page.waitForSelector("[data-deposit-available]", { timeout: 5_000 }); // this session's last, from the home page
-      assert.match(await page.$eval("[data-deposit-scanning]", (e) => e.textContent.trim()), /^Last read at .+; scanning your eCash addresses again…$/);
+      assert.match(await page.$eval("[data-deposit-scanning]", (e) => e.textContent.trim()), /^Last read at .+; scanning your main-chain addresses again…$/);
       await page.waitForFunction(() => document.querySelector("[data-deposit-scanning]") === null, { timeout: 20_000 });
-      assert.match(await page.$eval("[data-deposit-available]", (e) => e.textContent), /^250000 sats$/);
+      assert.match(await page.$eval("[data-deposit-available]", (e) => e.textContent), /^0\.0025 ECX$/);
       assert.equal(await page.$("[data-deposit-unconfirmed]"), null, "nothing unconfirmed, no line for it");
       await page.close();
     } finally {
@@ -166,17 +169,17 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       const shown = await readDepositView(approval);
 
       assert.equal(shown.clearView, true);
-      assert.equal(shown.origin, "This wallet (Deposit from eCash)");
+      assert.equal(shown.origin, "This wallet (Deposit from the main chain)");
       assert.equal(shown.chain, "ecash:betanet");
       assert.equal(shown.dangerous.length, 1, "a Deposit, but not a first one");
       assert.match(shown.dangerous[0], /only come back through a Withdrawal/);
       assert.match(shown.dangerous[0], /isn't automatic/);
-      assert.equal(shown.depositAmount, "50000");
-      assert.equal(shown.deposit, `Deposit 50000 sats to Slot 24 (Elements+). 50000 sats credited to ${RECEIVE_0} after 100 blocks, once the operator imports it.`);
+      assert.equal(shown.depositAmount, "0.0005 ECX");
+      assert.equal(shown.deposit, `Deposit 0.0005 ECX to Slot 24 (Elements+). 0.0005 ECX credited to ${RECEIVE_0} after 100 blocks, once the operator imports it.`);
       assert.equal(shown.creditedToYou, true);
-      assert.match(shown.treasury, /Treasury: 100000 → 150000 sats/);
-      assert.deepEqual(shown.inputs, ["Input 0: 100000 sats (Slot 24's Treasury: spent and recreated)", "Input 1: 250000 sats (yours: you sign it)"]);
-      assert.match(shown.fee, /^[0-9]+ sats$/);
+      assert.match(shown.treasury, /Treasury: 0\.001 ECX → 0\.0015 ECX/);
+      assert.deepEqual(shown.inputs, ["Input 0: 0.001 ECX (Slot 24's Treasury: spent and recreated)", "Input 1: 0.0025 ECX (yours: you sign it)"]);
+      assert.match(shown.fee, /^0\.0000\d+ ECX$/);
       assert.equal(shown.outputs.length, 2, "the Deposit and the change");
       assert.match(shown.outputs[1], /Yours/);
 
@@ -241,7 +244,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       Object.assign(L1, l1Config([FUNDING, TREASURY_TX, pending]));
       const page = await startDeposit(session, "5000");
       const approval = await session.waitForApprovalWindow({ timeout: 20_000 });
-      assert.match((await readDepositView(approval)).treasury, /Treasury: 120000 → 125000 sats/);
+      assert.match((await readDepositView(approval)).treasury, /Treasury: 0\.0012 ECX → 0\.00125 ECX/);
       await approval.click("[data-reject]");
       assert.equal((await outcome(page)).error, "The user rejected the request.");
       await page.close();
@@ -274,9 +277,9 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       await page.waitForSelector("[data-deposit-unconfirmed]", { timeout: 20_000 });
       await page.waitForFunction(() => document.querySelector("[data-deposit-scanning]") === null, { timeout: 20_000 });
       const text = (selector) => page.$eval(selector, (e) => e.textContent.replace(/\s+/g, " ").trim());
-      assert.equal(await text("[data-deposit-available]"), "250000 sats");
-      assert.equal(await text("[data-deposit-unconfirmed]"), "+80000 sats unconfirmed, usable once confirmed");
-      await page.type("[data-deposit-amount]", "300000"); // enough with the unconfirmed coin
+      assert.equal(await text("[data-deposit-available]"), "0.0025 ECX");
+      assert.equal(await text("[data-deposit-unconfirmed]"), "+0.0008 ECX unconfirmed, usable once confirmed");
+      await page.type("[data-deposit-amount]", "0.003"); // enough with the unconfirmed coin
       await page.click("[data-deposit-submit]");
       assert.match((await outcome(page)).error, /^Not enough confirmed eCash: .* the wallet has 250000\.$/);
       assert.equal((await session.approvalWindows()).length, 0);
@@ -326,8 +329,8 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       const approval = await session.waitForApprovalWindow({ timeout: 20_000 });
       const shown = await readDepositView(approval);
       assert.equal(shown.dangerous.length, 2);
-      assert.match(shown.dangerous.join("\n"), /no Treasury on eCash's server, so this is its first Deposit.*funds can be lost/);
-      assert.match(shown.treasury, /Treasury: 0 → 5000 sats/);
+      assert.match(shown.dangerous.join("\n"), /no Treasury on the main chain's server, so this is its first Deposit.*funds can be lost/);
+      assert.match(shown.treasury, /Treasury: 0 ECX → 0\.00005 ECX/);
       assert.ok(shown.inputs.every((i) => !/Treasury/.test(i)), "no Treasury is spent");
 
       await approval.click("[data-reject]");

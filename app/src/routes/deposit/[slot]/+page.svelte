@@ -1,18 +1,26 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { l1Cached, l1Reported, showReport, startDeposit, type ChainReport, type ShownReport } from "$lib/background";
+  import { parseAmount } from "@ecx/wallet";
+  import { l1Cached, l1Reported, listChains, showReport, startDeposit, type ChainInfo, type ChainReport, type ShownReport } from "$lib/background";
   import Icon from "$lib/Icon.svelte";
   import TopBar from "$lib/TopBar.svelte";
+  import { amountText, unit } from "$lib/unit.svelte";
 
   const slot = Number(page.params.slot);
-  /** What eCash's server reports (this session's last report while scanning), or why it couldn't be read. */
+  let chains = $state<ChainInfo[]>([]);
+  listChains().then((c) => (chains = c), () => {});
+  /** The main chain's coin, which a Deposit spends and credits: how its amounts are written. */
+  const coin = $derived(chains.find((c) => c.id === "l1")?.assets ?? []);
+  const target = $derived(chains.find((c) => c.id === slot)?.name ?? `Slot ${slot}`);
+  const sats = (amount: string) => amountText(amount, "", coin);
+  /** What the main chain's server reports (this session's last report while scanning), or why it couldn't be read. */
   let shown = $state<ShownReport>({ refreshing: true });
   let amount = $state("");
   let busy = $state(false);
   let done = $state<{ txid: string; server: string } | undefined>(undefined);
   let error = $state("");
 
-  /** The confirmed sats eCash's server reports: the only coins a Deposit spends. */
+  /** The confirmed sats the main chain's server reports: the only coins a Deposit spends. */
   const available = (report: ChainReport) => report.balances.find((b) => b.asset === "")?.amount ?? "0";
   /** The unconfirmed sats it reports: shown so the user knows why they can't be spent yet. */
   const unconfirmed = (report: ChainReport) => report.unconfirmed.find((u) => u.asset === "")?.amount;
@@ -28,7 +36,7 @@
     error = "";
     done = undefined;
     try {
-      done = await startDeposit({ slot, amount: amount.trim() });
+      done = await startDeposit({ slot, amount: parseAmount(amount, coin.find((a) => a.id === ""), unit.value) });
     } catch (err) {
       error = (err as Error).message;
     } finally {
@@ -38,14 +46,14 @@
 </script>
 
 <main class="screen" data-screen-ready>
-  <TopBar title="Deposit to Slot {slot}" back="#/" />
+  <TopBar title="Deposit to {target}" back="#/" />
 
   <div class="card">
-    <span class="muted small">Available on eCash (confirmed)</span>
+    <span class="muted small">Available on the main chain (confirmed)</span>
     {#if shown.report}
-      <strong class="amount" data-deposit-available>{available(shown.report)} sats</strong>
+      <strong class="amount" data-deposit-available>{sats(available(shown.report))}</strong>
       {#if unconfirmed(shown.report) !== undefined}
-        <span class="muted small" data-deposit-unconfirmed>+{unconfirmed(shown.report)} sats unconfirmed, usable once confirmed</span>
+        <span class="muted small" data-deposit-unconfirmed>+{sats(unconfirmed(shown.report)!)} unconfirmed, usable once confirmed</span>
       {/if}
       <p class="reported">Reported by {shown.report.server}. This wallet doesn't verify it.</p>
     {/if}
@@ -53,8 +61,8 @@
       <p class="loading small" data-deposit-scanning>
         <span class="spinner"></span>
         {shown.report
-          ? `Last read at ${readAt(shown.report)}; scanning your eCash addresses again…`
-          : "Scanning your eCash addresses for confirmed coins…"}
+          ? `Last read at ${readAt(shown.report)}; scanning your main-chain addresses again…`
+          : "Scanning your main-chain addresses for confirmed coins…"}
       </p>
     {:else if shown.error !== undefined}
       <p class="error small" data-balance-error>
@@ -66,15 +74,15 @@
   <form class="stack" onsubmit={submit}>
     <div class="card">
       <label>
-        Amount (sats)
-        <input inputmode="numeric" bind:value={amount} autocomplete="off" data-deposit-amount />
+        Amount ({unit.value === "ecx" ? "ECX" : "sats"})
+        <input inputmode="decimal" bind:value={amount} autocomplete="off" data-deposit-amount />
       </label>
     </div>
     <p class="notice">
       <Icon name="warning" />
       <span>
-        A Deposit moves eCash into Slot {slot}. It is credited to your own address there after 100 eCash blocks, once
-        the chain's operator imports it. It only comes back to eCash through a Withdrawal, which takes months.
+        A Deposit moves ECX from the main chain to {target}. It is credited to your own address there after 100
+        main-chain blocks, once the chain's operator imports it. It only comes back through a Withdrawal, which takes months.
       </span>
     </p>
     <p class="reported">
@@ -84,7 +92,7 @@
   </form>
   {#if busy}
     <p class="loading small" data-deposit-waiting>
-      <span class="spinner"></span>Scanning your eCash coins and building the deposit, then waiting for your approval…
+      <span class="spinner"></span>Scanning your main-chain coins and building the deposit, then waiting for your approval…
     </p>
   {/if}
 

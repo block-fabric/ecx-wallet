@@ -1,10 +1,18 @@
 <script lang="ts">
   import { page } from "$app/state";
+  import { parseAmount } from "@ecx/wallet";
   import { shortAsset } from "$lib/asset";
-  import { reportedState, startSend, type SendResult, type SlotReport } from "$lib/background";
+  import { listChains, reportedState, startSend, type ChainInfo, type SendResult, type SlotReport } from "$lib/background";
   import TopBar from "$lib/TopBar.svelte";
+  import { amountText, unit } from "$lib/unit.svelte";
 
   const slot = Number(page.params.slot);
+  let info = $state<ChainInfo | undefined>(undefined);
+  listChains().then((c) => (info = c.find((i) => i.id === slot)), () => {});
+  const assets = $derived(info?.assets ?? []);
+  const entry = $derived(assets.find((a) => a.id === asset));
+  /** What the amount is typed in: ECX in the chosen unit, another named asset in its own, else base units. */
+  const amountUnit = $derived(entry === undefined ? "base units" : entry.ecx && unit.value === "sats" ? "sats" : entry.ticker);
   let report = $state<SlotReport | undefined>(undefined);
   let loaded = $state(false);
   let asset = $state("");
@@ -33,7 +41,7 @@
     error = "";
     done = undefined;
     try {
-      done = await startSend({ slot, asset, amount: amount.trim(), destination: destination.trim() });
+      done = await startSend({ slot, asset, amount: parseAmount(amount, entry, unit.value), destination: destination.trim() });
     } catch (err) {
       error = (err as Error).message;
     } finally {
@@ -43,7 +51,7 @@
 </script>
 
 <main class="screen" data-screen-ready={loaded ? "" : undefined}>
-  <TopBar title="Send on Slot {slot}" back="#/" />
+  <TopBar title="Send on {info?.name ?? `Slot ${slot}`}" back="#/chain/{slot}" />
 
   {#if !loaded}
     <p class="loading"><span class="spinner"></span>Loading…</p>
@@ -56,13 +64,16 @@
           Asset
           <select bind:value={asset} data-send-asset>
             {#each report.balances as balance (balance.asset)}
-              <option value={balance.asset}>{shortAsset(balance.asset)} ({balance.amount} reported)</option>
+              {@const named = assets.find((a) => a.id === balance.asset)}
+              <option value={balance.asset}>
+                {named ? named.ticker : `Unknown asset ${shortAsset(balance.asset)}`} ({amountText(balance.amount, balance.asset, assets)} reported)
+              </option>
             {/each}
           </select>
         </label>
         <label>
-          Amount (base units)
-          <input inputmode="numeric" bind:value={amount} data-send-amount />
+          Amount ({amountUnit})
+          <input inputmode="decimal" bind:value={amount} data-send-amount />
         </label>
         <label>
           Destination address
