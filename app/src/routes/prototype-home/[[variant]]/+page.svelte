@@ -11,7 +11,7 @@
 
   const VARIANTS = [
     { key: "A", name: "Assets first" },
-    { key: "B", name: "No total, today's units" },
+    { key: "B", name: "A, grouped, MetaMask tabs" },
     { key: "C", name: "A's look on B's map" },
   ];
 
