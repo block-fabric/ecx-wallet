@@ -507,6 +507,21 @@ describe("Send over Esplora", () => {
     assert.equal(prompts.length, 0);
   });
 
+  test("a server answering another txid gets an error, but the coins its broadcast spent stay held", async () => {
+    config.utxos = { [RECEIVE_0]: [utxo("a0", 150000)] };
+    config.broadcastTxid = "ee".repeat(32);
+    const cache = new Map();
+    const { sends, held } = sendsWith(esplora(), { cache });
+    try {
+      await assert.rejects(sends.send(24, { outputs: [out("1000")] }), new RegExp(`reported txid ${"ee".repeat(32)} for transaction`));
+    } finally {
+      config.broadcastTxid = undefined;
+    }
+    const sent = parseElementsTx(stub.broadcasts().at(-1)).txid;
+    assert.deepEqual(held.map((h) => [h.txid, h.spent]), [[sent, [{ txid: "a0".repeat(32), vout: 0 }]]]);
+    assert.equal(await sends.refused(24), undefined, "it went out: not shown as a failed Send");
+  });
+
   test("rejecting the approval broadcasts nothing, and isn't kept as a failure", async () => {
     config.utxos = { [RECEIVE_0]: [utxo("a0", 150000)] };
     const before = stub.broadcasts().length;

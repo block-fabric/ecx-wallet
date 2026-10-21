@@ -34,6 +34,7 @@ use crate::network;
 use crate::ownership::{p2wpkh, Wallet};
 
 /// Elements Core's `DUST_RELAY_TX_FEE`, sats per 1000 vbytes (`src/policy/policy.h`; Bitcoin's is 3000).
+/// Node relay policy, the same on every Elements network, so not a Chain Entry value (docs/adr/0006).
 const DUST_RELAY_FEE: u64 = 100;
 
 /// What to send, and what to build it from.
@@ -166,7 +167,8 @@ fn destination_script(address: &str, i: usize) -> Result<Script, Refusal> {
     Ok(parsed.script_pubkey())
 }
 
-struct Spendable {
+/// One of the account's coins, with the script derived for it.
+struct OwnedCoin {
     outpoint: OutPoint,
     txout: TxOut,
     chain: u32,
@@ -200,7 +202,7 @@ pub fn build_transfer(order_json: &str, starter: &str) -> Result<Built, Refusal>
         payments.push(txout);
     }
 
-    let mut coins = BTreeMap::<AssetId, Vec<Spendable>>::new();
+    let mut coins = BTreeMap::<AssetId, Vec<OwnedCoin>>::new();
     for (i, coin) in order.coins.iter().enumerate() {
         let txid = Txid::from_str(&coin.txid).map_err(|_| malformed(format!("Coin {i}'s txid isn't one.")))?;
         if coin.chain > 1 {
@@ -213,19 +215,19 @@ pub fn build_transfer(order_json: &str, starter: &str) -> Result<Built, Refusal>
         if coins.values().flatten().any(|c| c.outpoint == outpoint) {
             return Err(malformed(format!("Coin {i} is listed twice.")));
         }
-        coins.entry(asset).or_default().push(Spendable { outpoint, txout, chain: coin.chain, index: coin.index });
+        coins.entry(asset).or_default().push(OwnedCoin { outpoint, txout, chain: coin.chain, index: coin.index });
     }
     for list in coins.values_mut() {
         list.sort_by(|a, b| b.txout.value.explicit().cmp(&a.txout.value.explicit()).then(a.outpoint.cmp(&b.outpoint)));
     }
-    let value = |c: &Spendable| c.txout.value.explicit().unwrap_or(0);
+    let value = |c: &OwnedCoin| c.txout.value.explicit().unwrap_or(0);
 
     let (change_pk, change_source) = wallet.key(1, order.change_index).map_err(starter_refusal)?;
     let change_script = p2wpkh(&change_pk);
     let change_output = |asset: AssetId, amount: u64| explicit(change_script.clone(), asset, amount);
 
     // Every other asset first: its coins and change don't depend on the fee.
-    let mut chosen: Vec<&Spendable> = vec![];
+    let mut chosen: Vec<&OwnedCoin> = vec![];
     let mut changes: Vec<TxOut> = vec![];
     for (asset, need) in needed.iter().filter(|(asset, _)| **asset != policy) {
         let list = coins.get(asset).map(Vec::as_slice).unwrap_or_default();
@@ -252,7 +254,7 @@ pub fn build_transfer(order_json: &str, starter: &str) -> Result<Built, Refusal>
     }
 
     let need = needed.get(&policy).copied().unwrap_or(0);
-    let unsigned = |policy_coins: &[Spendable], change: Option<u64>, fee: u64| {
+    let unsigned = |policy_coins: &[OwnedCoin], change: Option<u64>, fee: u64| {
         let inputs = chosen.iter().copied().chain(policy_coins);
         let mut output: Vec<TxOut> = payments.iter().cloned().chain(changes.iter().cloned()).collect();
         output.extend(change.map(|c| change_output(policy, c)));
@@ -291,8 +293,10 @@ pub fn build_transfer(order_json: &str, starter: &str) -> Result<Built, Refusal>
     }
     let with_fee = need + fee(&unsigned(policy_coins, None, 0));
     let (needs, can) = (amount_text(&policy, with_fee), amount_text(&policy, total));
-    let message = if need == 0 {
-        format!("Not enough {} to pay the fee: it needs {needs}, and the wallet can spend {can}.", ticker(&policy))
+    let message = if total >= need {
+        // Enough for the payments, not for their fee (or nothing in the policy asset is paid).
+        let with = if need == 0 { "" } else { " with its fee" };
+        format!("Not enough {} to pay the fee: this needs {needs}{with}, and the wallet can spend {can}.", ticker(&policy))
     } else {
         format!("Not enough {}: this needs {needs} with its fee, and the wallet can spend {can}.", ticker(&policy))
     };
@@ -308,8 +312,8 @@ fn ticker(asset: &AssetId) -> String {
 /// The PSET of `tx`: each input with its `witness_utxo` and derivation, the change outputs with theirs.
 fn pset(
     tx: &Transaction,
-    chosen: &[&Spendable],
-    policy_coins: &[Spendable],
+    chosen: &[&OwnedCoin],
+    policy_coins: &[OwnedCoin],
     wallet: &Wallet,
     (change_pk, change_source): (PublicKey, KeySource),
 ) -> Result<Built, Refusal> {

@@ -197,6 +197,7 @@ export function createSends(deps: SendDeps) {
       const requester = sendRequester(target.entry.name);
       const approval = deps.openSigningApproval({ origin: requester, chain: target.chain });
       let approved = false;
+      let broadcast = false;
       try {
         let finalized: { tx: string; txid: string };
         try {
@@ -216,17 +217,20 @@ export function createSends(deps: SendDeps) {
         let txid: string;
         try {
           txid = await server.broadcast(finalized.tx);
+          broadcast = true;
         } catch (error) {
           if (!(error instanceof SidechainServerError)) throw error;
           throw new SidechainServerError(error.server, `${error.message} Nothing was sent.`);
         }
+        // It went out, whatever the server answers: its coins are held from here on.
+        await deps.held.put({ slot, txid: finalized.txid, spent: built.spent, tipHeight });
         if (txid !== finalized.txid) throw new SidechainServerError(server.url, `${server.url} reported txid ${txid} for transaction ${finalized.txid}.`);
-        await deps.held.put({ slot, txid, spent: built.spent, tipHeight });
         await deps.cache?.set(cacheKey.sendRefused(slot), null);
         return { server: server.url, accepted: true, txid };
       } catch (error) {
         // By now the page that asked may be gone (a popup closes when the approval window opens).
-        if (approved) {
+        // Once broadcast it isn't a failed Send: Activity shows the transaction itself.
+        if (approved && !broadcast) {
           const reason = error instanceof ProviderRpcError || error instanceof SidechainServerError ? error.message : "Internal wallet error.";
           await deps.cache?.set(cacheKey.sendRefused(slot), { slot, outputs: checked.outputs, reason, at: deps.now() } satisfies RefusedSend);
         }

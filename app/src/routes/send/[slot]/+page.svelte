@@ -58,19 +58,19 @@
   }
   const nameOf = (asset: string) => entryOf(asset)?.ticker ?? `Unknown asset ${shortAsset(asset)}`;
 
-  /** The rows' amounts in base units, or undefined while one doesn't parse. */
-  const parsed = $derived.by(() => {
+  /** A row's amount in base units; 0 while it doesn't parse (the Send refuses it then). */
+  function baseUnits(r: Row): bigint {
     try {
-      return rows.map((r) => parseAmount(r.amount, entryOf(r.asset), unit.value));
+      return BigInt(parseAmount(r.amount, entryOf(r.asset), unit.value));
     } catch {
-      return undefined;
+      return 0n;
     }
-  });
+  }
   /** Assets the rows add up to more of than the wallet can spend. The module's own check still decides. */
   const overspent = $derived.by(() => {
-    if (parsed === undefined || available === undefined) return [];
+    if (available === undefined) return [];
     const totals = new Map<string, bigint>();
-    rows.forEach((r, i) => totals.set(r.asset, (totals.get(r.asset) ?? 0n) + BigInt(parsed[i])));
+    for (const r of rows) totals.set(r.asset, (totals.get(r.asset) ?? 0n) + baseUnits(r));
     return [...totals].filter(([asset, total]) => total > BigInt(available!.find((a) => a.asset === asset)?.amount ?? "0")).map(([asset]) => asset);
   });
 

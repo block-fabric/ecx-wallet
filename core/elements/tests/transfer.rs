@@ -119,6 +119,14 @@ fn sending_another_asset_still_needs_the_policy_asset_for_the_fee() {
 }
 
 #[test]
+fn enough_for_the_payment_but_not_its_fee_says_the_fee_is_short() {
+    let (code, message) = refusal(&order(vec![coin(1, POLICY, 5_000, 0, 0)], vec![pay(POLICY, 5_000, &foreign())]));
+    assert_eq!(code, RefusalCode::InsufficientFunds);
+    assert!(message.starts_with("Not enough ECX to pay the fee: this needs 0.0000"), "{message}");
+    assert!(message.ends_with("with its fee, and the wallet can spend 0.00005000 ECX."), "{message}");
+}
+
+#[test]
 fn too_little_of_an_asset_is_refused_with_what_it_needs_and_what_the_wallet_has() {
     let (code, message) = refusal(&order(vec![coin(1, POLICY, 1_000, 0, 0)], vec![pay(POLICY, 5_000, &foreign())]));
     assert_eq!(code, RefusalCode::InsufficientFunds);

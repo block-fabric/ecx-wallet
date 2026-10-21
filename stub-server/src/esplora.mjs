@@ -15,7 +15,8 @@ import { parseElementsTx } from "./elements-tx.mjs";
  *   tipHeight?: number, utxos?: Record<string, UtxoFixture[]>, addressTxCounts?: Record<string, number>,
  *   txs?: TxFixture[], addressTxs?: Record<string, object[]>, feeEstimates?: Record<string, number>, refuseBroadcast?: string,
  *   delayMs?: number, txHexOverrides?: Record<string, string>, elements?: boolean,
- *   txStatuses?: Record<string, { confirmed: boolean, blockHeight?: number, blockHash?: string }> }} EsploraStubConfig
+ *   txStatuses?: Record<string, { confirmed: boolean, blockHeight?: number, blockHash?: string }>,
+ *   broadcastTxid?: string }} EsploraStubConfig
  */
 
 /**
@@ -91,7 +92,8 @@ export function createEsploraStub(config) {
       broadcasts.push(body.trim());
       if (config.elements) (config.txStatuses ??= {})[tx.txid] = { confirmed: false };
       else (config.txs ??= []).push({ hex: body.trim(), confirmed: false });
-      return [200, tx.txid];
+      // `config.broadcastTxid` answers another txid than the one broadcast, as a lying server would.
+      return [200, config.broadcastTxid ?? tx.txid];
     }
     if (method !== "GET") return [405, "Method not allowed"];
 

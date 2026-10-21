@@ -335,6 +335,12 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     await page.waitForSelector(`[data-send-asset] option[value="${POLICY_ASSET}"]`, { timeout: 20_000 });
     const option = await page.$eval(`[data-send-row="0"] [data-send-asset] option[value="${POLICY_ASSET}"]`, (e) => e.textContent.trim());
     assert.notEqual(option, "ECX (0.00179 ECX spendable)", "the stub still lists the spent coin, but the wallet holds it back");
+
+    // More than it can spend warns before building, even with an empty second row.
+    await page.type('[data-send-row="0"] [data-send-amount]', "1");
+    await page.click("[data-send-add]");
+    await page.waitForSelector("[data-send-overspent]", { timeout: 5_000 });
+    assert.equal(await page.$eval("[data-send-overspent]", (e) => e.textContent.trim()), "These recipients add up to more ECX than the wallet can spend.");
     await page.close();
   });
 
