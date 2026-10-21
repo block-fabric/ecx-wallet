@@ -92,7 +92,7 @@ const pending = (txid: string, value: string): PendingDeposit => ({
 function ecash(scenario: Scenario): ProtoChain {
   return {
     id: "l1",
-    name: "eCash",
+    name: "Betanet",
     chain: "ecash:betanet",
     address: "tex1qx90cvlsrluvqjj9uv54an54sv0kqfse45nyrxx",
     shown:

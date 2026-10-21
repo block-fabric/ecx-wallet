@@ -568,7 +568,7 @@
         {@const ecx = ecxOf(c)}
         <a class="chain-row pick" class:off={!c.canSend} href="#/send/{c.id}">
           {@render avatar(c, 30)}
-          <span class="col grow"><strong>{c.name}</strong><span class="muted tiny">{c.canSend ? (ecx ? ecxAmount(ecx.amount) : "") : c.id === "l1" ? "Sending on eCash isn't built yet" : "Needs a fresh balance"}</span></span>
+          <span class="col grow"><strong>{c.name}</strong><span class="muted tiny">{c.canSend ? (ecx ? ecxAmount(ecx.amount) : "") : c.id === "l1" ? `Sending on ${c.name} isn't built yet` : "Needs a fresh balance"}</span></span>
           <ProtoIcon name="forward" size={16} />
         </a>
       {/each}
