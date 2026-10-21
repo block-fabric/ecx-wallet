@@ -70,8 +70,12 @@ _Avoid_: Peg-out
 The description of one chain, eCash itself or a sidechain, that ships with a Wallet Base release: its name and what it's for, its Slot and parent chain (neither for eCash, the root), its networks, and on each its identity block, Activation (for a Slot, once pinned), default Sidechain Server, Official Apps and the assets it names, among them the chain's ECX.
 _Avoid_: Chain manifest, chain descriptor, network profile
 
+**Spendable**:
+What a Send on a chain can spend now, per asset: confirmed coins, plus change from the wallet's own unconfirmed transactions that only it could replace, less coins a pending Send already spent (docs/adr/0006).
+_Avoid_: Available balance
+
 **Sidechain Server**:
-A server, by default run by a sidechain's maintainers, from which the Wallet Base reads that chain's state over the Server API its Chain Entry names; over the Standard Sidechain API it also builds unsigned payloads for the Wallet Base to sign and broadcasts the signed ones.
+A server, by default run by a sidechain's maintainers, from which the Wallet Base reads that chain's state over the Server API its Chain Entry names; over the Standard Sidechain API it also builds unsigned payloads for the Wallet Base to sign and broadcasts the signed ones. Over Esplora the Wallet Base builds and broadcasts them itself.
 _Avoid_: Adapter, backend, sidechain plugin
 
 **Server API**:
