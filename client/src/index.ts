@@ -28,8 +28,27 @@ export interface ProviderRpcError extends Error {
   data?: unknown;
 }
 
+/**
+ * What a Sidechain App's Grant lets it ask for: what `connect` and `getGrant` answer. Mirrors the
+ * wallet's `GrantScope` (wallet/src/grants.ts); this package depends on nothing of the wallet's.
+ */
+export interface GrantScope {
+  slots: number[];
+  methods: string[];
+  /** Present (true) only if the user opted the Grant into Blind Signing. */
+  blindSigning?: true;
+}
+
+/** The Provider's events and what each listener receives. */
+export interface ProviderEvents {
+  /** The app's Grant changed (widened, revoked, or `disconnect`): its scope now, or null once it has none. */
+  grantChanged: GrantScope | null;
+}
+
 export interface Provider {
   request(args: RequestArguments): Promise<unknown>;
+  on<E extends keyof ProviderEvents>(event: E, listener: (payload: ProviderEvents[E]) => void): void;
+  removeListener<E extends keyof ProviderEvents>(event: E, listener: (payload: ProviderEvents[E]) => void): void;
 }
 
 export interface ProviderDetail {

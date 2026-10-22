@@ -5,6 +5,7 @@
 // - no top-level await; WASM is fetched and instantiated lazily inside handlers.
 import {
   CACHE_PREFIX,
+  scopeOf,
   createAccounts,
   createChainModules,
   createDeposits,
@@ -41,7 +42,7 @@ import {
   type SigningApproval,
   type VaultModule,
 } from "@ecx/wallet";
-import { ACTIVITY_PORT, type BackgroundMessage, type ProviderResponse } from "./messages";
+import { ACTIVITY_PORT, type BackgroundMessage, type GrantChangedMessage, type ProviderResponse } from "./messages";
 
 /** Error code for Vault failures reported to the wallet's own pages (wrong password, ...). */
 const VAULT_ERROR = -32000;
@@ -121,6 +122,18 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 const GRANT_PREFIX = "grant:";
 const grantKey = (origin: string) => `${GRANT_PREFIX}${origin}`;
 
+/**
+ * Tells the origin's open pages its Grant is now `grant` (none: null). Every tab's top frame gets
+ * it, and its content script passes it on only to a page of that origin: the wallet needs no tab
+ * permission, and no other site sees it.
+ */
+async function announceGrant(origin: string, grant: Grant | undefined): Promise<void> {
+  const message: GrantChangedMessage = { kind: "grantChanged", origin, scope: grant === undefined ? null : scopeOf(grant) };
+  for (const tab of await chrome.tabs.query({})) {
+    if (tab.id !== undefined) chrome.tabs.sendMessage(tab.id, message, { frameId: 0 }).catch(() => {});
+  }
+}
+
 const grants: GrantStore = {
   async get(origin) {
     const key = grantKey(origin);
@@ -128,9 +141,12 @@ const grants: GrantStore = {
   },
   async put(grant) {
     await chrome.storage.local.set({ [grantKey(grant.origin)]: grant });
+    await announceGrant(grant.origin, grant);
   },
   async remove(origin) {
+    const had = (await grants.get(origin)) !== undefined;
     await chrome.storage.local.remove(grantKey(origin));
+    if (had) await announceGrant(origin, undefined);
   },
   async list() {
     const all = await chrome.storage.local.get(null);
@@ -194,9 +210,22 @@ class ApprovalWindow {
   private current = deferred<ApprovalPrompt | null>();
   private answer?: (answer: ApprovalAnswer) => void;
 
+  /** When the page last sent this approval a message (ms), so `close` doesn't cut off a reply. */
+  private contacted = 0;
+
+  /** Records contact from the page: it asked for a prompt, answered one, or unlocked. */
+  private touch(): void {
+    this.contacted = Date.now();
+  }
+
+  /** Pages waiting in `prompt()`, however long ago they asked. */
+  private prompting = 0;
+
   /** The prompt the page should show now (waits while the next one is being prepared). */
   prompt(): Promise<ApprovalPrompt | null> {
-    return this.current.promise;
+    this.touch();
+    this.prompting++;
+    return this.current.promise.finally(() => this.prompting--);
   }
 
   /** Shows `prompt` (opening the window on first use) and resolves with the user's answer. */
@@ -210,6 +239,7 @@ class ApprovalWindow {
 
   /** Records the user's answer; the page then waits for the next prompt, if any. */
   settle(answer: ApprovalAnswer): void {
+    this.touch();
     const resolve = this.answer;
     this.answer = undefined;
     this.current = deferred();
@@ -219,10 +249,17 @@ class ApprovalWindow {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    // A page that just sent a message may still be waiting on the reply (Firefox logs one cut off).
+    const waiting = this.prompting > 0 || Date.now() - this.contacted < CLOSE_GRACE_MS;
     approvals.delete(this.id);
     this.settle(null);
     this.current.resolve(null);
-    if (this.windowId !== undefined) chrome.windows.remove(this.windowId).catch(() => {});
+    const windowId = this.windowId;
+    if (windowId === undefined) return;
+    const remove = () => chrome.windows.remove(windowId).catch(() => {});
+    // Such a page gets its reply, is told there's nothing left, and closes itself; this is the fallback.
+    if (waiting) setTimeout(remove, CLOSE_GRACE_MS);
+    else remove();
   }
 
   private open(): void {
@@ -244,6 +281,9 @@ function deferred<T>() {
 }
 
 const approvals = new Map<string, ApprovalWindow>();
+
+/** How long a page told there's nothing left to approve has to close itself before it's closed. */
+const CLOSE_GRACE_MS = 1_000;
 
 async function askToConnect(prompt: ConnectPrompt): Promise<ConnectAnswer> {
   const approval = new ApprovalWindow();

@@ -49,7 +49,12 @@
     error = "";
     try {
       await unlockApproval(id, password);
-      load(); // the background now prepares the request itself
+      // The background now prepares the request itself. If unlocking was all it needed (an app's
+      // getAddresses), there's nothing more to show: close, rather than be closed mid-reply.
+      prompt = undefined;
+      const next = await getApproval(id).catch(() => null);
+      if (next === null) return window.close();
+      prompt = next;
     } catch (err) {
       error = (err as Error).message;
     } finally {

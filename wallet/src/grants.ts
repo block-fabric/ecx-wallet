@@ -44,3 +44,13 @@ export function widen(existing: Grant | undefined, origin: string, scope: Scope,
     blindSigning: (existing?.blindSigning ?? false) || blindSigning,
   };
 }
+
+/** What an app is told about its own Grant: by `connect` and `getGrant`, and in `grantChanged`. */
+export interface GrantScope extends Scope {
+  blindSigning?: true;
+}
+
+/** The Grant as its app sees it: Blind Signing named only when opted in. */
+export function scopeOf(grant: Grant): GrantScope {
+  return { slots: grant.slots, methods: grant.methods, ...(grant.blindSigning ? { blindSigning: true } : {}) };
+}

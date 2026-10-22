@@ -6,6 +6,8 @@
 // The inpage Provider and the content script only relay. The background derives the requester's
 // origin from the browser-supplied `sender`, never from anything inside the message.
 
+import type { GrantScope, ProviderEvents } from "@ecx/client";
+
 /** window.postMessage channel tags, so the two sides ignore everything else on the page. */
 export const TO_CONTENT = "ecx:to-content";
 export const TO_INPAGE = "ecx:to-inpage";
@@ -25,6 +27,23 @@ export interface RelayResponse {
   channel: typeof TO_INPAGE;
   id: string;
   response: ProviderResponse;
+}
+
+/** A Provider event, relayed to the page: no `id`, since it answers no request. */
+export interface RelayEvent<E extends keyof ProviderEvents = keyof ProviderEvents> {
+  channel: typeof TO_INPAGE;
+  event: E;
+  payload: ProviderEvents[E];
+}
+
+/**
+ * Sent by the background to every tab's top frame when an origin's Grant changes; each content
+ * script relays it to its page only if `origin` is the page's own.
+ */
+export interface GrantChangedMessage {
+  kind: "grantChanged";
+  origin: string;
+  scope: GrantScope | null;
 }
 
 /** runtime messages handled by the background. */
