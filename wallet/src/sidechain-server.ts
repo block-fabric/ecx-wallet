@@ -40,6 +40,8 @@ export interface HistoryEntry {
   hidden?: boolean;
   /** The wallet's M5 to this Slot's Treasury (eCash only). */
   depositTo?: number;
+  /** A Deposit's credit on a Slot (an input claims the Deposit): the Deposit's parent-chain txid. */
+  depositFrom?: string;
 }
 
 /** A Slot's Treasury script on eCash, by which a server's client recognizes the wallet's Deposits. */

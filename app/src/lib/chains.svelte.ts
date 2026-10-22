@@ -134,7 +134,7 @@ export class Chains {
 export function depositState(d: DepositStatus): string {
   switch (d.state) {
     case "confirming":
-      return `${d.confirmations} / 100 confirmations on the main chain`;
+      return `${d.confirmations} / ${d.depositConfirmations} confirmations on the main chain`;
     case "awaitingCredit":
       return `Waiting for the ${d.chainName} operator to credit it (not automatic)`;
     case "credited":

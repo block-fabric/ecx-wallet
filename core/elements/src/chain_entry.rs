@@ -9,6 +9,11 @@
 //! 2026-10-20). The enforcer may count the Slot as active from 970,716; to confirm with the Elements
 //! dev before this ships.
 //!
+//! betanet's `depositConfirmations` is 6: the Elements fork returns 6 from
+//! `GetDrivechainPeginConfirmationDepth` for betanet's genesis and manifest (commit `41b0dc44`,
+//! "Require six confirmations for Betanet slot-24 peg-ins"), overriding the identity's
+//! `PEGIN_MIN_DEPTH` of 100. `getsidechaininfo` reports it as `pegin_confirmation_depth`.
+//!
 //! `build.rs` picks the file: `chain-entry.json`, or `$ECX_ELEMENTS_CHAIN_ENTRY` for the e2e
 //! build, whose Chain Entry differs only in its Sidechain Servers.
 use std::sync::OnceLock;

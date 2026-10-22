@@ -17,7 +17,7 @@ export const QUERIES_AT_ONCE = 20;
 
 /** How many of an address's transactions Esplora lists at once: its mempool's, then its confirmed ones. */
 const LISTED_MEMPOOL_TXS = 50;
-const LISTED_CONFIRMED_TXS = 25;
+export const LISTED_CONFIRMED_TXS = 25;
 
 /** The fee rate's confirmation target, in blocks. */
 const FEE_TARGET = "6";
@@ -73,10 +73,14 @@ export interface EsploraOutput {
   asset?: string;
 }
 
-/** A transaction as Esplora shows it: what it spends (with the spent outputs) and pays. */
+/**
+ * A transaction as Esplora shows it: what it spends (with the spent outputs) and pays. An Elements
+ * input with `claimsDeposit` (Esplora's `is_pegin`) claims a Deposit's parent-chain output: its `txid` is
+ * the parent chain's, and it has no `prevout`.
+ */
 export interface EsploraTx {
   txid: string;
-  vin: { txid: string; vout: number; prevout: EsploraOutput | null }[];
+  vin: { txid: string; vout: number; prevout: EsploraOutput | null; claimsDeposit?: true }[];
   vout: EsploraOutput[];
   status: EsploraTxStatus;
 }
@@ -136,6 +140,12 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName, cache }:
     return { scriptpubkey, ...(value === undefined ? {} : { value }), ...(asset === undefined ? {} : { asset }) };
   }
 
+  async function transactions(path: string): Promise<EsploraTx[]> {
+    const txs = await getJson(path, "list of transactions");
+    if (!Array.isArray(txs)) throw malformed("list of transactions");
+    return txs.map(transaction);
+  }
+
   function transaction(raw: unknown): EsploraTx {
     const tx = raw as Record<string, unknown>;
     if (typeof tx?.txid !== "string" || !HASH.test(tx.txid) || !Array.isArray(tx.vin) || !Array.isArray(tx.vout)) throw malformed("transaction");
@@ -144,7 +154,8 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName, cache }:
       vin: tx.vin.map((input: Record<string, unknown>) => {
         if (input?.is_coinbase === true) return { txid: "00".repeat(32), vout: 0xffffffff, prevout: null };
         if (typeof input?.txid !== "string" || !HASH.test(input.txid) || !isCount(input.vout)) throw malformed("transaction");
-        return { txid: input.txid, vout: input.vout, prevout: input.prevout === null ? null : output(input.prevout) };
+        const prevout = input.prevout === null ? null : output(input.prevout);
+        return { txid: input.txid, vout: input.vout, prevout, ...(input.is_pegin === true ? { claimsDeposit: true as const } : {}) };
       }),
       vout: tx.vout.map(output),
       status: status(tx.status),
@@ -227,13 +238,12 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName, cache }:
 
     /**
      * The address's transactions, newest first: all of its mempool's (Esplora lists up to 50), then
-     * its latest confirmed ones (up to 25). Older ones would need paging, which the wallet doesn't do.
+     * its latest confirmed ones (up to `LISTED_CONFIRMED_TXS`). Older ones: `addressTxsBefore`.
      */
-    async addressTxs(address: string): Promise<EsploraTx[]> {
-      const txs = await getJson(`/address/${encodeURIComponent(address)}/txs`, "list of transactions");
-      if (!Array.isArray(txs)) throw malformed("list of transactions");
-      return txs.map(transaction);
-    },
+    addressTxs: (address: string) => transactions(`/address/${encodeURIComponent(address)}/txs`),
+
+    /** The address's next `LISTED_CONFIRMED_TXS` confirmed transactions, newest first, after the confirmed `txid`. */
+    addressTxsBefore: (address: string, txid: string) => transactions(`/address/${encodeURIComponent(address)}/txs/chain/${txid}`),
 
     /** The raw transaction, hex. Whoever uses it checks it hashes to `txid`. */
     async txHex(txid: string): Promise<string> {
@@ -301,7 +311,8 @@ export function esploraServer(config: EsploraServerConfig, fetchFn: Fetch): Side
 
   /**
    * The wallet's view of a transaction: its net change per asset, from the outputs it pays and
-   * spends of the watch's scripts; and whether it's the wallet's Deposit (an M5 it funded).
+   * spends of the watch's scripts; whether it's the wallet's Deposit (an M5 it funded); and whether
+   * it's a Deposit's credit (on a Slot, an input claiming the Deposit).
    */
   function entry(tx: EsploraTx, ours: Set<string>, treasuries: TreasuryScript[], trusted: (tx: EsploraTx) => boolean): HistoryEntry {
     const net = new Map<string, bigint>();
@@ -323,6 +334,7 @@ export function esploraServer(config: EsploraServerConfig, fetchFn: Fetch): Side
     const depositTo = funded
       ? treasuries.find(({ scriptPubkey }) => tx.vout.some((o, vout) => o.scriptpubkey === scriptPubkey && isM5(tx, vout)))?.slot
       : undefined;
+    const depositFrom = tx.vin.find((input) => input.claimsDeposit)?.txid;
     const { confirmed, blockTime } = tx.status;
     return {
       txid: tx.txid,
@@ -333,6 +345,7 @@ export function esploraServer(config: EsploraServerConfig, fetchFn: Fetch): Side
       ...(hidden ? { hidden } : {}),
       ...(toSelf ? { toSelf } : {}),
       ...(depositTo === undefined ? {} : { depositTo }),
+      ...(depositFrom === undefined ? {} : { depositFrom }),
     };
   }
 

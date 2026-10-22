@@ -107,8 +107,9 @@ export { esploraClient, feeRate, type EsploraClient, type EsploraTx, type Esplor
 export { findTreasury, TreasuryError, type Treasury } from "./treasury";
 export {
   createDeposits,
-  CONFIRMATIONS_TO_CREDIT,
+  BIP300_DEPOSIT_CONFIRMATIONS,
   DEPOSIT_REQUESTER,
+  isCredited,
   type DepositClaim,
   type DepositDeps,
   type Deposits,
