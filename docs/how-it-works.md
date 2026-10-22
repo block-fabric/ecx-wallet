@@ -158,11 +158,16 @@ What a Sidechain App calls (`wallet/src/provider.ts`). It finds the Provider wit
 |---|---|---|
 | `connect({ slots, methods })` | no | Asks the user for a Grant: these methods on these Slots. |
 | `disconnect()` | no | Removes the caller's own Grant. |
-| `getAddresses({ slot })` | yes | `[{ chain, address }]`: the Slot's receive address and its CAIP-2 chain id. Fails with 4100 while locked. |
+| `getGrant()` | no | The caller's own Grant (`connect`'s answer) plus `unlocked`, or `null` without one. Never opens a window. |
+| `getAddresses({ slot })` | yes | `[{ chain, address }]`: the Slot's receive address and its CAIP-2 chain id. While locked, it opens a window to unlock first. |
 | `signTransaction(request)` | yes | Signs a Signing Request (a PSET) after approval and returns it signed. It doesn't broadcast. |
 | `sendTransfer({ slot, outputs })` | yes | The wallet makes a Send for the app and returns `{ txid }`. |
 
 **Grants** are per origin, stored in `storage.local`, and listed on the Grants screen (`#/grants`), where they can be revoked. The connect prompt also has the **Blind Signing opt-in**, a checkbox that is off by default.
+
+**While locked,** every granted method opens the approval window to unlock first; closing it is 4001. An origin's `getAddresses` calls share its one unlock window (a signing request or Send unlocks in its own approval window). `connect` and `getGrant` need no key, so they work locked. A page can check `getGrant().unlocked` on load and ask for addresses only after a click, so a reload never opens a window. The wallet sends no lock or unlock events: they would tell sites when the user is away.
+
+**Events:** `provider.on("grantChanged", listener)` (and `removeListener`). The listener gets the origin's Grant scope, or `null` once it has none. It fires in every open tab of that origin when the Grant is widened by `connect`, revoked on the Grants screen, or removed by `disconnect`. The background sends it to every tab's top frame (`chrome.tabs.sendMessage`, no tab permission needed), and each content script passes it to its page only if the origin is the page's own.
 
 **Chains that are off:** a request for one turns it on only once the user approves, either in the connect prompt ("Approving also turns on …") or in a `turnOn` prompt first. If the user refuses, 4001.
 
@@ -171,7 +176,7 @@ What a Sidechain App calls (`wallet/src/provider.ts`). It finds the Provider wit
 | Code | Meaning |
 |---|---|
 | 4001 | The user rejected, or closed the window. |
-| 4100 | No Grant for this method or Slot, or (for `getAddresses`) the wallet is locked. |
+| 4100 | No Grant for this method or Slot. |
 | 4200 | Unsupported method or format. |
 | 4901 | The wallet has no Chain Module for the Slot. |
 | -32602 | Invalid params, or a request the wallet won't sign or build. |

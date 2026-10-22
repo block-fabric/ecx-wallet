@@ -1,24 +1,40 @@
-// The injected Provider. Runs in the page's main world at document_start. It holds no state and
-// makes no decisions: it announces itself through discovery events and relays each request to
-// the content script, then hands back whatever answer comes back.
+// The injected Provider. Runs in the page's main world at document_start. It makes no decisions:
+// it announces itself through discovery events, relays each request to the content script and
+// hands back whatever answer comes back, and calls the page's listeners for each event relayed.
 import {
   ANNOUNCE_PROVIDER_EVENT,
   REQUEST_PROVIDER_EVENT,
   type Provider,
   type ProviderDetail,
+  type ProviderEvents,
   type RequestArguments,
 } from "@ecx/client";
-import { TO_CONTENT, TO_INPAGE, type RelayRequest, type RelayResponse } from "./messages";
+import { TO_CONTENT, TO_INPAGE, type RelayEvent, type RelayRequest, type RelayResponse } from "./messages";
 
 const ICON =
   "data:image/svg+xml;base64," +
   btoa('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="15" fill="#0b6e4f"/></svg>');
 
 const pending = new Map<string, (response: RelayResponse["response"]) => void>();
+type Listener = (payload: ProviderEvents[keyof ProviderEvents]) => void;
+const listeners = new Map<keyof ProviderEvents, Set<Listener>>();
 
 window.addEventListener("message", (event: MessageEvent) => {
-  const data = event.data as RelayResponse | undefined;
+  const data = event.data as RelayResponse | RelayEvent | undefined;
   if (event.source !== window || data?.channel !== TO_INPAGE) return;
+  if ("event" in data) {
+    for (const listener of listeners.get(data.event) ?? []) {
+      try {
+        listener(data.payload);
+      } catch (error) {
+        // One app listener throwing mustn't stop the others.
+        queueMicrotask(() => {
+          throw error;
+        });
+      }
+    }
+    return;
+  }
   const settle = pending.get(data.id);
   if (!settle) return;
   pending.delete(data.id);
@@ -44,6 +60,13 @@ const provider: Provider = Object.freeze({
       const message: RelayRequest = { channel: TO_CONTENT, id, method, params };
       window.postMessage(message, window.location.origin);
     });
+  },
+  on<E extends keyof ProviderEvents>(event: E, listener: (payload: ProviderEvents[E]) => void) {
+    if (!listeners.has(event)) listeners.set(event, new Set());
+    listeners.get(event)!.add(listener as Listener);
+  },
+  removeListener<E extends keyof ProviderEvents>(event: E, listener: (payload: ProviderEvents[E]) => void) {
+    listeners.get(event)?.delete(listener as Listener);
   },
 });
 

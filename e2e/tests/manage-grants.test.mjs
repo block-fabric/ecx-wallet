@@ -97,6 +97,55 @@ test("revoking a Grant on the Grants screen makes that origin's next request fai
   await Promise.all([page.close(), revoked.close(), kept.close()]);
 });
 
+test("grantChanged tells an origin's open pages when its Grant is widened, revoked or disconnected, and no other origin", async () => {
+  const scope = { slots: [24], methods: ["getAddresses"] };
+  const tabA = await connected("events.localhost", scope);
+  const tabB = await openTestApp(session, app, "events.localhost"); // the same origin, another tab
+  const other = await connected("events-other.localhost", scope);
+  for (const page of [tabA, tabB, other]) await page.evaluate(() => window.testApp.listen("grantChanged"));
+  const events = (page) => page.evaluate(() => window.testApp.events);
+  const until = (page, count) => page.waitForFunction((n) => window.testApp.events.length >= n, { timeout: 10_000 }, count);
+
+  // Widened by connect: both tabs of the origin hear it.
+  const widened = { slots: [24], methods: ["getAddresses", "signTransaction"] };
+  const widening = tabA.evaluate((scope) => window.testApp.request("connect", scope), widened);
+  await (await session.waitForApprovalWindow()).click("[data-approve]");
+  await widening;
+  await Promise.all([until(tabA, 1), until(tabB, 1)]);
+  assert.deepEqual(await events(tabB), [["grantChanged", widened]]);
+
+  // Revoked on the Grants screen.
+  const origin = app.origin("events.localhost");
+  const { page } = await readGrants();
+  await page.click(`[data-grant][data-grant-origin="${origin}"] [data-revoke]`);
+  await Promise.all([until(tabA, 2), until(tabB, 2)]);
+  assert.deepEqual((await events(tabA)).at(-1), ["grantChanged", null]);
+  await page.close();
+
+  // Disconnect, by the other origin itself: only its own page hears it.
+  await other.evaluate(() => window.testApp.request("disconnect"));
+  await until(other, 1);
+  assert.deepEqual(await events(other), [["grantChanged", null]]);
+  // Disconnecting again changes nothing, so it tells nobody.
+  await other.evaluate(() => window.testApp.request("disconnect"));
+  await new Promise((r) => setTimeout(r, 500));
+  assert.equal((await events(other)).length, 1);
+  assert.equal((await events(tabA)).length, 2, "nothing about another origin's Grant");
+  await Promise.all([tabA.close(), tabB.close(), other.close()]);
+});
+
+test("getGrant answers the caller's own Grant, and whether the wallet is unlocked, with no window", async () => {
+  const page = await openTestApp(session, app, "get-grant.localhost");
+  assert.deepEqual(await page.evaluate(() => window.testApp.request("getGrant")), { result: null });
+  assert.equal((await session.approvalWindows()).length, 0, "no window, even with no Grant");
+  const scope = { slots: [24], methods: ["getAddresses"] };
+  const connecting = page.evaluate((scope) => window.testApp.request("connect", scope), scope);
+  await (await session.waitForApprovalWindow()).click("[data-approve]");
+  await connecting;
+  assert.deepEqual(await page.evaluate(() => window.testApp.request("getGrant")), { result: { ...scope, unlocked: true } });
+  await page.close();
+});
+
 // Brave only: Firefox has no API to read an extension's error console.
 test("none of the above raised extension runtime errors", async () => {
   assert.deepEqual((await session.extensionErrors()).runtimeErrors, []);

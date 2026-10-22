@@ -5,7 +5,7 @@
 // core/elements/tests/elements.rs), so seeing it proves the address came from the Slot 24 Starter.
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { BROWSERS, launchWallet, openTestApp, openWalletPage, serveTestApp, setUpWallet, WALLET_PASSWORD } from "../harness.mjs";
+import { BROWSERS, homeSettled, launchWallet, openTestApp, openWalletPage, serveTestApp, setUpWallet, WALLET_PASSWORD } from "../harness.mjs";
 
 const SLOT_24_ADDRESS = "elements1qew44aehkjstjm56ng2rjrz57vwxh5g9su6dlpm";
 /** BIP84's own vector for "abandon … about", m/84'/0'/0'/0/0 (bip-0084.mediawiki). */
@@ -106,22 +106,33 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     await page.close();
   });
 
-  test("getAddresses fails with 4100 while the wallet is locked, and works again after unlock", async () => {
+  test("getAddresses while locked: getGrant says so, closing the unlock window is 4001, and unlocking there answers", async () => {
     const page = await connect(session, app, "locked.localhost", { slots: [24], methods: ["getAddresses"] });
     const home = await session.openPage("index.html#/");
     await home.waitForSelector("[data-lock]", { timeout: 10_000 });
+    await homeSettled(home);
     await home.click("[data-lock]");
     await home.waitForSelector('[data-vault-state="locked"]');
-    const locked = await page.evaluate(() => window.testApp.request("getAddresses", { slot: 24 }));
-    assert.equal(locked.error?.code, 4100);
-    assert.match(locked.error?.message, /locked/i);
+    await home.close();
+    const grant = await page.evaluate(() => window.testApp.request("getGrant"));
+    assert.equal(grant.result?.unlocked, false, "a page can check before asking, so a reload needn't open a window");
 
-    await typeInto(home, "[data-password]", WALLET_PASSWORD);
-    await home.click("[data-unlock]");
-    await home.waitForSelector('[data-vault-state="unlocked"]');
-    const unlocked = await page.evaluate(() => window.testApp.request("getAddresses", { slot: 24 }));
-    assert.deepEqual(unlocked, { result: [{ chain: "ecash:betanet-s24", address: SLOT_24_ADDRESS }] });
-    await Promise.all([page.close(), home.close()]);
+    const refused = page.evaluate(() => window.testApp.request("getAddresses", { slot: 24 }));
+    const closing = await session.waitForApprovalWindow();
+    await closing.waitForSelector("[data-unlock-required]");
+    await closing.close();
+    assert.equal((await refused).error?.code, 4001);
+
+    // Two at once share one window.
+    const asking = page.evaluate(() => Promise.all([0, 1].map(() => window.testApp.request("getAddresses", { slot: 24 }))));
+    const approval = await session.waitForApprovalWindow();
+    await approval.waitForSelector("[data-unlock-required]");
+    await typeInto(approval, "[data-password]", WALLET_PASSWORD);
+    await approval.click("[data-unlock]");
+    const expected = { result: [{ chain: "ecash:betanet-s24", address: SLOT_24_ADDRESS }] };
+    assert.deepEqual(await asking, [expected, expected]);
+    assert.equal((await page.evaluate(() => window.testApp.request("getGrant"))).result?.unlocked, true);
+    await page.close();
   });
 
   test("none of the above raised extension runtime errors", async () => {

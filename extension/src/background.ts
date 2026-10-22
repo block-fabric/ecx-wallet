@@ -5,6 +5,7 @@
 // - no top-level await; WASM is fetched and instantiated lazily inside handlers.
 import {
   CACHE_PREFIX,
+  scopeOf,
   createAccounts,
   createChainModules,
   createDeposits,
@@ -41,7 +42,7 @@ import {
   type SigningApproval,
   type VaultModule,
 } from "@ecx/wallet";
-import { ACTIVITY_PORT, type BackgroundMessage, type ProviderResponse } from "./messages";
+import { ACTIVITY_PORT, type BackgroundMessage, type GrantChangedMessage, type ProviderResponse } from "./messages";
 
 /** Error code for Vault failures reported to the wallet's own pages (wrong password, ...). */
 const VAULT_ERROR = -32000;
@@ -121,6 +122,18 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 const GRANT_PREFIX = "grant:";
 const grantKey = (origin: string) => `${GRANT_PREFIX}${origin}`;
 
+/**
+ * Tells the origin's open pages its Grant is now `grant` (none: null). Every tab's top frame gets
+ * it, and its content script passes it on only to a page of that origin: the wallet needs no tab
+ * permission, and no other site sees it.
+ */
+async function announceGrant(origin: string, grant: Grant | undefined): Promise<void> {
+  const message: GrantChangedMessage = { kind: "grantChanged", origin, scope: grant === undefined ? null : scopeOf(grant) };
+  for (const tab of await chrome.tabs.query({})) {
+    if (tab.id !== undefined) chrome.tabs.sendMessage(tab.id, message, { frameId: 0 }).catch(() => {});
+  }
+}
+
 const grants: GrantStore = {
   async get(origin) {
     const key = grantKey(origin);
@@ -128,9 +141,12 @@ const grants: GrantStore = {
   },
   async put(grant) {
     await chrome.storage.local.set({ [grantKey(grant.origin)]: grant });
+    await announceGrant(grant.origin, grant);
   },
   async remove(origin) {
+    const had = (await grants.get(origin)) !== undefined;
     await chrome.storage.local.remove(grantKey(origin));
+    if (had) await announceGrant(origin, undefined);
   },
   async list() {
     const all = await chrome.storage.local.get(null);

@@ -23,6 +23,15 @@ window.testApp = {
     });
   },
 
+  /** Each Provider event this page has received since `listen`, as `[event, payload]`. */
+  events: [],
+
+  /** Starts recording `event` into `events`. */
+  async listen(event) {
+    if (!provider) await this.discover();
+    provider.on(event, (payload) => this.events.push([event, payload]));
+  },
+
   /** Calls `provider.request` and returns `{ result }` or `{ error: { code, message } }`. */
   async request(method, params) {
     if (!provider) await this.discover();

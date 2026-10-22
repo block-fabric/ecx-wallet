@@ -1,6 +1,6 @@
 import { ErrorCode, ProviderRpcError } from "./errors";
 import type { SlotAddress } from "./accounts";
-import { covers, GRANTABLE_METHODS, widen, type GrantableMethod, type GrantStore, type Scope } from "./grants";
+import { covers, GRANTABLE_METHODS, scopeOf, widen, type GrantableMethod, type GrantScope, type GrantStore, type Scope } from "./grants";
 import { parseSigningRequest } from "./signing-request";
 import { chainModuleFor, rejected, reviewAndSign, type SignPrompt, type SigningDeps } from "./signing";
 import type { SendResult } from "./pull-path";
@@ -72,7 +72,7 @@ export function createProviderHandler(deps: ProviderDeps) {
     for (const slot of offSlots) await chains.turnOn(slot);
   }
 
-  async function connect(origin: string, params: unknown): Promise<Scope> {
+  async function connect(origin: string, params: unknown): Promise<GrantScope> {
     const scope = parseScope(params);
     const existing = await grants.get(origin);
     if (!covers(existing, scope)) {
@@ -84,8 +84,41 @@ export function createProviderHandler(deps: ProviderDeps) {
     } else {
       await turnOn(origin, scope.slots);
     }
-    const grant = (await grants.get(origin))!;
-    return { slots: grant.slots, methods: grant.methods, ...(grant.blindSigning ? { blindSigning: true } : {}) };
+    return scopeOf((await grants.get(origin))!);
+  }
+
+  /** The caller's own Grant, and whether the wallet is unlocked: no window, no Grant needed. */
+  async function getGrant(origin: string): Promise<(GrantScope & { unlocked: boolean }) | null> {
+    const grant = await grants.get(origin);
+    return grant === undefined ? null : { ...scopeOf(grant), unlocked: await isUnlocked() };
+  }
+
+  /** Unlock windows open now, one per origin: further requests from it wait on the same one. */
+  const unlocking = new Map<string, Promise<boolean>>();
+
+  /** Asks the user to unlock for `origin`'s request on `slot`, if locked; rejected if they close the window. */
+  async function unlocked(origin: string, slot: number): Promise<void> {
+    if (await isUnlocked()) return;
+    let asking = unlocking.get(origin);
+    if (asking === undefined) {
+      asking = (async () => {
+        try {
+          // Another call's window may have unlocked it since this one looked.
+          if (await isUnlocked()) return true;
+          const chain = (await deps.chainModule(slot)!).declare().binding.chain;
+          const approval = deps.openSigningApproval({ origin, chain });
+          try {
+            return await approval.unlock();
+          } finally {
+            approval.close();
+          }
+        } finally {
+          unlocking.delete(origin);
+        }
+      })();
+      unlocking.set(origin, asking);
+    }
+    if (!(await asking)) throw rejected();
   }
 
   /** The Grant covers `method` on `slot`, and the wallet has the Slot's Chain Module. */
@@ -107,7 +140,7 @@ export function createProviderHandler(deps: ProviderDeps) {
     if (method === "sendTransfer") return sendTransfer(origin, params);
     const slot = parseSlot(method, params);
     await authorize(origin, method, slot);
-    if (!(await isUnlocked())) throw new ProviderRpcError(ErrorCode.Unauthorized, "The wallet is locked.");
+    await unlocked(origin, slot);
     await turnOn(origin, [slot]);
     return receiveAddresses(slot);
   }
@@ -160,6 +193,7 @@ export function createProviderHandler(deps: ProviderDeps) {
 
   return async function handle(origin: string, method: unknown, params: unknown): Promise<unknown> {
     if (method === "connect") return connect(origin, params);
+    if (method === "getGrant") return getGrant(origin);
     if (method === "disconnect") {
       // Only ever the caller's own Grant: the origin comes from the browser, never from params.
       await grants.remove(origin);
