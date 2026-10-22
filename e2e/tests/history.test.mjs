@@ -196,7 +196,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     assert.equal(byTxid[ownSpend.txid].status, "Pending");
     assert.equal(byTxid[incoming.txid].state, "unconfirmed");
     assert.equal(byTxid[incoming.txid].status, "Unconfirmed");
-    assert.equal(byTxid[incoming.txid].warning, "Sent by someone else; may still not arrive");
+    assert.equal(byTxid[incoming.txid].warning, "Sent by someone else, it may still not arrive");
     assert.equal(byTxid[spendOfIncoming.txid].state, "unconfirmed", "its parent isn't trusted");
   });
 
@@ -256,7 +256,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       assert.equal(entry.label, "Deposit from the main chain");
       assert.deepEqual(entry.amounts, ["+0.001 ECX"]);
       assert.equal(entry.state, "unconfirmed");
-      assert.equal(entry.warning, "Credited by the chain's operator; not in a block yet");
+      assert.equal(entry.warning, "Credited by the chain's operator, not in a block yet");
 
       const page = await openActivity(session, "24");
       await page.waitForSelector(`[data-history-entry="${credit.txid}"]`, { timeout: 20_000 });

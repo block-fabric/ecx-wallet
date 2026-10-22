@@ -14,6 +14,11 @@
   const errors = $derived(slots.flatMap((s) => (s.deposits !== undefined && "error" in s.deposits ? [{ name: s.info.name, error: s.deposits.error }] : [])));
   const refused = $derived(slots.flatMap((s) => (s.refused ? [s.refused] : [])));
   const refusedSends = $derived(slots.flatMap((s) => (s.refusedSend ? [{ failed: s.refusedSend, assets: s.info.assets }] : [])));
+  /** The main-chain confirmations the listed Deposits wait for, if they all wait for the same. */
+  const depth = $derived.by(() => {
+    const required = new Set(list.flatMap((d) => ("required" in d ? [d.required] : [])));
+    return required.size === 1 ? [...required][0] : undefined;
+  });
   const sats = (value: string) => amountText(value, "", ecx);
 
   async function stopTracking(slot: number, txid: string) {
@@ -100,7 +105,7 @@
         </li>
       {/each}
     </ul>
-    <p class="muted tiny">Deposits wait for main-chain confirmations, then the chain's operator credits them. Withdrawals take months.</p>
+    <p class="muted tiny" data-deposits-note>{depth === undefined ? "Deposits wait for main-chain confirmations" : `Deposits wait ${depth} main-chain blocks`}, then the chain's operator credits them. Withdrawals take months.</p>
   </section>
 {/if}
 

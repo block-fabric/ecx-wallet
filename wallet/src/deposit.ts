@@ -59,7 +59,7 @@ export interface DepositClaim {
 export type DepositStatus = PendingDeposit &
   (
     | { state: "confirming"; confirmations: number; required: number }
-    | { state: "awaitingCredit"; confirmations: number; claim: DepositClaim; creditServer?: string }
+    | { state: "awaitingCredit"; confirmations: number; required: number; claim: DepositClaim; creditServer?: string }
     | { state: "credited"; creditServer: string }
     | { state: "notFound"; server: string }
     | { state: "unavailable"; error: string }
@@ -315,10 +315,10 @@ export function createDeposits(deps: DepositDeps) {
             const confirmations = (await (tip ??= l1.tipHeight())) - status.blockHeight! + 1;
             if (confirmations < required) return { ...deposit, state: "confirming", confirmations, required };
             const claim = { txid: deposit.txid, vout: deposit.vout, blockHash: status.blockHash!, address: deposit.address, value: deposit.value };
-            if (credits === undefined) return { ...deposit, state: "awaitingCredit", confirmations, claim };
+            if (credits === undefined) return { ...deposit, state: "awaitingCredit", confirmations, required, claim };
             // The credit is the transaction to the address with an input claiming this Deposit.
             const credited = (await credits.addressTxs(deposit.address)).some((tx) => tx.vin.some((input) => input.pegin && input.txid === deposit.txid));
-            if (!credited) return { ...deposit, state: "awaitingCredit", confirmations, claim, creditServer: credits.url };
+            if (!credited) return { ...deposit, state: "awaitingCredit", confirmations, required, claim, creditServer: credits.url };
             await deps.store.remove(deposit.txid);
             return { ...deposit, state: "credited", creditServer: credits.url };
           } catch (error) {

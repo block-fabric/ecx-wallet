@@ -108,6 +108,7 @@ async function readDeposits(session) {
       stopTracking: e.querySelector("[data-deposit-stop-tracking]") !== null,
       state: e.getAttribute("data-deposit-state"),
       status: e.querySelector("[data-deposit-status]").textContent.trim(),
+      note: e.closest("section").querySelector("[data-deposits-note]").textContent.trim(),
       claim: e.querySelector("[data-claim]")
         ? Object.fromEntries(["txid", "vout", "block", "address", "value"].map((k) => [k, e.querySelector(`[data-claim-${k}]`).textContent.trim()]))
         : undefined,
@@ -222,6 +223,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       L1.tipHeight = 970955;
       const [waiting] = await readDeposits(session);
       assert.equal(waiting.state, "awaitingCredit");
+      assert.match(waiting.note, /^Deposits wait 6 main-chain blocks, then/);
       assert.equal(waiting.status, "Waiting for the Elements+ operator to credit it (not automatic)");
       assert.deepEqual(waiting.claim, { txid: depositTxid, vout: "0", block: "ab".repeat(32), address: RECEIVE_0, value: "50000" });
 
