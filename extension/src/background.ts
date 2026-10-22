@@ -194,9 +194,22 @@ class ApprovalWindow {
   private current = deferred<ApprovalPrompt | null>();
   private answer?: (answer: ApprovalAnswer) => void;
 
+  /** When the page last sent this approval a message (ms), so `close` doesn't cut off a reply. */
+  private contacted = 0;
+
+  /** Records contact from the page: it asked for a prompt, answered one, or unlocked. */
+  private touch(): void {
+    this.contacted = Date.now();
+  }
+
+  /** Pages waiting in `prompt()`, however long ago they asked. */
+  private prompting = 0;
+
   /** The prompt the page should show now (waits while the next one is being prepared). */
   prompt(): Promise<ApprovalPrompt | null> {
-    return this.current.promise;
+    this.touch();
+    this.prompting++;
+    return this.current.promise.finally(() => this.prompting--);
   }
 
   /** Shows `prompt` (opening the window on first use) and resolves with the user's answer. */
@@ -210,6 +223,7 @@ class ApprovalWindow {
 
   /** Records the user's answer; the page then waits for the next prompt, if any. */
   settle(answer: ApprovalAnswer): void {
+    this.touch();
     const resolve = this.answer;
     this.answer = undefined;
     this.current = deferred();
@@ -219,10 +233,17 @@ class ApprovalWindow {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    // A page that just sent a message may still be waiting on the reply (Firefox logs one cut off).
+    const waiting = this.prompting > 0 || Date.now() - this.contacted < CLOSE_GRACE_MS;
     approvals.delete(this.id);
     this.settle(null);
     this.current.resolve(null);
-    if (this.windowId !== undefined) chrome.windows.remove(this.windowId).catch(() => {});
+    const windowId = this.windowId;
+    if (windowId === undefined) return;
+    const remove = () => chrome.windows.remove(windowId).catch(() => {});
+    // Such a page gets its reply, is told there's nothing left, and closes itself; this is the fallback.
+    if (waiting) setTimeout(remove, CLOSE_GRACE_MS);
+    else remove();
   }
 
   private open(): void {
@@ -244,6 +265,9 @@ function deferred<T>() {
 }
 
 const approvals = new Map<string, ApprovalWindow>();
+
+/** How long a page told there's nothing left to approve has to close itself before it's closed. */
+const CLOSE_GRACE_MS = 1_000;
 
 async function askToConnect(prompt: ConnectPrompt): Promise<ConnectAnswer> {
   const approval = new ApprovalWindow();
