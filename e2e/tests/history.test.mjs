@@ -242,7 +242,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     }
   });
 
-  test("a Deposit's credit on Slot 24 (a peg-in) is labelled as one, names the main-chain Deposit, and says the operator credited it", async () => {
+  test("a Deposit's credit on Slot 24 (an input with is_pegin) is labelled as one, names the main-chain Deposit, and says the operator credited it", async () => {
     const depositTxid = "9d".repeat(32);
     const credit = {
       txid: "e2".repeat(32),

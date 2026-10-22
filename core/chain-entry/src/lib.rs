@@ -39,7 +39,7 @@ pub struct NetworkEntry<P> {
     /// Treasury (docs/adr/0004).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub activation: Option<IdentityBlock>,
-    /// Parent-chain confirmations before this chain's Slot credits a deposit. Only a chain with a
+    /// Parent-chain confirmations before this chain's Slot credits a Deposit. Only a chain with a
     /// parent has one; without it, the wallet assumes BIP300's 100.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deposit_confirmations: Option<u32>,

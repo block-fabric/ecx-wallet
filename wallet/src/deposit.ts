@@ -6,8 +6,9 @@
 // approval window, and only then is it signed, finalized and broadcast. Each module only ever gets
 // its own key. No Sidechain Server sees the L1 coins.
 //
-// Afterwards the deposit waits: the Slot's L1 confirmations (6 on betanet), then for someone running the Slot's node to
-// import it (crediting isn't automatic on Elements), then it shows on the Slot's server.
+// Afterwards the deposit waits: the Slot's L1 confirmations (6 on betanet), then for someone
+// running the Slot's node to import it (crediting isn't automatic on Elements), then it shows on
+// the Slot's server.
 import { createKeyRouting, type ChainModules, type Keys } from "./accounts";
 import { cacheKey, type SessionCache } from "./cache";
 import { ChainModuleRefusal, type ChainEntry, type ClearView, type DepositCredit, type L1AccountKey, type L1Module, type NetworkEntry } from "./chain-module";
@@ -19,10 +20,10 @@ import { SidechainServerError } from "./sidechain-server";
 import { findTreasury, TreasuryError } from "./treasury";
 
 /** L1 confirmations before a Slot credits a Deposit, when its Chain Entry doesn't say: BIP300's. */
-export const CONFIRMATIONS_TO_CREDIT = 100;
+export const BIP300_DEPOSIT_CONFIRMATIONS = 100;
 
 /** L1 confirmations before the Slot credits a Deposit on this network. */
-export const confirmationsToCredit = (network: NetworkEntry) => network.depositConfirmations ?? CONFIRMATIONS_TO_CREDIT;
+export const confirmationsToCredit = (network: NetworkEntry) => network.depositConfirmations ?? BIP300_DEPOSIT_CONFIRMATIONS;
 
 /** Who the approval window names for a Deposit: the wallet itself asks. */
 export const DEPOSIT_REQUESTER = "This wallet (Deposit from the main chain)";
@@ -293,7 +294,8 @@ export function createDeposits(deps: DepositDeps) {
     /**
      * The Slot's pending Deposits and where each stands: L1 confirmations (from eCash's server), then
      * the wait for the operator, then credited once the Slot's server lists a transaction to the
-     * address whose peg-in input claims the Deposit's txid, confirmed or not. A credited Deposit is reported once, then forgotten.
+     * address with an input claiming the Deposit's txid (`is_pegin`), confirmed or not. A credited
+     * Deposit is reported once, then forgotten.
      */
     async list(slot: number): Promise<DepositStatus[]> {
       const pending = (await deps.store.list()).filter((d) => d.slot === slot).sort((a, b) => b.createdAt - a.createdAt);
@@ -314,7 +316,7 @@ export function createDeposits(deps: DepositDeps) {
             if (confirmations < required) return { ...deposit, state: "confirming", confirmations, required };
             const claim = { txid: deposit.txid, vout: deposit.vout, blockHash: status.blockHash!, address: deposit.address, value: deposit.value };
             if (credits === undefined) return { ...deposit, state: "awaitingCredit", confirmations, claim };
-            // The credit is the transaction to the address whose peg-in input claims this Deposit.
+            // The credit is the transaction to the address with an input claiming this Deposit.
             const credited = (await credits.addressTxs(deposit.address)).some((tx) => tx.vin.some((input) => input.pegin && input.txid === deposit.txid));
             if (!credited) return { ...deposit, state: "awaitingCredit", confirmations, claim, creditServer: credits.url };
             await deps.store.remove(deposit.txid);

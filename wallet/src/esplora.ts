@@ -75,8 +75,8 @@ export interface EsploraOutput {
 
 /**
  * A transaction as Esplora shows it: what it spends (with the spent outputs) and pays. An Elements
- * peg-in input (`pegin`) claims a parent-chain output: its `txid` is the parent chain's, and it has
- * no `prevout`.
+ * input with `pegin` (Esplora's `is_pegin`) claims a Deposit's parent-chain output: its `txid` is
+ * the parent chain's, and it has no `prevout`.
  */
 export interface EsploraTx {
   txid: string;
@@ -307,7 +307,7 @@ export function esploraServer(config: EsploraServerConfig, fetchFn: Fetch): Side
   /**
    * The wallet's view of a transaction: its net change per asset, from the outputs it pays and
    * spends of the watch's scripts; whether it's the wallet's Deposit (an M5 it funded); and whether
-   * it's a Deposit's credit (a peg-in, on a Slot).
+   * it's a Deposit's credit (on a Slot, an input claiming the Deposit).
    */
   function entry(tx: EsploraTx, ours: Set<string>, treasuries: TreasuryScript[], trusted: (tx: EsploraTx) => boolean): HistoryEntry {
     const net = new Map<string, bigint>();

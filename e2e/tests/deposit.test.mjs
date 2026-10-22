@@ -225,7 +225,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       assert.equal(waiting.status, "Waiting for the Elements+ operator to credit it (not automatic)");
       assert.deepEqual(waiting.claim, { txid: depositTxid, vout: "0", block: "ab".repeat(32), address: RECEIVE_0, value: "50000" });
 
-      // Elements transactions, as the Slot's Esplora lists them: one paying the address, then peg-ins.
+      // Elements transactions, as the Slot's Esplora lists them: one paying the address, then Deposits' credits.
       const toReceive0 = (txid, vin) => ({
         txid,
         vin,
@@ -233,7 +233,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
         status: { confirmed: false },
       });
       const pegin = (txid) => ({ txid, vout: 0, prevout: null, is_coinbase: false, is_pegin: true });
-      // The same amount to the address isn't the credit, nor a peg-in of another Deposit.
+      // The same amount to the address isn't the credit, nor another Deposit's credit.
       ESPLORA.addressTxs = {
         [RECEIVE_0]: [
           toReceive0("c0".repeat(32), [{ txid: "d0".repeat(32), vout: 0, prevout: { scriptpubkey: "0014" + "ab".repeat(20), value: 60000, asset: POLICY_ASSET }, is_coinbase: false }]),

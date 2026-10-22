@@ -104,7 +104,7 @@ The API this project defines, for a sidechain with no indexer. Its protocol draf
 - **Over Esplora** (`SidechainServer.history`), the wallet reads `/address/:a/txs` for its 40 watched addresses, merges them by txid and works the rest out itself:
   - "Fee, to yourself" when every output is the wallet's;
   - "Deposit to Slot N" for an M5 it funded to the Treasury script of a Slot it supports;
-  - "Deposit from the main chain" for a transaction with a peg-in input (`is_pegin`), whose `txid` is the main-chain Deposit it credits;
+  - "Deposit from the main chain" for a transaction with an input claiming a Deposit (Esplora's `is_pegin`), whose `txid` is that Deposit's;
   - "+ confidential amounts not shown" for its outputs with no explicit value.
 - **No paging yet** (#36): when an address's list is full (25 confirmed or 50 unconfirmed), the screen says older transactions may not be shown.
 - **Trust needs each input's parent.** Over Esplora the wallet assumes a parent missing from the lists is confirmed. It paid a watched address, whose list has every one of its mempool transactions (up to 50), so only an older confirmed one can be missing.
@@ -145,7 +145,7 @@ The API this project defines, for a sidechain with no indexer. Its protocol draf
 
 1. "n / N" confirmations, N being the Slot's `depositConfirmations` from its Chain Entry (6 on betanet; BIP300's 100 when absent);
 2. waiting for the operator's `importdrivechaindeposit` (the claim arguments are shown);
-3. "credited", once the Slot's server lists a transaction to the address (`/address/:a/txs`) with a peg-in input claiming the Deposit's txid, confirmed or not.
+3. "credited", once the Slot's server lists a transaction to the address (`/address/:a/txs`) with an input claiming the Deposit's txid (`is_pegin`), confirmed or not.
 
 A stuck Deposit (its server doesn't know it, or its status can't be read) offers "Stop tracking": the wallet forgets it, and the transaction is unaffected. Healthy ones offer nothing.
 
