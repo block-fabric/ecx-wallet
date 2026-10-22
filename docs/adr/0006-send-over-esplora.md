@@ -36,4 +36,4 @@ An app with a Grant for `sendTransfer` can have the wallet make a Send: `{ slot,
 
 - Known edge case: if the server evicts a held Send that another node keeps and later mines, a Send built after the release may spend the same coins. One of the two is refused; nothing is lost.
 - Spends a Sidechain App signs through `signTransaction` and broadcasts itself aren't held: the wallet never sees the broadcast. Once the server has the transaction, its mempool view leaves the coins out of `/utxo`.
-- Gaps, each for a later issue: completing a PSET someone else started (swaps); `script` and `data` outputs for `sendTransfer`, once the Decoder explains them; telling `signTransaction` apps which coins are held; issuance; choosing coins by hand; sending the maximum; a fee picker; RBF.
+- Gaps, each for a later issue: completing a PSET someone else started (swaps, #42); `script` and `data` outputs for `sendTransfer`, once the Decoder explains them; telling `signTransaction` apps which coins are held; issuance; choosing coins by hand; sending the maximum; a fee picker; RBF.
