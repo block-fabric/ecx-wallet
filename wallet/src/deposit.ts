@@ -25,24 +25,26 @@ export const BIP300_DEPOSIT_CONFIRMATIONS = 100;
 /** L1 confirmations before the Slot credits a Deposit on this network. */
 export const confirmationsToCredit = (network: NetworkEntry) => network.depositConfirmations ?? BIP300_DEPOSIT_CONFIRMATIONS;
 
-/** How far a block's time may be behind the wall clock (Bitcoin's rules allow about an hour), in seconds. */
-const BLOCK_TIME_SLACK = 2 * 60 * 60;
+/** How many of the Slot's blocks below its tip when a Deposit was made a reorg may replace, the credit with them. */
+const REORG_SLACK = 10;
 
 /**
  * Whether the Slot's server lists the Deposit's credit: a transaction to its address with an input
  * claiming its txid. Pages back through the address's confirmed transactions, stopping at one mined
- * before the Deposit was made, which its credit can't be older than.
+ * below the Slot's tip when the Deposit was made (less `REORG_SLACK`), which its credit can't be.
+ * Heights, not times: after a gap in a BMM chain's blocks, a block's time may be hours in the past.
+ * Without `slotHeight`, it pages to the end.
  */
-export async function isCredited(server: EsploraClient, deposit: PendingDeposit): Promise<boolean> {
+export async function isCredited(server: EsploraClient, deposit: Pick<PendingDeposit, "txid" | "address" | "slotHeight">): Promise<boolean> {
   const claims = (tx: EsploraTx) => tx.vin.some((input) => input.pegin && input.txid === deposit.txid);
-  const madeAt = deposit.createdAt / 1000 - BLOCK_TIME_SLACK;
+  const below = deposit.slotHeight === undefined ? undefined : deposit.slotHeight - REORG_SLACK;
   let page = await server.addressTxs(deposit.address);
   for (;;) {
     if (page.some(claims)) return true;
     const confirmed = page.filter((tx) => tx.status.confirmed);
     const oldest = confirmed.at(-1);
     if (oldest === undefined || confirmed.length < LISTED_CONFIRMED_TXS) return false;
-    if (oldest.status.blockTime !== undefined && oldest.status.blockTime < madeAt) return false;
+    if (below !== undefined && oldest.status.blockHeight! < below) return false;
     page = await server.addressTxsBefore(deposit.address, oldest.txid);
   }
 }
@@ -66,6 +68,8 @@ export interface PendingDeposit {
   asset: string;
   /** Milliseconds since the epoch. */
   createdAt: number;
+  /** The Slot's tip height just before the M5 was broadcast, if its server answered: the credit is above it. */
+  slotHeight?: number;
 }
 
 /** The arguments anyone with the Slot's node can credit the Deposit with (`importdrivechaindeposit`). */
@@ -291,6 +295,8 @@ export function createDeposits(deps: DepositDeps) {
           approval.close();
         }
 
+        const credits = target.network.sidechainServer.api === "esplora" ? deps.esplora(target.entry, target.network) : undefined;
+        const slotHeight = await credits?.tipHeight().catch(() => undefined);
         let txid: string;
         try {
           txid = await server.broadcast(finalized.tx);
@@ -302,7 +308,7 @@ export function createDeposits(deps: DepositDeps) {
           );
         }
         if (txid !== finalized.txid) throw new SidechainServerError(server.url, `${server.url} reported txid ${txid} for transaction ${finalized.txid}.`);
-        await deps.store.put({ slot, chainName: target.entry.name, txid, vout, value: amount, address: destination.address, asset: destination.asset, createdAt: deps.now() });
+        await deps.store.put({ slot, chainName: target.entry.name, txid, vout, value: amount, address: destination.address, asset: destination.asset, createdAt: deps.now(), ...(slotHeight === undefined ? {} : { slotHeight }) });
         return { txid, server: server.url };
       }
     },

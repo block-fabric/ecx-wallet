@@ -131,11 +131,11 @@ describe("the fee rate", async () => {
 
 describe("finding a Deposit's credit", async () => {
   const { isCredited } = await importWallet();
-  const deposit = { txid: "d0".repeat(32), address: "elements1q…", createdAt: 1_792_000_000_000 };
-  const minedAt = deposit.createdAt / 1000;
+  /** Made when the Slot's tip was 5000. */
+  const deposit = { txid: "d0".repeat(32), address: "elements1q…", slotHeight: 5000 };
   const credit = (status) => ({ txid: "c0".repeat(32), vin: [{ txid: deposit.txid, vout: 0, prevout: null, pegin: true }], vout: [], status });
   const other = (n, status) => ({ txid: n.toString(16).padStart(64, "0"), vin: [{ txid: "d1".repeat(32), vout: 0, prevout: null, pegin: true }], vout: [], status });
-  const confirmed = (blockTime) => ({ confirmed: true, blockTime });
+  const at = (blockHeight) => ({ confirmed: true, blockHeight, blockHash: "00".repeat(32) });
   /** An Esplora server whose address lists `txs` (newest first), 25 confirmed at a time; `pages` counts the reads. */
   const server = (txs) => {
     const listed = txs.filter((tx) => tx.status.confirmed);
@@ -150,8 +150,8 @@ describe("finding a Deposit's credit", async () => {
       },
     };
   };
-  const newer = (count) => Array.from({ length: count }, (_, i) => other(i, confirmed(minedAt + 3600)));
-  const older = (count) => Array.from({ length: count }, (_, i) => other(1000 + i, confirmed(minedAt - 3 * 3600)));
+  const newer = (count) => Array.from({ length: count }, (_, i) => other(i, at(5100 - i)));
+  const older = (count) => Array.from({ length: count }, (_, i) => other(1000 + i, at(4900 - i)));
 
   test("is found unconfirmed, on the first page", async () => {
     const s = server([credit({ confirmed: false }), ...newer(30)]);
@@ -160,18 +160,29 @@ describe("finding a Deposit's credit", async () => {
   });
 
   test("is found confirmed under more than a page of newer transactions", async () => {
-    const s = server([...newer(30), credit(confirmed(minedAt + 600)), ...older(30)]);
+    const s = server([...newer(30), credit(at(5001)), ...older(30)]);
     assert.equal(await isCredited(s, deposit), true);
     assert.equal(s.reads.pages, 2);
   });
 
-  test("isn't looked for among transactions mined well before the Deposit, nor past the last page", async () => {
+  test("is found just below the Slot's tip when the Deposit was made, after a reorg there", async () => {
+    const s = server([...newer(24), credit(at(4995)), ...older(30)]);
+    assert.equal(await isCredited(s, deposit), true);
+  });
+
+  test("isn't looked for below the Slot's tip when the Deposit was made, nor past the last page", async () => {
     const s = server([...newer(30), ...older(100)]);
     assert.equal(await isCredited(s, deposit), false);
-    assert.equal(s.reads.pages, 2, "page 2 reaches older transactions: no page 3");
+    assert.equal(s.reads.pages, 2, "page 2 reaches older blocks: no page 3");
     const short = server(newer(10));
     assert.equal(await isCredited(short, deposit), false);
     assert.equal(short.reads.pages, 1);
+  });
+
+  test("without the Slot's height, every page is read", async () => {
+    const s = server([...newer(30), ...older(100), credit(at(4000))]);
+    assert.equal(await isCredited(s, { ...deposit, slotHeight: undefined }), true);
+    assert.equal(s.reads.pages, 6);
   });
 
   test("an input with the Deposit's txid that doesn't claim it isn't its credit", async () => {
