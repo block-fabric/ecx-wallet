@@ -17,7 +17,7 @@ export const QUERIES_AT_ONCE = 20;
 
 /** How many of an address's transactions Esplora lists at once: its mempool's, then its confirmed ones. */
 const LISTED_MEMPOOL_TXS = 50;
-const LISTED_CONFIRMED_TXS = 25;
+export const LISTED_CONFIRMED_TXS = 25;
 
 /** The fee rate's confirmation target, in blocks. */
 const FEE_TARGET = "6";
@@ -140,6 +140,12 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName, cache }:
     return { scriptpubkey, ...(value === undefined ? {} : { value }), ...(asset === undefined ? {} : { asset }) };
   }
 
+  async function transactions(path: string): Promise<EsploraTx[]> {
+    const txs = await getJson(path, "list of transactions");
+    if (!Array.isArray(txs)) throw malformed("list of transactions");
+    return txs.map(transaction);
+  }
+
   function transaction(raw: unknown): EsploraTx {
     const tx = raw as Record<string, unknown>;
     if (typeof tx?.txid !== "string" || !HASH.test(tx.txid) || !Array.isArray(tx.vin) || !Array.isArray(tx.vout)) throw malformed("transaction");
@@ -232,13 +238,12 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName, cache }:
 
     /**
      * The address's transactions, newest first: all of its mempool's (Esplora lists up to 50), then
-     * its latest confirmed ones (up to 25). Older ones would need paging, which the wallet doesn't do.
+     * its latest confirmed ones (up to `LISTED_CONFIRMED_TXS`). Older ones: `addressTxsBefore`.
      */
-    async addressTxs(address: string): Promise<EsploraTx[]> {
-      const txs = await getJson(`/address/${encodeURIComponent(address)}/txs`, "list of transactions");
-      if (!Array.isArray(txs)) throw malformed("list of transactions");
-      return txs.map(transaction);
-    },
+    addressTxs: (address: string) => transactions(`/address/${encodeURIComponent(address)}/txs`),
+
+    /** The address's next `LISTED_CONFIRMED_TXS` confirmed transactions, newest first, after the confirmed `txid`. */
+    addressTxsBefore: (address: string, txid: string) => transactions(`/address/${encodeURIComponent(address)}/txs/chain/${txid}`),
 
     /** The raw transaction, hex. Whoever uses it checks it hashes to `txid`. */
     async txHex(txid: string): Promise<string> {

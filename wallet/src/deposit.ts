@@ -13,7 +13,7 @@ import { createKeyRouting, type ChainModules, type Keys } from "./accounts";
 import { cacheKey, type SessionCache } from "./cache";
 import { ChainModuleRefusal, type ChainEntry, type ClearView, type DepositCredit, type L1AccountKey, type L1Module, type NetworkEntry } from "./chain-module";
 import { ErrorCode, ProviderRpcError } from "./errors";
-import { feeRate, QUERIES_AT_ONCE, type EsploraClient } from "./esplora";
+import { feeRate, LISTED_CONFIRMED_TXS, QUERIES_AT_ONCE, type EsploraClient, type EsploraTx } from "./esplora";
 import { WATCHED_CHANGE_ADDRESSES, WATCHED_RECEIVE_ADDRESSES } from "./pull-path";
 import { rejected, type SignPrompt, type SigningApproval } from "./signing";
 import { SidechainServerError } from "./sidechain-server";
@@ -24,6 +24,28 @@ export const BIP300_DEPOSIT_CONFIRMATIONS = 100;
 
 /** L1 confirmations before the Slot credits a Deposit on this network. */
 export const confirmationsToCredit = (network: NetworkEntry) => network.depositConfirmations ?? BIP300_DEPOSIT_CONFIRMATIONS;
+
+/** How far a block's time may be behind the wall clock (Bitcoin's rules allow about an hour), in seconds. */
+const BLOCK_TIME_SLACK = 2 * 60 * 60;
+
+/**
+ * Whether the Slot's server lists the Deposit's credit: a transaction to its address with an input
+ * claiming its txid. Pages back through the address's confirmed transactions, stopping at one mined
+ * before the Deposit was made, which its credit can't be older than.
+ */
+export async function isCredited(server: EsploraClient, deposit: PendingDeposit): Promise<boolean> {
+  const claims = (tx: EsploraTx) => tx.vin.some((input) => input.pegin && input.txid === deposit.txid);
+  const madeAt = deposit.createdAt / 1000 - BLOCK_TIME_SLACK;
+  let page = await server.addressTxs(deposit.address);
+  for (;;) {
+    if (page.some(claims)) return true;
+    const confirmed = page.filter((tx) => tx.status.confirmed);
+    const oldest = confirmed.at(-1);
+    if (oldest === undefined || confirmed.length < LISTED_CONFIRMED_TXS) return false;
+    if (oldest.status.blockTime !== undefined && oldest.status.blockTime < madeAt) return false;
+    page = await server.addressTxsBefore(deposit.address, oldest.txid);
+  }
+}
 
 /** Who the approval window names for a Deposit: the wallet itself asks. */
 export const DEPOSIT_REQUESTER = "This wallet (Deposit from the main chain)";
@@ -316,9 +338,7 @@ export function createDeposits(deps: DepositDeps) {
             if (confirmations < required) return { ...deposit, state: "confirming", confirmations, required };
             const claim = { txid: deposit.txid, vout: deposit.vout, blockHash: status.blockHash!, address: deposit.address, value: deposit.value };
             if (credits === undefined) return { ...deposit, state: "awaitingCredit", confirmations, required, claim };
-            // The credit is the transaction to the address with an input claiming this Deposit.
-            const credited = (await credits.addressTxs(deposit.address)).some((tx) => tx.vin.some((input) => input.pegin && input.txid === deposit.txid));
-            if (!credited) return { ...deposit, state: "awaitingCredit", confirmations, required, claim, creditServer: credits.url };
+            if (!(await isCredited(credits, deposit))) return { ...deposit, state: "awaitingCredit", confirmations, required, claim, creditServer: credits.url };
             await deps.store.remove(deposit.txid);
             return { ...deposit, state: "credited", creditServer: credits.url };
           } catch (error) {

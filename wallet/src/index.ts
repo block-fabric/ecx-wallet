@@ -109,6 +109,7 @@ export {
   createDeposits,
   BIP300_DEPOSIT_CONFIRMATIONS,
   DEPOSIT_REQUESTER,
+  isCredited,
   type DepositClaim,
   type DepositDeps,
   type Deposits,

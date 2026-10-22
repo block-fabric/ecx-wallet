@@ -145,7 +145,7 @@ The API this project defines, for a sidechain with no indexer. Its protocol draf
 
 1. "n / N" confirmations, N being the Slot's `depositConfirmations` from its Chain Entry (6 on betanet; BIP300's 100 when absent);
 2. waiting for the operator's `importdrivechaindeposit` (the claim arguments are shown);
-3. "credited", once the Slot's server lists a transaction to the address (`/address/:a/txs`) with an input claiming the Deposit's txid (`is_pegin`), confirmed or not.
+3. "credited", once the Slot's server lists a transaction to the address (`/address/:a/txs`) with an input claiming the Deposit's txid (`is_pegin`), confirmed or not. Past the first page it pages back (`/txs/chain/:last`), 25 confirmed at a time, until a page ends in a transaction mined more than two hours before the Deposit was made (`isCredited`).
 
 A stuck Deposit (its server doesn't know it, or its status can't be read) offers "Stop tracking": the wallet forgets it, and the transaction is unaffected. Healthy ones offer nothing.
 

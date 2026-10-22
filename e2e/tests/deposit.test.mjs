@@ -129,6 +129,57 @@ describe("the fee rate", async () => {
   });
 });
 
+describe("finding a Deposit's credit", async () => {
+  const { isCredited } = await importWallet();
+  const deposit = { txid: "d0".repeat(32), address: "elements1q…", createdAt: 1_792_000_000_000 };
+  const minedAt = deposit.createdAt / 1000;
+  const credit = (status) => ({ txid: "c0".repeat(32), vin: [{ txid: deposit.txid, vout: 0, prevout: null, pegin: true }], vout: [], status });
+  const other = (n, status) => ({ txid: n.toString(16).padStart(64, "0"), vin: [{ txid: "d1".repeat(32), vout: 0, prevout: null, pegin: true }], vout: [], status });
+  const confirmed = (blockTime) => ({ confirmed: true, blockTime });
+  /** An Esplora server whose address lists `txs` (newest first), 25 confirmed at a time; `pages` counts the reads. */
+  const server = (txs) => {
+    const listed = txs.filter((tx) => tx.status.confirmed);
+    const reads = { pages: 0 };
+    return {
+      reads,
+      addressTxs: async () => (reads.pages++, [...txs.filter((tx) => !tx.status.confirmed), ...listed.slice(0, 25)]),
+      addressTxsBefore: async (_, txid) => {
+        reads.pages++;
+        const after = listed.findIndex((tx) => tx.txid === txid);
+        return listed.slice(after + 1, after + 26);
+      },
+    };
+  };
+  const newer = (count) => Array.from({ length: count }, (_, i) => other(i, confirmed(minedAt + 3600)));
+  const older = (count) => Array.from({ length: count }, (_, i) => other(1000 + i, confirmed(minedAt - 3 * 3600)));
+
+  test("is found unconfirmed, on the first page", async () => {
+    const s = server([credit({ confirmed: false }), ...newer(30)]);
+    assert.equal(await isCredited(s, deposit), true);
+    assert.equal(s.reads.pages, 1);
+  });
+
+  test("is found confirmed under more than a page of newer transactions", async () => {
+    const s = server([...newer(30), credit(confirmed(minedAt + 600)), ...older(30)]);
+    assert.equal(await isCredited(s, deposit), true);
+    assert.equal(s.reads.pages, 2);
+  });
+
+  test("isn't looked for among transactions mined well before the Deposit, nor past the last page", async () => {
+    const s = server([...newer(30), ...older(100)]);
+    assert.equal(await isCredited(s, deposit), false);
+    assert.equal(s.reads.pages, 2, "page 2 reaches older transactions: no page 3");
+    const short = server(newer(10));
+    assert.equal(await isCredited(short, deposit), false);
+    assert.equal(short.reads.pages, 1);
+  });
+
+  test("an input with the Deposit's txid that doesn't claim it isn't its credit", async () => {
+    const spend = { ...credit({ confirmed: false }), vin: [{ txid: deposit.txid, vout: 0, prevout: { scriptpubkey: "" } }] };
+    assert.equal(await isCredited(server([spend]), deposit), false);
+  });
+});
+
 for (const browserName of BROWSERS) describe(browserName, () => {
   let session;
   let stub;
