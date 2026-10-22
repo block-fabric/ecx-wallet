@@ -6,11 +6,11 @@
 // approval window, and only then is it signed, finalized and broadcast. Each module only ever gets
 // its own key. No Sidechain Server sees the L1 coins.
 //
-// Afterwards the deposit waits: 100 L1 confirmations, then for someone running the Slot's node to
+// Afterwards the deposit waits: the Slot's L1 confirmations (6 on betanet), then for someone running the Slot's node to
 // import it (crediting isn't automatic on Elements), then it shows on the Slot's server.
 import { createKeyRouting, type ChainModules, type Keys } from "./accounts";
 import { cacheKey, type SessionCache } from "./cache";
-import { ChainModuleRefusal, NATIVE_COIN, type ChainEntry, type ClearView, type DepositCredit, type L1AccountKey, type L1Module, type NetworkEntry } from "./chain-module";
+import { ChainModuleRefusal, type ChainEntry, type ClearView, type DepositCredit, type L1AccountKey, type L1Module, type NetworkEntry } from "./chain-module";
 import { ErrorCode, ProviderRpcError } from "./errors";
 import { feeRate, QUERIES_AT_ONCE, type EsploraClient } from "./esplora";
 import { WATCHED_CHANGE_ADDRESSES, WATCHED_RECEIVE_ADDRESSES } from "./pull-path";
@@ -18,8 +18,11 @@ import { rejected, type SignPrompt, type SigningApproval } from "./signing";
 import { SidechainServerError } from "./sidechain-server";
 import { findTreasury, TreasuryError } from "./treasury";
 
-/** L1 confirmations before a Slot credits a Deposit (BIP300's, and the Elements fork's import). */
+/** L1 confirmations before a Slot credits a Deposit, when its Chain Entry doesn't say: BIP300's. */
 export const CONFIRMATIONS_TO_CREDIT = 100;
+
+/** L1 confirmations before the Slot credits a Deposit on this network. */
+export const confirmationsToCredit = (network: NetworkEntry) => network.depositConfirmations ?? CONFIRMATIONS_TO_CREDIT;
 
 /** Who the approval window names for a Deposit: the wallet itself asks. */
 export const DEPOSIT_REQUESTER = "This wallet (Deposit from the main chain)";
@@ -54,7 +57,7 @@ export interface DepositClaim {
 /** Where a pending Deposit stands. Everything but `confirmations` is as the servers report it. */
 export type DepositStatus = PendingDeposit &
   (
-    | { state: "confirming"; confirmations: number }
+    | { state: "confirming"; confirmations: number; required: number }
     | { state: "awaitingCredit"; confirmations: number; claim: DepositClaim; creditServer?: string }
     | { state: "credited"; creditServer: string }
     | { state: "notFound"; server: string }
@@ -252,7 +255,7 @@ export function createDeposits(deps: DepositDeps) {
             chainName: target.entry.name,
             address: destination.address,
             yours: true,
-            confirmations: CONFIRMATIONS_TO_CREDIT,
+            confirmations: confirmationsToCredit(target.network),
           };
           const view = depositView(decoded.view, slot, amount, destination.destination, credit);
           vout = view.outputs.find((o) => o.destination.kind === "deposit")!.index;
@@ -289,8 +292,8 @@ export function createDeposits(deps: DepositDeps) {
 
     /**
      * The Slot's pending Deposits and where each stands: L1 confirmations (from eCash's server), then
-     * the wait for the operator, then credited once the Slot's server reports a confirmed output of
-     * exactly the value at the address. A credited Deposit is reported once, then forgotten.
+     * the wait for the operator, then credited once the Slot's server lists a transaction to the
+     * address whose peg-in input claims the Deposit's txid, confirmed or not. A credited Deposit is reported once, then forgotten.
      */
     async list(slot: number): Promise<DepositStatus[]> {
       const pending = (await deps.store.list()).filter((d) => d.slot === slot).sort((a, b) => b.createdAt - a.createdAt);
@@ -298,6 +301,7 @@ export function createDeposits(deps: DepositDeps) {
       const l1 = esplora(await routing.l1());
       const target = await routing.slot(slot);
       const credits = target.network.sidechainServer.api === "esplora" ? deps.esplora(target.entry, target.network) : undefined;
+      const required = confirmationsToCredit(target.network);
       let tip: Promise<number> | undefined;
 
       return Promise.all(
@@ -305,14 +309,13 @@ export function createDeposits(deps: DepositDeps) {
           try {
             const status = await l1.txStatus(deposit.txid);
             if (status === undefined) return { ...deposit, state: "notFound", server: l1.url };
-            if (!status.confirmed) return { ...deposit, state: "confirming", confirmations: 0 };
+            if (!status.confirmed) return { ...deposit, state: "confirming", confirmations: 0, required };
             const confirmations = (await (tip ??= l1.tipHeight())) - status.blockHeight! + 1;
-            if (confirmations < CONFIRMATIONS_TO_CREDIT) return { ...deposit, state: "confirming", confirmations };
+            if (confirmations < required) return { ...deposit, state: "confirming", confirmations, required };
             const claim = { txid: deposit.txid, vout: deposit.vout, blockHash: status.blockHash!, address: deposit.address, value: deposit.value };
             if (credits === undefined) return { ...deposit, state: "awaitingCredit", confirmations, claim };
-            const credited = (await credits.addressUtxos(deposit.address)).some(
-              (u) => u.confirmed && String(u.value) === deposit.value && (u.asset ?? NATIVE_COIN) === deposit.asset,
-            );
+            // The credit is the transaction to the address whose peg-in input claims this Deposit.
+            const credited = (await credits.addressTxs(deposit.address)).some((tx) => tx.vin.some((input) => input.pegin && input.txid === deposit.txid));
             if (!credited) return { ...deposit, state: "awaitingCredit", confirmations, claim, creditServer: credits.url };
             await deps.store.remove(deposit.txid);
             return { ...deposit, state: "credited", creditServer: credits.url };

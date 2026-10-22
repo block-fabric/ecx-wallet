@@ -54,6 +54,8 @@ export interface NetworkEntry<P = unknown> {
    * Without it, a Deposit to a Slot with no Treasury yet is refused (docs/adr/0004).
    */
   activation?: IdentityBlock;
+  /** Parent-chain confirmations before the Slot credits a Deposit; only under a parent. Absent, BIP300's 100. */
+  depositConfirmations?: number;
   /** Default Sidechain Server. */
   sidechainServer: SidechainServerEntry;
   /** Official App origins. */

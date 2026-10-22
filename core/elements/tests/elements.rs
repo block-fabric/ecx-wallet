@@ -72,6 +72,11 @@ fn slot_24s_betanet_activation_is_pinned() {
 }
 
 #[test]
+fn slot_24s_betanet_deposits_are_credited_after_6_confirmations() {
+    assert_eq!(ecx_elements::network().deposit_confirmations, Some(6));
+}
+
+#[test]
 fn something_that_is_not_a_starter_is_refused() {
     assert!(derive_account("not a mnemonic", 1, 0).is_err());
 }

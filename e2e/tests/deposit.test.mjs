@@ -7,7 +7,7 @@
 // value and script against its txid; the stub indexes them as Esplora would.
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, test } from "node:test";
-import { encodeTx, parseTx, scripthash } from "@ecx/stub-server/bitcoin-tx";
+import { addressScript, encodeTx, parseTx, scripthash } from "@ecx/stub-server/bitcoin-tx";
 import { BROWSERS, importWallet, launchWallet, openWalletPage, serveEsplora, serveL1Esplora, setUpWallet } from "../harness.mjs";
 
 const GENESIS = "a7754ce0debc40baddbd8c47e79d19209685f22c63edaaf8b69cf54116374d7f";
@@ -175,7 +175,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       assert.match(shown.dangerous[0], /only come back through a Withdrawal/);
       assert.match(shown.dangerous[0], /isn't automatic/);
       assert.equal(shown.depositAmount, "0.0005 ECX");
-      assert.equal(shown.deposit, `Deposit 0.0005 ECX to Slot 24 (Elements+). 0.0005 ECX credited to ${RECEIVE_0} after 100 blocks, once the operator imports it.`);
+      assert.equal(shown.deposit, `Deposit 0.0005 ECX to Slot 24 (Elements+). 0.0005 ECX credited to ${RECEIVE_0} after 6 blocks, once the operator imports it.`);
       assert.equal(shown.creditedToYou, true);
       assert.match(shown.treasury, /Treasury: 0\.001 ECX → 0\.0015 ECX/);
       assert.deepEqual(shown.inputs, ["Input 0: 0.001 ECX (Slot 24's Treasury: spent and recreated)", "Input 1: 0.0025 ECX (yours: you sign it)"]);
@@ -211,29 +211,43 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     test("home's Activity tab follows it, showing its txid: confirmations, then the operator's import with the claim, then credited", async () => {
       assert.deepEqual(
         (await readDeposits(session)).map(({ txid, shownTxid, stopTracking, state, status }) => ({ txid, shownTxid, stopTracking, state, status })),
-        [{ txid: depositTxid, shownTxid: depositTxid, stopTracking: false, state: "confirming", status: "0 / 100 confirmations on the main chain" }],
+        [{ txid: depositTxid, shownTxid: depositTxid, stopTracking: false, state: "confirming", status: "0 / 6 confirmations on the main chain" }],
       );
 
       const broadcast = L1.txs.find((t) => parseTx(t.hex).txid === depositTxid);
       Object.assign(broadcast, { confirmed: true, blockHeight: 970950, blockHash: "ab".repeat(32) });
-      L1.tipHeight = 970999;
-      assert.equal((await readDeposits(session))[0].status, "50 / 100 confirmations on the main chain");
+      L1.tipHeight = 970952;
+      assert.equal((await readDeposits(session))[0].status, "3 / 6 confirmations on the main chain");
 
-      L1.tipHeight = 971049;
+      L1.tipHeight = 970955;
       const [waiting] = await readDeposits(session);
       assert.equal(waiting.state, "awaitingCredit");
       assert.equal(waiting.status, "Waiting for the Elements+ operator to credit it (not automatic)");
       assert.deepEqual(waiting.claim, { txid: depositTxid, vout: "0", block: "ab".repeat(32), address: RECEIVE_0, value: "50000" });
 
-      // Another amount at the address isn't the credit.
-      ESPLORA.utxos[RECEIVE_0] = [{ txid: "c0".repeat(32), vout: 0, value: 49000, asset: POLICY_ASSET, confirmed: true }];
+      // Elements transactions, as the Slot's Esplora lists them: one paying the address, then peg-ins.
+      const toReceive0 = (txid, vin) => ({
+        txid,
+        vin,
+        vout: [{ scriptpubkey: addressScript(RECEIVE_0), value: 50000, asset: POLICY_ASSET }],
+        status: { confirmed: false },
+      });
+      const pegin = (txid) => ({ txid, vout: 0, prevout: null, is_coinbase: false, is_pegin: true });
+      // The same amount to the address isn't the credit, nor a peg-in of another Deposit.
+      ESPLORA.addressTxs = {
+        [RECEIVE_0]: [
+          toReceive0("c0".repeat(32), [{ txid: "d0".repeat(32), vout: 0, prevout: { scriptpubkey: "0014" + "ab".repeat(20), value: 60000, asset: POLICY_ASSET }, is_coinbase: false }]),
+          toReceive0("c1".repeat(32), [pegin("d1".repeat(32))]),
+        ],
+      };
       assert.equal((await readDeposits(session))[0].state, "awaitingCredit");
-      ESPLORA.utxos[RECEIVE_0].push({ txid: "c1".repeat(32), vout: 0, value: 50000, asset: POLICY_ASSET, confirmed: true });
+      // The credit counts as soon as the server lists it, before it confirms on the Slot.
+      ESPLORA.addressTxs[RECEIVE_0].push(toReceive0("c2".repeat(32), [pegin(depositTxid)]));
       const [credited] = await readDeposits(session);
       assert.equal(credited.state, "credited");
       assert.match(credited.status, new RegExp(`^Credited, as reported by ${stub.url.replace(/[.]/g, "\\.")}$`));
       assert.deepEqual(await readDeposits(session), [], "reported once, then forgotten");
-      ESPLORA.utxos = {};
+      delete ESPLORA.addressTxs;
     });
 
     test("a pending Deposit to the Slot is followed: the next one spends the Treasury it creates", async () => {

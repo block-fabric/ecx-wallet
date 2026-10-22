@@ -73,10 +73,14 @@ export interface EsploraOutput {
   asset?: string;
 }
 
-/** A transaction as Esplora shows it: what it spends (with the spent outputs) and pays. */
+/**
+ * A transaction as Esplora shows it: what it spends (with the spent outputs) and pays. An Elements
+ * peg-in input (`pegin`) claims a parent-chain output: its `txid` is the parent chain's, and it has
+ * no `prevout`.
+ */
 export interface EsploraTx {
   txid: string;
-  vin: { txid: string; vout: number; prevout: EsploraOutput | null }[];
+  vin: { txid: string; vout: number; prevout: EsploraOutput | null; pegin?: true }[];
   vout: EsploraOutput[];
   status: EsploraTxStatus;
 }
@@ -144,7 +148,8 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName, cache }:
       vin: tx.vin.map((input: Record<string, unknown>) => {
         if (input?.is_coinbase === true) return { txid: "00".repeat(32), vout: 0xffffffff, prevout: null };
         if (typeof input?.txid !== "string" || !HASH.test(input.txid) || !isCount(input.vout)) throw malformed("transaction");
-        return { txid: input.txid, vout: input.vout, prevout: input.prevout === null ? null : output(input.prevout) };
+        const prevout = input.prevout === null ? null : output(input.prevout);
+        return { txid: input.txid, vout: input.vout, prevout, ...(input.is_pegin === true ? { pegin: true as const } : {}) };
       }),
       vout: tx.vout.map(output),
       status: status(tx.status),
@@ -301,7 +306,8 @@ export function esploraServer(config: EsploraServerConfig, fetchFn: Fetch): Side
 
   /**
    * The wallet's view of a transaction: its net change per asset, from the outputs it pays and
-   * spends of the watch's scripts; and whether it's the wallet's Deposit (an M5 it funded).
+   * spends of the watch's scripts; whether it's the wallet's Deposit (an M5 it funded); and whether
+   * it's a Deposit's credit (a peg-in, on a Slot).
    */
   function entry(tx: EsploraTx, ours: Set<string>, treasuries: TreasuryScript[], trusted: (tx: EsploraTx) => boolean): HistoryEntry {
     const net = new Map<string, bigint>();
@@ -323,6 +329,7 @@ export function esploraServer(config: EsploraServerConfig, fetchFn: Fetch): Side
     const depositTo = funded
       ? treasuries.find(({ scriptPubkey }) => tx.vout.some((o, vout) => o.scriptpubkey === scriptPubkey && isM5(tx, vout)))?.slot
       : undefined;
+    const depositFrom = tx.vin.find((input) => input.pegin)?.txid;
     const { confirmed, blockTime } = tx.status;
     return {
       txid: tx.txid,
@@ -333,6 +340,7 @@ export function esploraServer(config: EsploraServerConfig, fetchFn: Fetch): Side
       ...(hidden ? { hidden } : {}),
       ...(toSelf ? { toSelf } : {}),
       ...(depositTo === undefined ? {} : { depositTo }),
+      ...(depositFrom === undefined ? {} : { depositFrom }),
     };
   }
 

@@ -93,10 +93,10 @@ The API this project defines, for a sidechain with no indexer. Its protocol draf
 **What the user sees** (#33): the Activity tabs. Home's merges every chain that's on, with a chip per chain to filter. Each chain's screen has its own.
 
 - **Order:** Deposits in progress first, then "Not yet confirmed", then one section per day (`activityDays`).
-- **Each row** says what the transaction did (`activityKind`: Received, Sent, "Fee, to yourself", "Deposit to <chain>"), and the wallet's net change per asset, fee included. Then its time, or a badge:
+- **Each row** says what the transaction did (`activityKind`: Received, Sent, "Fee, to yourself", "Deposit to <chain>", "Deposit from the main chain"), and the wallet's net change per asset, fee included. Then its time, or a badge:
   - **Pending:** trusted. It spends only the wallet's own coins, each confirmed or from a trusted transaction.
-  - **Unconfirmed:** anything else, with a warning.
-- **Tapping a row** shows its status, when it was mined, the chain and its id, the txid with Copy, and who reported it.
+  - **Unconfirmed:** anything else, with a warning (for a Deposit's credit: the operator credited it, not in a block yet).
+- **Tapping a row** shows its status, when it was mined, the chain and its id, the txid with Copy, a Deposit's credit's main-chain txid, and who reported it.
 
 **How:**
 
@@ -104,6 +104,7 @@ The API this project defines, for a sidechain with no indexer. Its protocol draf
 - **Over Esplora** (`SidechainServer.history`), the wallet reads `/address/:a/txs` for its 40 watched addresses, merges them by txid and works the rest out itself:
   - "Fee, to yourself" when every output is the wallet's;
   - "Deposit to Slot N" for an M5 it funded to the Treasury script of a Slot it supports;
+  - "Deposit from the main chain" for a transaction with a peg-in input (`is_pegin`), whose `txid` is the main-chain Deposit it credits;
   - "+ confidential amounts not shown" for its outputs with no explicit value.
 - **No paging yet** (#36): when an address's list is full (25 confirmed or 50 unconfirmed), the screen says older transactions may not be shown.
 - **Trust needs each input's parent.** Over Esplora the wallet assumes a parent missing from the lists is confirmed. It paid a watched address, whose list has every one of its mempool transactions (up to 50), so only an older confirmed one can be missing.
@@ -142,9 +143,9 @@ The API this project defines, for a sidechain with no indexer. Its protocol draf
 
 **Tracking:** pending Deposits sit in `storage.local` (`deposit:<txid>`) and show under "In progress" on the Activity tabs (`deposit.list`), each with its txid. They go through:
 
-1. "n / 100" confirmations;
+1. "n / N" confirmations, N being the Slot's `depositConfirmations` from its Chain Entry (6 on betanet; BIP300's 100 when absent);
 2. waiting for the operator's `importdrivechaindeposit` (the claim arguments are shown);
-3. "credited", once the Slot's server reports an output of exactly the value.
+3. "credited", once the Slot's server lists a transaction to the address (`/address/:a/txs`) with a peg-in input claiming the Deposit's txid, confirmed or not.
 
 A stuck Deposit (its server doesn't know it, or its status can't be read) offers "Stop tracking": the wallet forgets it, and the transaction is unaffected. Healthy ones offer nothing.
 

@@ -242,6 +242,34 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     }
   });
 
+  test("a Deposit's credit on Slot 24 (a peg-in) is labelled as one, names the main-chain Deposit, and says the operator credited it", async () => {
+    const depositTxid = "9d".repeat(32);
+    const credit = {
+      txid: "e2".repeat(32),
+      vin: [{ txid: depositTxid, vout: 0, prevout: null, is_coinbase: false, is_pegin: true }],
+      vout: [{ scriptpubkey: addressScript(RECEIVE_0), value: 100000, asset: POLICY_ASSET }],
+      status: { confirmed: false },
+    };
+    ESPLORA.addressTxs = { [RECEIVE_0]: [credit] };
+    try {
+      const [entry] = (await readHistory(session, "24")).entries;
+      assert.equal(entry.label, "Deposit from the main chain");
+      assert.deepEqual(entry.amounts, ["+0.001 ECX"]);
+      assert.equal(entry.state, "unconfirmed");
+      assert.equal(entry.warning, "Credited by the chain's operator; not in a block yet");
+
+      const page = await openActivity(session, "24");
+      await page.waitForSelector(`[data-history-entry="${credit.txid}"]`, { timeout: 20_000 });
+      await page.click(`[data-history-entry="${credit.txid}"]`);
+      await page.waitForSelector("[data-activity-details]");
+      const from = await page.evaluate(() => document.querySelector("[data-details-deposit-from]")?.textContent.trim());
+      await closeSettled(page);
+      assert.equal(from, depositTxid);
+    } finally {
+      delete ESPLORA.addressTxs;
+    }
+  });
+
   test("when an address has more transactions than the server lists at once, the list says older ones may not be shown", async () => {
     L1.txs = Array.from({ length: 26 }, (_, i) =>
       tx(`${i}`.padStart(2, "0"), [{ value: 1000 + i, script: addressScript(L1_RECEIVE_0) }], { blockHeight: 970000 + i }),

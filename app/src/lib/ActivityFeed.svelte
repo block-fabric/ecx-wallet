@@ -49,6 +49,7 @@
     sent: "Sent",
     toSelf: "Fee, to yourself",
     deposit: "Deposit",
+    depositCredit: "Deposit from the main chain",
     confidential: "Confidential transaction",
   };
   const ICONS: Record<ActivityKind, "receive" | "send" | "refresh" | "deposit" | "eye_off"> = {
@@ -56,6 +57,7 @@
     sent: "send",
     toSelf: "refresh",
     deposit: "deposit",
+    depositCredit: "deposit",
     confidential: "eye_off",
   };
   function label(entry: HistoryEntry): string {
@@ -110,6 +112,8 @@
     </span>
   {:else if entry.trusted}
     <span class="pill" data-history-status>Pending</span>
+  {:else if entry.depositFrom !== undefined}
+    <span class="pill warn" title="Credited by the chain's operator; not in a block yet" data-history-status>Unconfirmed</span>
   {:else}
     <span class="pill warn" title="Sent by someone else; may still not arrive" data-history-status>Unconfirmed</span>
   {/if}
@@ -192,7 +196,7 @@
     <dl class="facts">
       <dt>Status</dt>
       <dd>
-        {#if entry.confirmed}Confirmed{:else if entry.trusted}Pending{:else}Unconfirmed: sent by someone else, it may still not arrive{/if}
+        {#if entry.confirmed}Confirmed{:else if entry.trusted}Pending{:else if entry.depositFrom !== undefined}Unconfirmed: credited by the chain's operator, not in a block yet{:else}Unconfirmed: sent by someone else, it may still not arrive{/if}
       </dd>
       {#if entry.time !== undefined}<dt>Mined</dt><dd data-details-mined>{minedAt(entry.time)}</dd>{/if}
       <dt>Chain</dt>
@@ -204,6 +208,10 @@
           <Icon name={copied ? "check" : "copy"} size={14} />
         </button>
       </dd>
+      {#if entry.depositFrom !== undefined}
+        <dt>Deposit</dt>
+        <dd class="txid"><code title="The Deposit's transaction on the main chain" data-details-deposit-from>{entry.depositFrom}</code></dd>
+      {/if}
     </dl>
     {#if chain.history?.report}
       <p class="reported" data-details-reported-by>Reported by {chain.history.report.server}. This wallet doesn't verify it.</p>
@@ -273,7 +281,8 @@
   .icon.received {
     color: var(--ok);
   }
-  .icon.deposit {
+  .icon.deposit,
+  .icon.depositCredit {
     color: var(--accent-text);
   }
   .grow {

@@ -71,8 +71,8 @@
               <strong class="small amount">{sats(d.value)}</strong>
             </div>
             {#if d.state === "confirming"}
-              <div class="bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={d.confirmations}>
-                <span style:width="{Math.min(d.confirmations, 100)}%"></span>
+              <div class="bar" role="progressbar" aria-valuemin={0} aria-valuemax={d.required} aria-valuenow={d.confirmations}>
+                <span style:width="{Math.min((d.confirmations / d.required) * 100, 100)}%"></span>
               </div>
             {/if}
             <span class="tiny" class:muted={d.state !== "notFound"} class:bad={d.state === "notFound"} data-deposit-status>{depositState(d)}</span>
@@ -100,7 +100,7 @@
         </li>
       {/each}
     </ul>
-    <p class="muted tiny">Deposits wait 100 main-chain blocks, then the chain's operator credits them. Withdrawals take months.</p>
+    <p class="muted tiny">Deposits wait for main-chain confirmations, then the chain's operator credits them. Withdrawals take months.</p>
   </section>
 {/if}
 
