@@ -15,9 +15,9 @@
   const refused = $derived(slots.flatMap((s) => (s.refused ? [s.refused] : [])));
   const refusedSends = $derived(slots.flatMap((s) => (s.refusedSend ? [{ failed: s.refusedSend, assets: s.info.assets }] : [])));
   /** The main-chain confirmations the listed Deposits wait for, if they all wait for the same. */
-  const depth = $derived.by(() => {
-    const required = new Set(list.flatMap((d) => ("required" in d ? [d.required] : [])));
-    return required.size === 1 ? [...required][0] : undefined;
+  const depositConfirmations = $derived.by(() => {
+    const each = new Set(list.flatMap((d) => ("depositConfirmations" in d ? [d.depositConfirmations] : [])));
+    return each.size === 1 ? [...each][0] : undefined;
   });
   const sats = (value: string) => amountText(value, "", ecx);
 
@@ -76,8 +76,8 @@
               <strong class="small amount">{sats(d.value)}</strong>
             </div>
             {#if d.state === "confirming"}
-              <div class="bar" role="progressbar" aria-valuemin={0} aria-valuemax={d.required} aria-valuenow={d.confirmations}>
-                <span style:width="{Math.min((d.confirmations / d.required) * 100, 100)}%"></span>
+              <div class="bar" role="progressbar" aria-valuemin={0} aria-valuemax={d.depositConfirmations} aria-valuenow={d.confirmations}>
+                <span style:width="{Math.min((d.confirmations / d.depositConfirmations) * 100, 100)}%"></span>
               </div>
             {/if}
             <span class="tiny" class:muted={d.state !== "notFound"} class:bad={d.state === "notFound"} data-deposit-status>{depositState(d)}</span>
@@ -105,7 +105,7 @@
         </li>
       {/each}
     </ul>
-    <p class="muted tiny" data-deposits-note>{depth === undefined ? "Deposits wait for main-chain confirmations" : `Deposits wait ${depth} main-chain blocks`}, then the chain's operator credits them. Withdrawals take months.</p>
+    <p class="muted tiny" data-deposits-note>{depositConfirmations === undefined ? "Deposits wait for main-chain confirmations" : `Deposits wait ${depositConfirmations} main-chain blocks`}, then the chain's operator credits them. Withdrawals take months.</p>
   </section>
 {/if}
 
