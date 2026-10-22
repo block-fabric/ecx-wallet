@@ -14,7 +14,7 @@ import { parseElementsTx } from "./elements-tx.mjs";
  * @typedef {{ identityBlock: { height: number, hash: string }, blocks?: Record<number, string>,
  *   tipHeight?: number, utxos?: Record<string, UtxoFixture[]>, addressTxCounts?: Record<string, number>,
  *   txs?: TxFixture[], addressTxs?: Record<string, object[]>, feeEstimates?: Record<string, number>, refuseBroadcast?: string,
- *   delayMs?: number, txHexOverrides?: Record<string, string>, elements?: boolean,
+ *   delayMs?: number, pathDelayMs?: Record<string, number>, txHexOverrides?: Record<string, string>, elements?: boolean,
  *   txStatuses?: Record<string, { confirmed: boolean, blockHeight?: number, blockHash?: string }>,
  *   broadcastTxid?: string }} EsploraStubConfig
  */
@@ -40,7 +40,8 @@ import { parseElementsTx } from "./elements-tx.mjs";
  *   transaction instead, which it only records in `config.txStatuses` (unconfirmed);
  * - `GET /tx/{txid}/status`: `config.txStatuses[txid]` first, if listed (a test may confirm or
  *   drop a broadcast there).
- * Every answer waits `config.delayMs` (default none), as a slow public server does.
+ * Every answer waits `config.delayMs` (default none), as a slow public server does, or
+ * `config.pathDelayMs[path]` for that path, as a server stuck on one query does.
  */
 export function createEsploraStub(config) {
   /** Every request, in order: its path, or `POST <path>`. */
@@ -178,7 +179,7 @@ export function createEsploraStub(config) {
       setTimeout(() => {
         response.writeHead(status, { "Content-Type": json ? "application/json" : "text/plain" });
         response.end(json ? JSON.stringify(answer) : answer);
-      }, config.delayMs ?? 0);
+      }, config.pathDelayMs?.[pathname] ?? config.delayMs ?? 0);
     });
   });
 

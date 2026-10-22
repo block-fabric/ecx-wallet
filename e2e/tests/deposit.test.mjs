@@ -133,8 +133,8 @@ describe("finding a Deposit's credit", async () => {
   const { isCredited } = await importWallet();
   /** Made when the Slot's tip was 5000. */
   const deposit = { txid: "d0".repeat(32), address: "elements1q…", slotHeight: 5000 };
-  const credit = (status) => ({ txid: "c0".repeat(32), vin: [{ txid: deposit.txid, vout: 0, prevout: null, pegin: true }], vout: [], status });
-  const other = (n, status) => ({ txid: n.toString(16).padStart(64, "0"), vin: [{ txid: "d1".repeat(32), vout: 0, prevout: null, pegin: true }], vout: [], status });
+  const credit = (status) => ({ txid: "c0".repeat(32), vin: [{ txid: deposit.txid, vout: 0, prevout: null, claimsDeposit: true }], vout: [], status });
+  const other = (n, status) => ({ txid: n.toString(16).padStart(64, "0"), vin: [{ txid: "d1".repeat(32), vout: 0, prevout: null, claimsDeposit: true }], vout: [], status });
   const at = (blockHeight) => ({ confirmed: true, blockHeight, blockHash: "00".repeat(32) });
   /** An Esplora server whose address lists `txs` (newest first), 25 confirmed at a time; `pages` counts the reads. */
   const server = (txs) => {
@@ -246,10 +246,19 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       assert.equal(shown.outputs.length, 2, "the Deposit and the change");
       assert.match(shown.outputs[1], /Yours/);
 
-      await approval.click("[data-approve]");
-      const { txid, error } = await outcome(page);
-      assert.equal(error, undefined);
-      depositTxid = txid;
+      // Slot 24's server takes 10 s for its tip height, read after the broadcast: the Deposit doesn't wait for it.
+      ESPLORA.pathDelayMs = { "/blocks/tip/height": 10_000 };
+      try {
+        const approvedAt = Date.now();
+        await approval.click("[data-approve]");
+        const { txid, error } = await outcome(page);
+        assert.equal(error, undefined);
+        assert.ok(Date.now() - approvedAt < 8_000, "done without the Slot's tip height");
+        assert.ok(stub.requests().includes("/blocks/tip/height"));
+        depositTxid = txid;
+      } finally {
+        delete ESPLORA.pathDelayMs;
+      }
       await page.close();
     });
 
@@ -296,17 +305,17 @@ for (const browserName of BROWSERS) describe(browserName, () => {
         vout: [{ scriptpubkey: addressScript(RECEIVE_0), value: 50000, asset: POLICY_ASSET }],
         status: { confirmed: false },
       });
-      const pegin = (txid) => ({ txid, vout: 0, prevout: null, is_coinbase: false, is_pegin: true });
+      const claiming = (txid) => ({ txid, vout: 0, prevout: null, is_coinbase: false, is_pegin: true });
       // The same amount to the address isn't the credit, nor another Deposit's credit.
       ESPLORA.addressTxs = {
         [RECEIVE_0]: [
           toReceive0("c0".repeat(32), [{ txid: "d0".repeat(32), vout: 0, prevout: { scriptpubkey: "0014" + "ab".repeat(20), value: 60000, asset: POLICY_ASSET }, is_coinbase: false }]),
-          toReceive0("c1".repeat(32), [pegin("d1".repeat(32))]),
+          toReceive0("c1".repeat(32), [claiming("d1".repeat(32))]),
         ],
       };
       assert.equal((await readDeposits(session))[0].state, "awaitingCredit");
       // The credit counts as soon as the server lists it, before it confirms on the Slot.
-      ESPLORA.addressTxs[RECEIVE_0].push(toReceive0("c2".repeat(32), [pegin(depositTxid)]));
+      ESPLORA.addressTxs[RECEIVE_0].push(toReceive0("c2".repeat(32), [claiming(depositTxid)]));
       const [credited] = await readDeposits(session);
       assert.equal(credited.state, "credited");
       assert.match(credited.status, new RegExp(`^Credited, as reported by ${stub.url.replace(/[.]/g, "\\.")}$`));

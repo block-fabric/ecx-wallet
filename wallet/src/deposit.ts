@@ -6,7 +6,7 @@
 // approval window, and only then is it signed, finalized and broadcast. Each module only ever gets
 // its own key. No Sidechain Server sees the L1 coins.
 //
-// Afterwards the deposit waits: the Slot's L1 confirmations (6 on betanet), then for someone
+// Afterwards the Deposit waits: the Slot's L1 confirmations (6 on betanet), then for someone
 // running the Slot's node to import it (crediting isn't automatic on Elements), then it shows on
 // the Slot's server.
 import { createKeyRouting, type ChainModules, type Keys } from "./accounts";
@@ -25,8 +25,11 @@ export const BIP300_DEPOSIT_CONFIRMATIONS = 100;
 /** L1 confirmations before the Slot credits a Deposit on this network. */
 export const confirmationsToCredit = (network: NetworkEntry) => network.depositConfirmations ?? BIP300_DEPOSIT_CONFIRMATIONS;
 
-/** How many of the Slot's blocks below its tip when a Deposit was made a reorg may replace, the credit with them. */
+/** How far below the Slot's tip when a Deposit was made a reorg may move its credit, in blocks. */
 const REORG_SLACK = 10;
+
+/** How long a Deposit waits for the Slot's tip height after its broadcast before it's kept without one. */
+const TIP_WAIT_MS = 5_000;
 
 /**
  * Whether the Slot's server lists the Deposit's credit: a transaction to its address with an input
@@ -36,7 +39,7 @@ const REORG_SLACK = 10;
  * Without `slotHeight`, it pages to the end.
  */
 export async function isCredited(server: EsploraClient, deposit: Pick<PendingDeposit, "txid" | "address" | "slotHeight">): Promise<boolean> {
-  const claims = (tx: EsploraTx) => tx.vin.some((input) => input.pegin && input.txid === deposit.txid);
+  const claims = (tx: EsploraTx) => tx.vin.some((input) => input.claimsDeposit && input.txid === deposit.txid);
   const below = deposit.slotHeight === undefined ? undefined : deposit.slotHeight - REORG_SLACK;
   let page = await server.addressTxs(deposit.address);
   for (;;) {
@@ -68,7 +71,10 @@ export interface PendingDeposit {
   asset: string;
   /** Milliseconds since the epoch. */
   createdAt: number;
-  /** The Slot's tip height just before the M5 was broadcast, if its server answered: the credit is above it. */
+  /**
+   * The Slot's tip height just after the M5 was broadcast, if its server answered in time: the
+   * credit, which waits for the M5's L1 confirmations, is in a later block.
+   */
   slotHeight?: number;
 }
 
@@ -295,8 +301,6 @@ export function createDeposits(deps: DepositDeps) {
           approval.close();
         }
 
-        const credits = target.network.sidechainServer.api === "esplora" ? deps.esplora(target.entry, target.network) : undefined;
-        const slotHeight = await credits?.tipHeight().catch(() => undefined);
         let txid: string;
         try {
           txid = await server.broadcast(finalized.tx);
@@ -308,6 +312,12 @@ export function createDeposits(deps: DepositDeps) {
           );
         }
         if (txid !== finalized.txid) throw new SidechainServerError(server.url, `${server.url} reported txid ${txid} for transaction ${finalized.txid}.`);
+        // Only after the broadcast, and not for long: a Slot server that hangs mustn't hold up the M5.
+        const credits = target.network.sidechainServer.api === "esplora" ? deps.esplora(target.entry, target.network) : undefined;
+        const slotHeight = await Promise.race([
+          credits?.tipHeight().catch(() => undefined),
+          new Promise<undefined>((resolve) => setTimeout(resolve, TIP_WAIT_MS)),
+        ]);
         await deps.store.put({ slot, chainName: target.entry.name, txid, vout, value: amount, address: destination.address, asset: destination.asset, createdAt: deps.now(), ...(slotHeight === undefined ? {} : { slotHeight }) });
         return { txid, server: server.url };
       }

@@ -75,12 +75,12 @@ export interface EsploraOutput {
 
 /**
  * A transaction as Esplora shows it: what it spends (with the spent outputs) and pays. An Elements
- * input with `pegin` (Esplora's `is_pegin`) claims a Deposit's parent-chain output: its `txid` is
+ * input with `claimsDeposit` (Esplora's `is_pegin`) claims a Deposit's parent-chain output: its `txid` is
  * the parent chain's, and it has no `prevout`.
  */
 export interface EsploraTx {
   txid: string;
-  vin: { txid: string; vout: number; prevout: EsploraOutput | null; pegin?: true }[];
+  vin: { txid: string; vout: number; prevout: EsploraOutput | null; claimsDeposit?: true }[];
   vout: EsploraOutput[];
   status: EsploraTxStatus;
 }
@@ -155,7 +155,7 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName, cache }:
         if (input?.is_coinbase === true) return { txid: "00".repeat(32), vout: 0xffffffff, prevout: null };
         if (typeof input?.txid !== "string" || !HASH.test(input.txid) || !isCount(input.vout)) throw malformed("transaction");
         const prevout = input.prevout === null ? null : output(input.prevout);
-        return { txid: input.txid, vout: input.vout, prevout, ...(input.is_pegin === true ? { pegin: true as const } : {}) };
+        return { txid: input.txid, vout: input.vout, prevout, ...(input.is_pegin === true ? { claimsDeposit: true as const } : {}) };
       }),
       vout: tx.vout.map(output),
       status: status(tx.status),
@@ -334,7 +334,7 @@ export function esploraServer(config: EsploraServerConfig, fetchFn: Fetch): Side
     const depositTo = funded
       ? treasuries.find(({ scriptPubkey }) => tx.vout.some((o, vout) => o.scriptpubkey === scriptPubkey && isM5(tx, vout)))?.slot
       : undefined;
-    const depositFrom = tx.vin.find((input) => input.pegin)?.txid;
+    const depositFrom = tx.vin.find((input) => input.claimsDeposit)?.txid;
     const { confirmed, blockTime } = tx.status;
     return {
       txid: tx.txid,

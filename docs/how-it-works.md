@@ -106,7 +106,7 @@ The API this project defines, for a sidechain with no indexer. Its protocol draf
   - "Deposit to Slot N" for an M5 it funded to the Treasury script of a Slot it supports;
   - "Deposit from the main chain" for a transaction with an input claiming a Deposit (Esplora's `is_pegin`), whose `txid` is that Deposit's;
   - "+ confidential amounts not shown" for its outputs with no explicit value.
-- **No paging yet** (#36): when an address's list is full (25 confirmed or 50 unconfirmed), the screen says older transactions may not be shown.
+- **No paging yet** (#36): History reads only each address's first page (only finding a Deposit's credit pages back, under Deposit). When an address's list is full (25 confirmed or 50 unconfirmed), the screen says older transactions may not be shown.
 - **Trust needs each input's parent.** Over Esplora the wallet assumes a parent missing from the lists is confirmed. It paid a watched address, whose list has every one of its mempool transactions (up to 50), so only an older confirmed one can be missing.
 
 ## Send
@@ -145,7 +145,7 @@ The API this project defines, for a sidechain with no indexer. Its protocol draf
 
 1. "n / N" confirmations, N being the Slot's `depositConfirmations` from its Chain Entry (6 on betanet; BIP300's 100 when absent);
 2. waiting for the operator's `importdrivechaindeposit` (the claim arguments are shown);
-3. "credited", once the Slot's server lists a transaction to the address (`/address/:a/txs`) with an input claiming the Deposit's txid (`is_pegin`), confirmed or not. Past the first page it pages back (`/txs/chain/:last`), 25 confirmed at a time, until a page ends in a transaction mined below the Slot's tip when the Deposit was sent, less 10 blocks for a reorg (`isCredited`). That height is read just before the broadcast and kept with the Deposit (`slotHeight`); without it, the tracker pages to the end. Heights, not block times: after a gap in a BMM chain's blocks, a block's time may legally be hours in the past.
+3. "credited", once the Slot's server lists a transaction to the address (`/address/:a/txs`) with an input claiming the Deposit's txid (`is_pegin`), confirmed or not. Past the first page it pages back (`/txs/chain/:last`), 25 confirmed at a time, until a page ends in a transaction mined below the Slot's tip when the Deposit was sent, less 10 blocks for a reorg (`isCredited`). That height is read just after the broadcast, waiting at most 5 seconds, and kept with the Deposit (`slotHeight`); without it, the tracker pages to the end. Heights, not block times: after a gap in a BMM chain's blocks, a block's time may legally be hours in the past.
 
 A stuck Deposit (its server doesn't know it, or its status can't be read) offers "Stop tracking": the wallet forgets it, and the transaction is unaffected. Healthy ones offer nothing.
 
