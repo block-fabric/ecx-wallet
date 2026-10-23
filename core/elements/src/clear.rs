@@ -3,6 +3,7 @@
 //!
 //! Hand-written: LWK's `pset_balance` refuses owned explicit inputs and outputs. Whether an input or
 //! output is "yours" is decided only by re-deriving it (`ownership.rs`), never by the requester.
+use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use elements_miniscript::elements::pset::{Input, Output, PartiallySignedTransaction};
@@ -10,7 +11,8 @@ use elements_miniscript::elements::script::Instruction;
 use bech32::{segwit, Fe32, Hrp};
 use elements_miniscript::bitcoin::base58;
 use elements_miniscript::elements::hashes::Hash;
-use elements_miniscript::elements::{Address, AssetId, Txid};
+use elements_miniscript::elements::secp256k1_zkp::ZERO_TWEAK;
+use elements_miniscript::elements::{Address, AssetId, ContractHash, Txid};
 use serde::Serialize;
 
 use crate::account::address_params;
@@ -40,6 +42,42 @@ pub struct ClearInput {
     pub amount: String,
     /// Re-derives to this Starter's keys: `sign` signs it.
     pub yours: bool,
+    /// The new asset this input issues, if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub issuance: Option<ClearIssuance>,
+}
+
+/// A new issuance, as the Decoder derives it: the asset and token ids come from the input's
+/// outpoint and the contract hash, never from the requester. Amounts are in base units: the
+/// precision is in the contract, which `contract` carries only if the request's evidence supplied it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearIssuance {
+    pub asset: AssetAmount,
+    /// The reissuance token, if any. Explicit, so it can never reissue (docs/adr/0008).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token: Option<AssetAmount>,
+    /// The committed contract's hash, display hex, if it commits to one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contract_hash: Option<String>,
+    /// The contract itself, if the request's evidence supplied it and it checked out.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contract: Option<ClearContract>,
+}
+
+/// A contract that hashes to the committed hash and follows the registry's rules (`evidence.rs`).
+/// Committed is not true: the issuer chose these fields, and the domain isn't checked.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearContract {
+    pub name: String,
+    pub ticker: String,
+    /// Decimal places the issuer asks wallets to show.
+    pub precision: u8,
+    /// What the contract claims; this wallet doesn't check it.
+    pub domain: String,
+    /// The issuer key is the key of the address this wallet gives out.
+    pub issuer_yours: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -89,7 +127,11 @@ pub enum DangerousMode {
 }
 
 /// The Clear View of `pset` (already through rules 5-7), or why the Decoder can't give one.
-pub(crate) fn clear_view(pset: &PartiallySignedTransaction, classified: &Classified) -> Result<ClearView, String> {
+pub(crate) fn clear_view(
+    pset: &PartiallySignedTransaction,
+    classified: &Classified,
+    contracts: &BTreeMap<usize, ClearContract>,
+) -> Result<ClearView, String> {
     let global = &pset.global;
     if !global.xpub.is_empty() || global.tx_data.tx_modifiable.is_some() || global.elements_tx_modifiable_flag.is_some() {
         return Err("it has global fields the Decoder doesn't explain.".into());
@@ -103,8 +145,9 @@ pub(crate) fn clear_view(pset: &PartiallySignedTransaction, classified: &Classif
 
     let mut dangerous_modes = vec![];
     let mut inputs = vec![];
-    for input in &classified.inputs {
+    for (input, pset_input) in classified.inputs.iter().zip(pset.inputs()) {
         let index = input.index;
+        let issuance = issuance(pset_input, contracts.get(&index)).map_err(|why| format!("input {index} {why}"))?;
         if input.unproven_claim {
             return Err(format!("input {index} claims one of this wallet's keys, but it doesn't re-derive."));
         }
@@ -113,7 +156,7 @@ pub(crate) fn clear_view(pset: &PartiallySignedTransaction, classified: &Classif
             Sighash::Known(sighash) => dangerous_modes.push(DangerousMode::NonDefaultSighash { input: index, sighash }),
             Sighash::Unknown(sighash) => return Err(format!("input {index} asks for unknown sighash type 0x{sighash:02x}.")),
         }
-        inputs.push(ClearInput { index, asset: input.asset.clone(), amount: input.amount.to_string(), yours: input.yours });
+        inputs.push(ClearInput { index, asset: input.asset.clone(), amount: input.amount.to_string(), yours: input.yours, issuance });
     }
 
     let mut outputs = vec![];
@@ -143,6 +186,33 @@ pub(crate) fn clear_view(pset: &PartiallySignedTransaction, classified: &Classif
     Ok(ClearView { dangerous_modes, inputs, outputs, fee: AssetAmount { asset: policy_asset.clone(), amount: fee.to_string() } })
 }
 
+/// The new issuance `input` makes, if any. A reissuance can't be explained: an explicit token can
+/// never reissue, since consensus wants the spent token blinded (docs/adr/0008).
+fn issuance(input: &Input, contract: Option<&ClearContract>) -> Result<Option<ClearIssuance>, String> {
+    if !input.has_issuance() {
+        return Ok(None);
+    }
+    if !is_new_issuance(input) {
+        return Err("reissues an asset.".into());
+    }
+    let (asset, token) = input.issuance_ids();
+    let amount = |asset: AssetId, amount: u64| AssetAmount { asset: asset.to_string(), amount: amount.to_string() };
+    Ok(Some(ClearIssuance {
+        asset: amount(asset, input.issuance_value_amount.unwrap_or(0)),
+        token: input.issuance_inflation_keys.filter(|n| *n > 0).map(|n| amount(token, n)),
+        contract_hash: input
+            .issuance_asset_entropy
+            .filter(|hash| *hash != [0; 32])
+            .map(|hash| ContractHash::from_byte_array(hash).to_string()),
+        contract: contract.cloned(),
+    }))
+}
+
+/// True if `input` issues a new asset: an issuance whose blinding nonce is null.
+pub(crate) fn is_new_issuance(input: &Input) -> bool {
+    input.has_issuance() && input.issuance_blinding_nonce.is_none_or(|nonce| nonce == ZERO_TWEAK)
+}
+
 /// True if `input` sets nothing beyond what a Clear View shows or `sign` needs. Unknown and
 /// proprietary fields are reported (and make the request Blind) before this.
 fn only_explained_input_fields(input: &Input) -> bool {
@@ -151,6 +221,10 @@ fn only_explained_input_fields(input: &Input) -> bool {
         previous_output_index: 0,
         sequence: None,
         witness_utxo: None,
+        issuance_value_amount: None,
+        issuance_inflation_keys: None,
+        issuance_asset_entropy: None,
+        issuance_blinding_nonce: None,
         bip32_derivation: Default::default(),
         sighash_type: None,
         partial_sigs: Default::default(),

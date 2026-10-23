@@ -11,6 +11,7 @@
     type ClearView,
     type DangerousMode,
   } from "$lib/background";
+  import { formatAllDecimals } from "@ecx/wallet";
   import { shortAsset } from "$lib/asset";
   import Icon from "$lib/Icon.svelte";
   import { amountText } from "$lib/unit.svelte";
@@ -70,6 +71,16 @@
   function amount(a: AssetAmount): string {
     const named = assets.some((n) => n.id === a.asset);
     return named ? amountText(a.amount, a.asset, assets) : `${amountText(a.amount, a.asset, assets)} (Unknown asset ${shortAsset(a.asset)})`;
+  }
+  /** What to call each asset the request itself issues, by id: the new asset and its token. */
+  function issuedAssetLabels(view: ClearView): Map<string, string> {
+    const labels = new Map<string, string>();
+    for (const { issuance } of view.inputs) {
+      if (issuance === undefined) continue;
+      labels.set(issuance.asset.asset, "New asset");
+      if (issuance.token) labels.set(issuance.token.asset, "Reissuance token");
+    }
+    return labels;
   }
   /** Slots by their chains' names ("Elements+"), as the Chain Entries name them. */
   const chainNames = (slots: number[]) => slots.map((s) => chains.find((c) => c.id === s)?.name ?? `Slot ${s}`).join(", ");
@@ -228,6 +239,12 @@
   {@const view = prompt.decoded.view}
   {@const labels = prompt.hints?.outputLabels ?? {}}
   {@const dangerous = view.dangerousModes.length > 0}
+  {@const issuances = view.inputs.flatMap((i) => (i.issuance ? [i.issuance] : []))}
+  {@const contractAssets = issuances.flatMap((i) =>
+    i.contract ? [{ id: i.asset.asset, ticker: i.contract.ticker, name: i.contract.name, decimals: i.contract.precision }] : [],
+  )}
+  {@const shownAssets = [...assets, ...contractAssets]}
+  {@const issuedLabels = issuedAssetLabels(view)}
   <main class="screen" data-approval-ready data-clear-view>
     {#if dangerous}
       <section class="danger-box" role="alert">
@@ -244,6 +261,45 @@
     </div>
     {@render requester(prompt.origin, prompt.chain)}
 
+    {#each issuances as issuance (issuance.asset.asset)}
+      <section class="card stack" data-issuance>
+        <h2>Creates a new asset</h2>
+        <div data-issued-asset>
+          {#if issuance.contract}
+            {formatAllDecimals(issuance.asset.amount, issuance.contract.precision, issuance.contract.ticker)} ({issuance.contract.name}), new asset
+          {:else}
+            {amountText(issuance.asset.amount, issuance.asset.asset, assets)} base units of new asset
+          {/if}
+          <code title={issuance.asset.asset}>{shortAsset(issuance.asset.asset)}</code>
+        </div>
+        {#if issuance.token}
+          <div data-issued-token>
+            {amountText(issuance.token.amount, issuance.token.asset, assets)} base units of its reissuance token
+            <code title={issuance.token.asset}>{shortAsset(issuance.token.asset)}</code>.
+            <span class="muted small">This wallet's tokens are unblinded, so they can't issue more of the asset.</span>
+          </div>
+        {/if}
+        {#if issuance.contract}
+          {@const c = issuance.contract}
+          <div class="small" data-contract>
+            Its contract, checked against the hash it commits to: {c.name} ({c.ticker}), {c.precision} decimal places. The issuer chose these.
+            Claims the domain <code>{c.domain}</code> (not checked by this wallet).
+          </div>
+          {#if c.issuerYours}
+            <span class="badge ok" data-issuer-yours><Icon name="check" size={14} /> Issuer key: yours</span>
+          {:else}
+            <span class="badge" data-issuer-not-yours>Issuer key: not yours</span>
+          {/if}
+        {/if}
+        <div class="small" data-contract-hash>
+          {#if issuance.contractHash}Contract hash <code>{issuance.contractHash}</code>{:else}No contract{/if}
+        </div>
+        {#if !issuance.contract}
+          <p class="muted small">The amount is in base units: the asset's precision is in its contract, which the request didn't include.</p>
+        {/if}
+      </section>
+    {/each}
+
     <section class="stack">
       <h2>Outputs</h2>
       <ol class="stack">
@@ -254,9 +310,9 @@
                 <span class="amount" data-deposit-amount>{coin(output.destination.deposit)}</span>
               {:else}
                 {@const named = assets.some((n) => n.id === output.asset)}
-                <span class="amount">{amountText(output.amount, output.asset, assets)}</span>
+                <span class="amount">{amountText(output.amount, output.asset, shownAssets)}</span>
                 {#if !named}
-                  <span class="muted small">Unknown asset <code title={output.asset}>{shortAsset(output.asset)}</code></span>
+                  <span class="muted small">{issuedLabels.get(output.asset) ?? "Unknown asset"} <code title={output.asset}>{shortAsset(output.asset)}</code></span>
                 {/if}
               {/if}
               <span class="index muted small">Output {output.index}</span>
@@ -338,6 +394,8 @@
   </main>
 {:else if prompt.kind === "sign" && prompt.decoded.kind === "blind"}
   {@const facts = prompt.decoded.verifiableFacts}
+  {@const leaving = facts.totalLeaving.filter((a) => BigInt(a.amount) > 0n)}
+  {@const comingIn = facts.totalLeaving.filter((a) => BigInt(a.amount) < 0n).map((a) => ({ ...a, amount: a.amount.slice(1) }))}
   <main class="screen" data-approval-ready data-blind>
     <div class="blind-banner" role="alert">
       <h1><Icon name="eye_off" size={24} /> Blind Signing</h1>
@@ -367,8 +425,12 @@
         </dd>
         <dt>Total leaving your wallet</dt>
         <dd>
-          {#each facts.totalLeaving as a (a.asset)}<div data-total-leaving>{amount(a)}</div>{:else}<div>Nothing</div>{/each}
+          {#each leaving as a (a.asset)}<div data-total-leaving>{amount(a)}</div>{:else}<div>Nothing</div>{/each}
         </dd>
+        {#if comingIn.length > 0}
+          <dt>Coming into your wallet</dt>
+          <dd>{#each comingIn as a (a.asset)}<div data-coming-in>{amount(a)}</div>{/each}</dd>
+        {/if}
         <dt>Fee</dt>
         <dd>{#each facts.fee as a (a.asset)}<div data-fee>{amount(a)}</div>{:else}<div>None stated</div>{/each}</dd>
         {#if facts.unknownFields.length > 0}

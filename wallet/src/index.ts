@@ -81,6 +81,7 @@ export {
 export {
   SidechainServerError,
   type HistoryEntry,
+  type Issuance,
   type ReportedHistory,
   type ReportedState,
   type SidechainServer,
@@ -118,7 +119,7 @@ export {
   type DepositStore,
   type PendingDeposit,
 } from "./deposit";
-export { formatAmount, parseAmount, totalAcrossChains, type TotalPart } from "./amounts";
+export { formatAllDecimals, formatAmount, parseAmount, totalAcrossChains, type TotalPart } from "./amounts";
 export { createSettings, UNITS, type Settings, type Unit } from "./settings";
 export { qrMatrix } from "./qr";
 export { activityDays, activityKind, localDay, type ActivityItem, type ActivityKind } from "./activity";

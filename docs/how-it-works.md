@@ -93,7 +93,7 @@ The API this project defines, for a sidechain with no indexer. Its protocol draf
 **What the user sees** (#33): the Activity tabs. Home's merges every chain that's on, with a chip per chain to filter. Each chain's screen has its own.
 
 - **Order:** Deposits in progress first, then "Not yet confirmed", then one section per day (`activityDays`).
-- **Each row** says what the transaction did (`activityKind`: Received, Sent, "Fee, to yourself", "Deposit to <chain>", "Deposit from the main chain"), and the wallet's net change per asset, fee included. Then its time, or a badge:
+- **Each row** says what the transaction did (`activityKind`: Received, Sent, "Fee, to yourself", "Deposit to <chain>", "Deposit from the main chain", "Asset issuance", "Asset reissuance"), and the wallet's net change per asset, fee included. Then its time, or a badge:
   - **Pending:** trusted. It spends only the wallet's own coins, each confirmed or from a trusted transaction.
   - **Unconfirmed:** anything else, with a warning (for a Deposit's credit: the operator credited it, not in a block yet).
 - **Tapping a row** shows its status, when it was mined, the chain and its id, the txid with Copy, a Deposit's credit's main-chain txid, and who reported it.
@@ -102,6 +102,7 @@ The API this project defines, for a sidechain with no indexer. Its protocol draf
 
 - History is read only when a tab is first opened: `history.reported` per chain, in parallel. This session's last one (`history.cached`) shows while it refreshes. A chain that fails says so with Retry; the others still show.
 - **Over Esplora** (`SidechainServer.history`), the wallet reads `/address/:a/txs` for its 40 watched addresses, merges them by txid and works the rest out itself:
+  - "Asset issuance" (or "Asset reissuance") when an input of the wallet's issues an asset (Esplora's `issuance` on Elements), ahead of "Fee, to yourself";
   - "Fee, to yourself" when every output is the wallet's;
   - "Deposit to Slot N" for an M5 it funded to the Treasury script of a Slot it supports;
   - "Deposit from the main chain" for a transaction with an input claiming a Deposit (Esplora's `is_pegin`), whose `txid` is that Deposit's;
@@ -191,7 +192,7 @@ The handler checks a request in this order:
 1. **The envelope:** unknown MAJOR version → 4200, unknown fields are ignored, expired → -32602.
 2. **The Grant:** Slot and method → 4100.
 3. **The Slot's Chain Module's `check`:** a wrong ELIP-101 genesis, any confidential input or output, or inputs without `witness_utxo` → -32602. This needs no Starter, so it runs before any unlock prompt.
-4. **`decode`**, after unlocking: an input without `bip32_derivation` that doesn't spend the address `getAddresses` gives out, or a PSET with no input of the wallet's, → -32602 (ADR 0007). Otherwise a Clear View, or Blind with the facts the module can verify. Blind needs the Grant's Blind Signing opt-in (4100 without it).
+4. **`decode`**, after unlocking: an input without `bip32_derivation` that doesn't spend the address `getAddresses` gives out, or a PSET with no input of the wallet's, → -32602 (ADR 0007). Otherwise a Clear View, or Blind with the facts the module can verify. Blind needs the Grant's Blind Signing opt-in (4100 without it). A new issuance is Clear: the window shows the asset and token ids the Decoder derives, in base units, and the contract hash. With the contract in the request's `evidence` (`{ assetContract: { "<input>": "<contract JSON>" } }`), the module checks it against the committed hash and the registry's rules, and the window shows the amount in its ticker and precision; evidence that doesn't check out → -32602 (ADR 0009). A reissuance stays Blind (ADR 0008). Blind facts list what leaves the wallet and, separately, what comes into it: the module returns a single per-asset `totalLeaving`, and the window shows its negative amounts, without the sign, under "Coming into your wallet".
 
 There is one approval window per request. It asks to unlock first if the wallet is locked, then shows the request. `sign` returns the same PSET with signatures on the inputs that re-derive to the Starter, and nothing else added: an input spending the given-out address gets no `bip32_derivation` entry written back.
 

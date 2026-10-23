@@ -53,6 +53,9 @@ function readClearView(approval) {
       })),
       fee: text(document.querySelector("[data-fee]")),
       summary: text(document.querySelector("[data-hint-summary]")),
+      issuance: text(document.querySelector("[data-issuance]")),
+      contract: text(document.querySelector("[data-contract]")),
+      issuerYours: document.querySelector("[data-issuer-yours]") !== null,
     };
   });
 }
@@ -100,6 +103,49 @@ for (const browserName of BROWSERS) describe(browserName, () => {
 
     await approval.click("[data-approve]");
     assert.deepEqual(await signing, { result: PSETS.clear.signed });
+  });
+
+  test("a new issuance is a Clear View, signed without the Blind opt-in, naming the asset and token the wallet derives", async () => {
+    const signing = signTransaction(page, signingRequest(PSETS.issuance.payload));
+    const approval = await session.waitForApprovalWindow();
+    const shown = await readClearView(approval);
+
+    assert.equal(shown.clearView, true);
+    assert.deepEqual(shown.dangerous, [], "issuing costs only the fee");
+    assert.match(shown.issuance, /^Creates a new asset 1,000,000 base units of new asset \S+ 1 base units of its reissuance token \S+\. .*can't issue more.* Contract hash [0-9a-f]{64} /);
+    const [asset, token, change] = shown.outputs;
+    assert.match(asset.text, /^1,000,000 New asset /);
+    assert.match(token.text, /^1 Reissuance token /);
+    assert.match(change.text, /^0\.00099 ECX\b/);
+    assert.ok(asset.yours && token.yours && change.yours, "all back to the address getAddresses gave out");
+
+    await approval.click("[data-approve]");
+    assert.deepEqual(await signing, { result: PSETS.issuance.signed });
+  });
+
+  test("an issuance with its contract as evidence is shown in the contract's units, with the issuer key checked", async () => {
+    const { payload, signed, contract } = PSETS.issuanceWithContract;
+    const signing = signTransaction(page, signingRequest(payload, { evidence: { assetContract: { 0: contract } } }));
+    const approval = await session.waitForApprovalWindow();
+    const shown = await readClearView(approval);
+
+    assert.equal(shown.clearView, true);
+    assert.match(shown.issuance, /^Creates a new asset 0\.01000000 EXA \(Example Asset\), new asset /, "every decimal place the contract gives");
+    assert.match(shown.contract, /Example Asset \(EXA\), 8 decimal places\. .*Claims the domain dex\.example \(not checked by this wallet\)/);
+    assert.equal(shown.issuerYours, true, "the issuer key is the getAddresses address's");
+    assert.match(shown.outputs[0].text, /^0\.01 EXA New asset /);
+
+    await approval.click("[data-approve]");
+    assert.deepEqual(await signing, { result: signed });
+  });
+
+  test("an issuance whose contract evidence doesn't match its committed hash is refused with -32602", async () => {
+    const { payload, contract } = PSETS.issuanceWithContract;
+    const other = contract.replace('"EXA"', '"EXB"');
+    const answer = await signTransaction(page, signingRequest(payload, { evidence: { assetContract: { 0: other } } }));
+    assert.equal(answer.error?.code, -32602, answer.error?.message);
+    assert.match(answer.error?.message, /isn't the one its issuance commits to/);
+    assert.equal((await session.approvalWindows()).length, 0);
   });
 
   test("dangerous modes come above everything else; a withdrawal is described as irreversible and slow", async () => {
