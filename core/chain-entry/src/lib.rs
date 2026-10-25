@@ -66,8 +66,8 @@ pub struct IdentityBlock {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AssetEntry {
-    /// The asset id, lowercase display hex as servers report it; empty for the root's native coin,
-    /// which has no id.
+    /// The asset id, lowercase display hex as servers report it; empty for the chain's native coin,
+    /// which its server reports without one (docs/adr/0005).
     pub id: String,
     pub ticker: String,
     pub name: String,
@@ -137,9 +137,6 @@ impl<P> ChainEntry<P> {
         let chain = &self.name;
         for (i, asset) in network.assets.iter().enumerate() {
             let id = &asset.id;
-            if id.is_empty() && network.parent.is_some() {
-                return Err(format!("{chain}'s {name}: only the root chain's native coin has no asset id"));
-            }
             if !id.is_empty() && !is_lower_hex_32(id) {
                 return Err(format!("{chain}'s {name}: asset {id} isn't 32 bytes of lowercase hex"));
             }
@@ -201,11 +198,12 @@ mod tests {
     }
 
     #[test]
-    fn a_named_asset_is_an_asset_id_or_the_roots_native_coin() {
-        let child = || entry(Some(24), Some("ecash:betanet"));
+    fn a_named_asset_is_an_asset_id_or_the_chains_native_coin() {
+        let child = || entry(Some(46), Some("ecash:betanet"));
         assert!(with_assets(child(), vec![asset(&"5a".repeat(32), true)]).check().is_ok());
         assert!(with_assets(entry(None, None), vec![asset("", true)]).check().is_ok());
-        assert!(with_assets(child(), vec![asset("", true)]).check().is_err(), "only the root's coin has no asset id");
+        assert!(with_assets(child(), vec![asset("", true)]).check().is_ok(), "a child chain's own coin has no asset id either");
+        assert!(with_assets(child(), vec![asset("", true), asset("", false)]).check().is_err(), "a chain has one native coin");
         assert!(with_assets(child(), vec![asset("5a", false)]).check().is_err());
         assert!(with_assets(child(), vec![asset(&"5A".repeat(32), false)]).check().is_err(), "lowercase hex, as servers report it");
     }
