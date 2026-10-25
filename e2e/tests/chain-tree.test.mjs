@@ -15,15 +15,16 @@ const L1_CHANGE_0 = "bc1q8c6fshw2dlwun7ekn9qwf37cu2rn755upcp6el";
 
 const wallet = await importWallet();
 const load = async (file) => wallet.loadChainModule(await readFile(path.join(DIST.chromium, file)));
-const [l1, elements, vault] = await Promise.all([
+const [l1, elements, flush, vault] = await Promise.all([
   load("l1.wasm"),
   load("elements.wasm"),
+  load("flush.wasm"),
   readFile(path.join(DIST.chromium, "vault.wasm")).then(wallet.loadVaultModule),
 ]);
 const L1_ACCOUNT_KEY = vault.l1AccountKey(ABANDON, "");
 
 describe("the bundled Chain Entries", () => {
-  const entries = [l1.chainEntry(), elements.chainEntry()];
+  const entries = [l1.chainEntry(), elements.chainEntry(), flush.chainEntry()];
 
   test("each network has exactly one root, the main chain (eCash), with neither a Slot nor a parent", () => {
     for (const name of ["betanet"]) {
@@ -57,6 +58,20 @@ describe("the bundled Chain Entries", () => {
       height: 967680,
       hash: "00000000000000030101ba5cfea54b22becc79f95dc6040beb76e01dd9d04042",
     });
+  });
+
+  test("Flush is Slot 46, identified by its own genesis, and its ECX is its native coin", () => {
+    const entry = flush.chainEntry();
+    assert.equal(entry.slot, 46);
+    assert.deepEqual(entry.networks.betanet.identityBlock, { height: 0, hash: "7d66b10e351e5ad86c562ba761b5476f75c6f1b9f13aa7cf469df3a8d5701b75" });
+    assert.equal(entry.networks.betanet.sidechainServer.api, "flush");
+    assert.deepEqual(entry.networks.betanet.assets.find((a) => a.ecx)?.id, "", "the empty id, as eCash's (docs/adr/0005)");
+  });
+
+  test("every bundled Slot is one the wallet ships a module for, and no two share a Slot", () => {
+    const slots = entries.filter((e) => e.slot !== undefined).map((e) => e.slot);
+    assert.deepEqual(slots, [...new Set(slots)]);
+    assert.deepEqual(slots.sort((a, b) => a - b), [...wallet.SUPPORTED_SLOTS].sort((a, b) => a - b));
   });
 });
 
@@ -106,6 +121,7 @@ describe("key routing", () => {
   test("each module refuses the other's key", () => {
     assert.throws(() => l1.deriveAccount(SLOT_24_STARTER, { receive: 1 }), /invalid L1 Account Key/);
     assert.throws(() => elements.deriveAccount(L1_ACCOUNT_KEY, { receive: 1 }), /Starter/);
+    assert.throws(() => flush.deriveAccount(L1_ACCOUNT_KEY, { receive: 1 }), /invalid Starter/);
   });
 
   test("a chain nested under another Slot gets no key", async () => {

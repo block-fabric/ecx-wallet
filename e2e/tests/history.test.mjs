@@ -8,7 +8,9 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, test } from "node:test";
 import { addressScript, encodeTx, parseTx } from "@ecx/stub-server/bitcoin-tx";
-import { BROWSERS, homeSettled, launchWallet, openWalletPage, serveEsplora, serveL1Esplora, setUpWallet } from "../harness.mjs";
+import { BROWSERS, homeSettled, importWallet, launchWallet, openWalletPage, serveEsplora, serveL1Esplora, setUpWallet } from "../harness.mjs";
+
+const { HISTORY_PAGES } = await importWallet();
 
 const GENESIS = "a7754ce0debc40baddbd8c47e79d19209685f22c63edaaf8b69cf54116374d7f";
 const L1_FORK_BLOCK = { height: 967680, hash: "00000000000000030101ba5cfea54b22becc79f95dc6040beb76e01dd9d04042" };
@@ -296,12 +298,14 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     }
   });
 
-  test("when an address has more transactions than the server lists at once, the list says older ones may not be shown", async () => {
-    L1.txs = Array.from({ length: 26 }, (_, i) =>
-      tx(`${i}`.padStart(2, "0"), [{ value: 1000 + i, script: addressScript(L1_RECEIVE_0) }], { blockHeight: 970000 + i }),
+  test("when an address has more transactions than the wallet reads pages of, the list says older ones may not be shown", async () => {
+    // Esplora lists 25 confirmed at once; the wallet reads HISTORY_PAGES older pages, then stops.
+    const read = 25 * (HISTORY_PAGES + 1);
+    L1.txs = Array.from({ length: read + 1 }, (_, i) =>
+      tx(i.toString(16).padStart(2, "0"), [{ value: 1025 - read + i, script: addressScript(L1_RECEIVE_0) }], { blockHeight: 970000 + i }),
     );
     const shown = await readHistory(session, "l1");
-    assert.equal(shown.entries.length, 25, "Esplora's latest 25");
+    assert.equal(shown.entries.length, read, "the latest pages, newest first");
     assert.deepEqual(shown.entries[0].amounts, ["+0.00001025 ECX"]);
     assert.equal(shown.more, "Older Main chain transactions may not be shown.");
   });

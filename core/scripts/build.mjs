@@ -3,8 +3,8 @@
 //
 //   node scripts/build.mjs
 //
-// The e2e build (e2e/scripts/build.mjs) sets $ECX_ELEMENTS_CHAIN_ENTRY and $ECX_L1_CHAIN_ENTRY
-// (the Chain Entries elements.wasm and l1.wasm embed), $ECX_CORE_DIST (instead of core/dist/) and
+// The e2e build (e2e/scripts/build.mjs) sets $ECX_ELEMENTS_CHAIN_ENTRY, $ECX_L1_CHAIN_ENTRY and
+// $ECX_FLUSH_CHAIN_ENTRY (the Chain Entries the Chain Modules embed), $ECX_CORE_DIST (instead of core/dist/) and
 // $CARGO_TARGET_DIR.
 //
 // Needs the pinned Rust toolchain (rust-toolchain.toml; rustup installs it) with the

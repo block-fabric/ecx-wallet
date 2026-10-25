@@ -3,7 +3,7 @@
 // from the same sources, so build-output.test can check the two builds differ only there.
 //
 //   e2e/dist/<module>-chain-entry.json   the shipped Chain Entry with the stub as betanet's server
-//   e2e/dist/core/                        core modules; elements.wasm and l1.wasm embed those
+//   e2e/dist/core/                        core modules; l1.wasm, elements.wasm and flush.wasm embed those
 //   e2e/dist/extension/chromium/, firefox/
 //
 // Run after the shipped build (it reuses the app build): the root `pnpm test` does.
@@ -16,11 +16,14 @@ import { fileURLToPath } from "node:url";
 export const E2E_SIDECHAIN_SERVER = { api: "esplora", url: "http://127.0.0.1:24024" };
 /** eCash betanet's server in the e2e build: another Esplora stub, on its own port. */
 export const E2E_L1_SERVER = { api: "esplora", url: "http://127.0.0.1:24000" };
+/** Slot 46's (Flush) betanet server in the e2e build: the Esplora stub in Flush mode, on its own port. */
+export const E2E_FLUSH_SERVER = { api: "flush", url: "http://127.0.0.1:24046" };
 
 /** Per module: its Chain Entry's env var for `core/<module>/build.rs`, its .wasm and its e2e server. */
 export const E2E_SERVERS = {
   l1: { env: "ECX_L1_CHAIN_ENTRY", wasm: "l1.wasm", server: E2E_L1_SERVER },
   elements: { env: "ECX_ELEMENTS_CHAIN_ENTRY", wasm: "elements.wasm", server: E2E_SIDECHAIN_SERVER },
+  flush: { env: "ECX_FLUSH_CHAIN_ENTRY", wasm: "flush.wasm", server: E2E_FLUSH_SERVER },
 };
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");

@@ -63,10 +63,12 @@ function splitManifest(manifest) {
 }
 
 for (const target of Object.keys(DIST)) {
-  test(`${target}: the shipped build reaches eCash's and Slot 24's betanet servers, and nothing else`, async () => {
+  test(`${target}: the shipped build reaches eCash's, Slot 24's and Slot 46's betanet servers, and nothing else`, async () => {
     const { hostPermissions, connectSrc } = splitManifest(JSON.parse(await readFile(path.join(DIST[target], "manifest.json"), "utf8")));
-    assert.deepEqual(hostPermissions, ["https://esplora.beta.ecash.ninja/*", "https://explorer.bitnames.info/*"]);
-    assert.equal(connectSrc, "connect-src 'self' https://esplora.beta.ecash.ninja https://explorer.bitnames.info");
+    // Slot 46's is a placeholder until it has an explorer (core/flush/src/chain_entry.rs).
+    const servers = ["https://esplora.beta.ecash.ninja", "https://explorer.bitnames.info", "https://flush-slot46.invalid"];
+    assert.deepEqual(hostPermissions, servers.map((s) => `${s}/*`));
+    assert.equal(connectSrc, `connect-src 'self' ${servers.join(" ")}`);
   });
 
   test(`${target}: the e2e build differs from the shipped build only in the Sidechain Servers`, async () => {
