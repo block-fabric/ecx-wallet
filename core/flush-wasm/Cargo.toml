@@ -1,0 +1,16 @@
+[package]
+name = "ecx-flush-wasm"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "Thin C-ABI bindings: the Flush Chain Module as flush.wasm."
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ecx-flush = { path = "../flush" }
+ecx-wasm-abi = { path = "../abi" }
+serde = { version = "=1.0.229" }
+serde_json = { version = "=1.0.154" }

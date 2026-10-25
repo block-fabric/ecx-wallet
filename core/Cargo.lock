@@ -296,6 +296,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "ecx-flush"
+version = "0.0.0"
+dependencies = [
+ "bip39",
+ "bitcoin",
+ "ecx-chain-entry",
+ "secp256k1",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ecx-flush-wasm"
+version = "0.0.0"
+dependencies = [
+ "ecx-flush",
+ "ecx-wasm-abi",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ecx-l1"
 version = "0.0.0"
 dependencies = [

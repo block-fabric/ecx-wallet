@@ -29,6 +29,7 @@ export const MODULES = [
   { crate: "ecx-vault-wasm", file: "vault.wasm" },
   { crate: "ecx-elements-wasm", file: "elements.wasm" },
   { crate: "ecx-l1-wasm", file: "l1.wasm" },
+  { crate: "ecx-flush-wasm", file: "flush.wasm" },
 ];
 
 const run = (cmd, args, env = {}) =>
