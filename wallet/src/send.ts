@@ -5,10 +5,26 @@
 // the server build it instead (pull-path.ts).
 //
 // Coins a broadcast Send spent are held back from later ones until it confirms, or until the server
-// has forgotten it for HOLD_BLOCKS blocks: the server may not list the spend in its mempool yet.
+// has forgotten it for HOLD_BLOCKS blocks: the server may not list the spend in its mempool yet. On
+// Flush "confirms" means its block is anchored (esplora.ts, `CONFIRMED_AT`).
+//
+// A Chain Module whose format is `psbt` (Flush) builds from whole transactions, as L1's Deposits do:
+// the wallet fetches each coin's, and the module reads its value from it, never from the server.
 import { canSend, createKeyRouting, type ChainModules, type KeyedChain, type Keys } from "./accounts";
 import { cacheKey, type SessionCache } from "./cache";
-import { ChainModuleRefusal, type AssetAmount, type BuiltTransfer, type ChainEntry, type ModuleTransferOrder, type NetworkEntry, type Starter, type TransferOutput } from "./chain-module";
+import {
+  ChainModuleRefusal,
+  NATIVE_COIN,
+  type AssetAmount,
+  type BuiltTransfer,
+  type ChainEntry,
+  type ModuleTransferOrder,
+  type NetworkEntry,
+  type ReportedCoin,
+  type Starter,
+  type TransferOutput,
+  type WholeTxCoin,
+} from "./chain-module";
 import { ErrorCode, ProviderRpcError } from "./errors";
 import { feeRate, QUERIES_AT_ONCE, type EsploraClient } from "./esplora";
 import { checkedOrder, isTransferAskedFor, WATCHED_CHANGE_ADDRESSES, WATCHED_RECEIVE_ADDRESSES, type PullPath, type SendResult } from "./pull-path";
@@ -72,7 +88,7 @@ export function createSends(deps: SendDeps) {
 
   function esplora(target: KeyedChain<Starter>): EsploraClient | undefined {
     const { api } = target.network.sidechainServer;
-    if (api !== "esplora") return undefined;
+    if (api !== "esplora" && api !== "flush") return undefined;
     if (!canSend(target.module.declare().capabilities, target.network)) {
       throw refusal(`This wallet can't send on ${target.entry.name}: its Chain Module doesn't build transfers.`);
     }
@@ -96,8 +112,10 @@ export function createSends(deps: SendDeps) {
   }
 
   /**
-   * The account's spendable coins: explicit, confirmed or from a trusted transaction (unless the
-   * history may have left some out), and not held back.
+   * The account's spendable coins: explicit and holding something, confirmed or from a trusted
+   * transaction (unless the history may have left some out), and not held back. An output with no
+   * asset is the chain's own coin. One of value 0 holds nothing to send: on Flush it's a token's
+   * output or an empty fee output, which a Send must never spend.
    */
   async function spendableCoins(slot: number, target: KeyedChain<Starter>, server: EsploraClient, key: Starter) {
     const account = target.module.deriveAccount(key, { receive: WATCHED_RECEIVE_ADDRESSES, change: WATCHED_CHANGE_ADDRESSES });
@@ -108,7 +126,9 @@ export function createSends(deps: SendDeps) {
         ...(await Promise.all(
           addresses.slice(i, i + QUERIES_AT_ONCE).map(async ({ address, chain, index }) =>
             (await server.addressUtxos(address)).flatMap((u) =>
-              u.value === undefined || u.asset === undefined ? [] : [{ txid: u.txid, vout: u.vout, asset: u.asset, value: String(u.value), chain, index, confirmed: u.confirmed }],
+              u.value === undefined || u.value === 0
+                ? []
+                : [{ txid: u.txid, vout: u.vout, asset: u.asset ?? NATIVE_COIN, value: String(u.value), chain, index, confirmed: u.confirmed }],
             ),
           ),
         )),
@@ -125,6 +145,17 @@ export function createSends(deps: SendDeps) {
       .filter((u) => (u.confirmed || trusted.has(u.txid)) && !held.has(`${u.txid}:${u.vout}`))
       .map(({ confirmed: _, ...coin }) => coin);
     return { coins, account };
+  }
+
+  /** `coins` as whole transactions, for a `psbt` module. Each is fetched once; the module checks what it holds. */
+  async function wholeTxCoins(server: EsploraClient, coins: ReportedCoin[]): Promise<WholeTxCoin[]> {
+    const txids = [...new Set(coins.map((c) => c.txid))];
+    const hex = new Map<string, string>();
+    for (let i = 0; i < txids.length; i += QUERIES_AT_ONCE) {
+      const batch = txids.slice(i, i + QUERIES_AT_ONCE);
+      (await Promise.all(batch.map((txid) => server.txHex(txid)))).forEach((tx, j) => hex.set(batch[j], tx));
+    }
+    return coins.map(({ txid, vout, chain, index }) => ({ tx: hex.get(txid)!, vout, chain, index }));
   }
 
   /** The first change address nothing has paid yet; the last one once all are used. */
@@ -179,13 +210,20 @@ export function createSends(deps: SendDeps) {
           server.tipHeight(),
         ]);
         tipHeight = tip;
+        const wholeTxs = target.module.declare().binding.format === "psbt";
         const moduleOrder: ModuleTransferOrder = {
-          coins,
+          coins: wholeTxs ? await wholeTxCoins(server, coins) : coins,
           outputs: checked.outputs,
           feeRate: feeRate(estimates),
           changeIndex: await changeIndex(server, account.change),
         };
         built = await refusing(async () => target.module.buildTransfer(moduleOrder, key));
+        // The module names what it spends by the transactions it was given: a server that sent another
+        // transaction than the one it listed would have the wrong coins held back.
+        const offered = new Set(coins.map((c) => `${c.txid}:${c.vout}`));
+        if (!built.spent.every((s) => offered.has(`${s.txid}:${s.vout}`))) {
+          throw new SidechainServerError(server.url, `The Sidechain Server at ${server.url} sent a transaction that isn't one it listed. Nothing was sent.`);
+        }
         await refusing(async () => target.module.check(built.pset));
 
         const decoded = await refusing(async () => target.module.decode(built.pset, await target.key()));

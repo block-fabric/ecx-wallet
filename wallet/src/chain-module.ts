@@ -26,8 +26,8 @@ export interface Declaration {
   capabilities: string[];
 }
 
-/** The protocol the wallet speaks to a Sidechain Server (docs/adr/0002). */
-export type ServerApi = "ecx-v0" | "esplora";
+/** The protocol the wallet speaks to a Sidechain Server (docs/adr/0002; `flush`: docs/adr/0012). */
+export type ServerApi = "ecx-v0" | "esplora" | "flush";
 
 /** A network's default Sidechain Server: where it is and which Server API it speaks. */
 export interface SidechainServerEntry {
@@ -319,10 +319,34 @@ export interface ChainModule<K extends ChainKey = Starter> {
   assetContract(asset: string, issuance: { txid: string; vout: number }, contract: string): CheckedContract;
 }
 
+/** One of the account's coins as its server reports it: what a PSET module (Elements) builds from. */
+export interface ReportedCoin {
+  txid: string;
+  vout: number;
+  asset: string;
+  value: string;
+  chain: 0 | 1;
+  index: number;
+}
+
+/**
+ * One of the account's coins as the whole transaction holding it (hex): what a PSBT module (Flush)
+ * builds from, as L1's Deposits do. It reads the value from the transaction, which the server can't alter.
+ */
+export interface WholeTxCoin {
+  tx: string;
+  vout: number;
+  chain: 0 | 1;
+  index: number;
+}
+
 /** What to send, and what to build it from (a Chain Module's `TransferOrder`). */
 export interface ModuleTransferOrder {
-  /** The account's explicit coins to choose from: confirmed or trusted, none held back. */
-  coins: { txid: string; vout: number; asset: string; value: string; chain: 0 | 1; index: number }[];
+  /**
+   * The account's coins to choose from: confirmed or trusted, none held back. As reported for a
+   * module whose format is `pset`, as whole transactions for one whose format is `psbt`.
+   */
+  coins: ReportedCoin[] | WholeTxCoin[];
   outputs: TransferOutput[];
   /** Sats per 1000 vbytes. */
   feeRate: number;
@@ -331,7 +355,7 @@ export interface ModuleTransferOrder {
 
 /** One payment of a transfer. `to` is tagged so scripts and data can join addresses later. */
 export interface TransferOutput {
-  /** Hex asset id. */
+  /** Hex asset id, or NATIVE_COIN for the chain's own coin. */
   asset: string;
   /** Base units, as a decimal string. */
   amount: string;
@@ -340,7 +364,7 @@ export interface TransferOutput {
 
 /** A transfer `buildTransfer` built. */
 export interface BuiltTransfer {
-  /** Base64, unsigned. */
+  /** Base64, unsigned: a PSET, or a PSBT from a module whose format is `psbt`. */
   pset: string;
   /** The coins it spends. */
   spent: { txid: string; vout: number }[];

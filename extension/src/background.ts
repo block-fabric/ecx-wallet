@@ -11,6 +11,7 @@ import {
   createChainModules,
   createDeposits,
   esploraClient,
+  esploraConfig,
   createL1Module,
   createProviderHandler,
   createPullPath,
@@ -420,12 +421,8 @@ const pullPath = createPullPath({
   cache: sessionCache,
 });
 
-/** A client for a network's default server, which speaks Esplora. */
-const esplora = (entry: ChainEntry, network: NetworkEntry) =>
-  esploraClient(
-    { url: network.sidechainServer.url, identityBlock: network.identityBlock, chainName: entry.name, cache: sessionCache },
-    (...args) => fetch(...args),
-  );
+/** A client for a network's default server, which speaks Esplora (Flush's included). */
+const esplora = (entry: ChainEntry, network: NetworkEntry) => esploraClient(esploraConfig(entry, network, sessionCache), (...args) => fetch(...args));
 
 // Deposits: the L1 module builds the M5 from the wallet's own coins, over eCash's Esplora.
 const deposits = createDeposits({

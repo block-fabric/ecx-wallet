@@ -65,7 +65,7 @@ fn flush_is_slot_46_identified_by_its_own_genesis() {
     assert_eq!(betanet.identity_block.hash, "7d66b10e351e5ad86c562ba761b5476f75c6f1b9f13aa7cf469df3a8d5701b75");
     assert_eq!(betanet.activation, None, "Slot 46 isn't active on betanet yet");
     assert_eq!(betanet.deposit_confirmations, Some(2));
-    assert_eq!(betanet.sidechain_server.api, ServerApi::Esplora);
+    assert_eq!(betanet.sidechain_server.api, ServerApi::Flush);
     let p = &betanet.params.address_params;
     assert_eq!((p.p2pkh_prefix, p.p2sh_prefix, p.bech_hrp.as_str()), (0, 5, "bflx"));
 }

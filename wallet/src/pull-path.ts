@@ -6,7 +6,7 @@
 // review as any other.
 import { createKeyRouting, type ChainModules, type KeyedChain, type Keys } from "./accounts";
 import { cacheKey, type SessionCache } from "./cache";
-import type { AssetAmount, ChainEntry, ChainKey, ClearView, NetworkEntry, Starter } from "./chain-module";
+import { NATIVE_COIN, type AssetAmount, type ChainEntry, type ChainKey, type ClearView, type NetworkEntry, type Starter } from "./chain-module";
 import { ErrorCode, ProviderRpcError } from "./errors";
 import { SidechainServerError, type HistoryEntry, type SidechainServer, type TransferOrder, type TreasuryScript, type WatchData } from "./sidechain-server";
 import { parseSigningRequest, type SigningRequest } from "./signing-request";
@@ -35,6 +35,8 @@ export interface ChainReport {
   balances: AssetAmount[];
   /** What's on its way in, unconfirmed: shown apart, never spent. */
   unconfirmed: AssetAmount[];
+  /** When the chain's last block was mined (seconds since the epoch), if it has stalled. */
+  stalledSince?: number;
   /** When the server reported it, in milliseconds since the epoch. */
   readAt: number;
 }
@@ -71,7 +73,9 @@ export function checkedOrder(order: TransferOrder): TransferOrder {
   return {
     outputs: outputs.map(({ asset, amount, to }, i) => {
       const which = outputs.length > 1 ? ` (recipient ${i + 1})` : "";
-      if (typeof asset !== "string" || !/^[0-9a-f]{64}$/.test(asset)) throw new ProviderRpcError(ErrorCode.InvalidParams, `Choose an asset${which}.`);
+      if (typeof asset !== "string" || !(asset === NATIVE_COIN || /^[0-9a-f]{64}$/.test(asset))) {
+        throw new ProviderRpcError(ErrorCode.InvalidParams, `Choose an asset${which}.`);
+      }
       if (typeof amount !== "string" || !/^[1-9][0-9]*$/.test(amount)) {
         throw new ProviderRpcError(ErrorCode.InvalidParams, `The amount must be a whole number of base units${which}.`);
       }
@@ -124,8 +128,8 @@ export function createPullPath(deps: PullPathDeps) {
 
   async function reported<K extends ChainKey>(target: ChainServer<K>): Promise<ChainReport> {
     const { chain, server } = target;
-    const { balances, unconfirmed } = await server.state(await watch(target));
-    const report = { chain, server: server.url, balances, unconfirmed, readAt: deps.now() };
+    const { balances, unconfirmed, stalledSince } = await server.state(await watch(target));
+    const report = { chain, server: server.url, balances, unconfirmed, ...(stalledSince === undefined ? {} : { stalledSince }), readAt: deps.now() };
     await deps.cache?.set(cacheKey.balance(chain, server.url), report);
     return report;
   }

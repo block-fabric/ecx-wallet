@@ -53,6 +53,8 @@ export {
   type Binding,
   type BuiltTransfer,
   type ModuleTransferOrder,
+  type ReportedCoin,
+  type WholeTxCoin,
   type TransferOutput,
   type ChainEntry,
   type ChainKey,
@@ -92,9 +94,9 @@ export {
   type TransferOrder,
   type WatchData,
 } from "./sidechain-server";
-export { sidechainServer } from "./server-api";
+export { esploraConfig, sidechainServer } from "./server-api";
 export { standardSidechainServer } from "./standard-sidechain-api";
-export { esploraServer, type EsploraServerConfig } from "./esplora";
+export { CONFIRMED_AT, esploraServer, FLUSH_STALL_SECONDS, HISTORY_PAGES, type EsploraServerConfig, type Finality } from "./esplora";
 export {
   createPullPath,
   WATCHED_CHANGE_ADDRESSES,

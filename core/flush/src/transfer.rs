@@ -30,8 +30,11 @@ const SEQUENCE: Sequence = Sequence::ENABLE_RBF_NO_LOCKTIME;
 /// Node relay policy, so not a Chain Entry value.
 const DUST_RELAY_FEE: u64 = 3000;
 
-/// Flush Core's `DEFAULT_MIN_RELAY_TX_FEE`, sats per 1000 vbytes: below it, nothing is relayed.
-const MIN_RELAY_FEE: u64 = 100;
+/// The lowest fee rate a Send pays, sats per 1000 vbytes: 1 sat/vB. Flush relays from 0.1
+/// (`DEFAULT_MIN_RELAY_TX_FEE`), and its explorer's `/fee-estimates` reports that floor while blocks
+/// have room, but Flush Core's own wallet pays 20. Provisional: the fee rate third-party wallets
+/// should use was asked of Flush's developer on 2026-10-25 (#56).
+const MIN_FEE_RATE: u64 = 1000;
 
 /// What to send, and what to build it from.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -40,7 +43,7 @@ pub struct TransferOrder {
     /// The account's coins to choose from (the wallet's rule: confirmed or trusted, none held back).
     pub coins: Vec<Coin>,
     pub outputs: Vec<Payment>,
-    /// Sats per 1000 vbytes.
+    /// Sats per 1000 vbytes; a Send pays at least 1000.
     pub fee_rate: u64,
     /// The change address's index (the account's first unused one).
     pub change_index: u32,
@@ -131,9 +134,7 @@ pub fn build_transfer(order_json: &str, starter: &str) -> Result<Built, Refusal>
     if order.outputs.is_empty() {
         return Err(malformed("A transfer needs at least one output."));
     }
-    if order.fee_rate < MIN_RELAY_FEE {
-        return Err(malformed(format!("A fee rate of {} sat/kvB is below what Flush relays ({MIN_RELAY_FEE}).", order.fee_rate)));
-    }
+    let fee_rate = order.fee_rate.max(MIN_FEE_RATE);
 
     let mut payments = vec![];
     let mut need = 0u64;
@@ -192,7 +193,7 @@ pub fn build_transfer(order_json: &str, starter: &str) -> Result<Built, Refusal>
         for input in &mut signed.input {
             input.witness = Witness::from_slice(&[vec![0u8; 72], vec![0u8; 33]]);
         }
-        (signed.weight().to_wu().div_ceil(4) * order.fee_rate).div_ceil(1000)
+        (signed.weight().to_wu().div_ceil(4) * fee_rate).div_ceil(1000)
     };
 
     let mut total = 0u64;

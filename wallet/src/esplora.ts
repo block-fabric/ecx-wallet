@@ -1,6 +1,8 @@
 // The wallet's client for a Sidechain Server that speaks Esplora (docs/adr/0002): the REST API of
 // Blockstream's electrs, limited to the endpoints mempool's electrs fork also serves. Esplora knows
 // nothing of watches: the wallet asks for each watched address's outputs and adds them up itself.
+// Flush's explorer (Server API `flush`, docs/adr/0012) is mempool's fork plus `/flush/blocks`: a
+// block there counts as confirmed only once an eCash anchor covers it.
 //
 // `esploraClient` is the API itself, endpoint by endpoint, each answer checked for shape (Deposit
 // uses it directly on eCash's server); `esploraServer` is the pull path's view of it.
@@ -26,6 +28,31 @@ const FALLBACK_FEE_RATE = 1;
 /** sat/vB the rate never goes below (besides the server's own 1008-block floor). */
 const MIN_FEE_RATE = 0.1;
 
+/** How many older pages of an address's confirmed transactions the history reads, past the first. */
+export const HISTORY_PAGES = 3;
+
+/**
+ * How settled a block is on Flush, as `/flush/blocks` reports it: `soft` until an eCash anchor
+ * covers it (another anchor can replace any number of soft blocks), `anchored` by one, `final` by 3.
+ */
+export type Finality = "soft" | "anchored" | "final";
+const FINALITIES: readonly Finality[] = ["soft", "anchored", "final"];
+
+/**
+ * The finality at which the wallet counts a Flush block as confirmed. Provisional: whether wallets
+ * should wait for `final` was asked of Flush's developer on 2026-10-25 (#56).
+ */
+export const CONFIRMED_AT: Finality = "anchored";
+
+/** Block hashes `/flush/blocks` takes at once. */
+const FINALITY_BATCH = 30;
+
+/**
+ * Seconds without a block after which Flush counts as stalled: 20 of its 15-second slots. Its own
+ * `getposinfo.stalled` stayed false through a real halt (#55), so the tip's age is the signal.
+ */
+export const FLUSH_STALL_SECONDS = 300;
+
 /** The fee rate, in sats per 1000 vB: the 6-block estimate, never below the 1008-block one or 0.1. */
 export function feeRate(estimates: Record<string, number> | undefined): number {
   const target = estimates?.[FEE_TARGET] ?? FALLBACK_FEE_RATE;
@@ -41,6 +68,12 @@ export interface EsploraServerConfig {
   chainName: string;
   /** Where a passed identity check is remembered for the session. */
   cache?: SessionCache;
+  /** The server reports how final a block is (`/flush/blocks`): a block counts as confirmed only from `CONFIRMED_AT`. */
+  finality?: boolean;
+  /** Seconds without a block after which the chain counts as stalled; never, if absent. */
+  stallAfter?: number;
+  /** Milliseconds since the epoch. */
+  now?: () => number;
 }
 
 /** An unspent output, as Esplora lists it for an address or a script. */
@@ -92,7 +125,7 @@ const HEX = /^[0-9a-f]*$/;
 const HASH = /^[0-9a-f]{64}$/;
 const isCount = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) >= 0;
 
-export function esploraClient({ url: baseUrl, identityBlock, chainName, cache }: EsploraServerConfig, fetchFn: Fetch) {
+export function esploraClient({ url: baseUrl, identityBlock, chainName, cache, finality = false }: EsploraServerConfig, fetchFn: Fetch) {
   const url = baseUrl.replace(/\/+$/, "");
   const malformed = (what: string) => new SidechainServerError(url, `The Sidechain Server at ${url} sent a malformed ${what}.`);
 
@@ -102,9 +135,17 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName, cache }:
     return { status: answer.status, ok: answer.ok, body: await answer.text().catch(() => "") };
   }
 
+  /** The server's reason, as plain text (Blockstream), `{"error": …}` (mempool's fork), or an HTML page's status alone. */
   function refused({ status, body }: { status: number; body: string }): SidechainServerError {
-    const reason = body.trim().slice(0, 200) || `HTTP ${status}`;
-    return new SidechainServerError(url, `The Sidechain Server at ${url} refused: ${reason}`);
+    const text = body.trim();
+    let reason = text.startsWith("<") ? "" : text;
+    try {
+      const error = (JSON.parse(text) as Record<string, unknown>)?.error;
+      if (typeof error === "string") reason = error;
+    } catch {
+      // Not JSON: the text itself.
+    }
+    return new SidechainServerError(url, `The Sidechain Server at ${url} refused: ${reason.slice(0, 200) || `HTTP ${status}`}`);
   }
 
   /** A GET's body. */
@@ -141,10 +182,39 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName, cache }:
     return { scriptpubkey, ...(value === undefined ? {} : { value }), ...(asset === undefined ? {} : { asset }) };
   }
 
-  async function transactions(path: string): Promise<EsploraTx[]> {
-    const txs = await getJson(path, "list of transactions");
-    if (!Array.isArray(txs)) throw malformed("list of transactions");
-    return txs.map(transaction);
+  /** A list of transactions with their statuses as the server reports them. */
+  function transactionList(body: unknown): EsploraTx[] {
+    if (!Array.isArray(body)) throw malformed("list of transactions");
+    return body.map(transaction);
+  }
+
+  const transactions = async (path: string) => settled(transactionList(await getJson(path, "list of transactions")));
+
+  /** How the server pages an address's older transactions, once known: Blockstream's or mempool's. */
+  let paging: "chain" | "afterTxid" | undefined;
+
+  /**
+   * The address's next page of confirmed transactions after the confirmed `txid`, statuses as the
+   * server reports them. Blockstream's electrs pages with `/txs/chain/:txid`; mempool's fork 404s
+   * there and pages with `?after_txid=` (and answers [] for a `txid` it doesn't list).
+   */
+  async function olderTxs(address: string, txid: string): Promise<EsploraTx[]> {
+    const base = `/address/${encodeURIComponent(address)}/txs`;
+    if (paging !== "afterTxid") {
+      const answer = await response(`${base}/chain/${txid}`);
+      if (answer.ok) {
+        paging = "chain";
+        try {
+          return transactionList(JSON.parse(answer.body));
+        } catch (error) {
+          if (error instanceof SidechainServerError) throw error;
+          throw malformed("list of transactions");
+        }
+      }
+      if (answer.status !== 404 || paging === "chain") throw refused(answer);
+      paging = "afterTxid";
+    }
+    return transactionList(await getJson(`${base}?after_txid=${txid}`, "list of transactions"));
   }
 
   function transaction(raw: unknown): EsploraTx {
@@ -171,15 +241,68 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName, cache }:
     };
   }
 
-  function utxos(raw: unknown): EsploraUtxo[] {
+  async function utxos(raw: unknown): Promise<EsploraUtxo[]> {
     if (!Array.isArray(raw)) throw malformed("list of outputs");
-    return raw.map((utxo: Record<string, unknown>) => {
+    const parsed = raw.map((utxo: Record<string, unknown>) => {
       const { txid, vout, value, asset } = utxo ?? {};
       if (typeof txid !== "string" || !HASH.test(txid) || !isCount(vout)) throw malformed("output");
       if (value !== undefined && !isCount(value)) throw malformed("output");
       if (asset !== undefined && (typeof asset !== "string" || !HASH.test(asset))) throw malformed("output");
-      return { txid, vout, ...(value === undefined ? {} : { value }), ...(asset === undefined ? {} : { asset }), confirmed: status(utxo.status).confirmed };
+      return { txid, vout, ...(value === undefined ? {} : { value }), ...(asset === undefined ? {} : { asset }), status: status(utxo.status) };
     });
+    const settled = await settle(parsed.map((u) => u.status));
+    return parsed.map(({ status: _, ...utxo }, i) => ({ ...utxo, confirmed: settled[i].confirmed }));
+  }
+
+  /** Blocks known to be final: that never changes, so they aren't asked about again. */
+  const finalBlocks = new Set<string>();
+
+  /** How final each block is, by hash; undefined for a block the server doesn't know. */
+  async function blockFinality(hashes: string[]): Promise<Map<string, Finality | undefined>> {
+    const answers = new Map<string, Finality | undefined>();
+    const unknown = [];
+    for (const hash of new Set(hashes)) {
+      if (finalBlocks.has(hash)) answers.set(hash, "final");
+      else unknown.push(hash);
+    }
+    for (let i = 0; i < unknown.length; i += FINALITY_BATCH) {
+      const batch = unknown.slice(i, i + FINALITY_BATCH);
+      const blocks = (await getJson(`/flush/blocks?hashes=${batch.join(",")}`, "block finality")) as Record<string, unknown>;
+      if (typeof blocks !== "object" || blocks === null) throw malformed("block finality");
+      for (const hash of batch) {
+        const block = blocks[hash] as Record<string, Record<string, unknown> | undefined> | null | undefined;
+        if (block == null) {
+          answers.set(hash, undefined);
+          continue;
+        }
+        const finality = block.finality?.status as Finality;
+        if (!FINALITIES.includes(finality)) throw malformed("block finality");
+        if (finality === "final") finalBlocks.add(hash);
+        answers.set(hash, finality);
+      }
+    }
+    return answers;
+  }
+
+  /**
+   * The statuses as the wallet counts them. On a server that reports finality, a transaction in a
+   * block short of `CONFIRMED_AT` (or one the server no longer knows) is still unconfirmed.
+   */
+  async function settle(statuses: EsploraTxStatus[]): Promise<EsploraTxStatus[]> {
+    if (!finality) return statuses;
+    const hashes = statuses.flatMap((s) => (s.confirmed ? [s.blockHash!] : []));
+    if (hashes.length === 0) return statuses;
+    const known = await blockFinality(hashes);
+    const enough = (hash: string) => {
+      const block = known.get(hash);
+      return block !== undefined && FINALITIES.indexOf(block) >= FINALITIES.indexOf(CONFIRMED_AT);
+    };
+    return statuses.map((s) => (s.confirmed && !enough(s.blockHash!) ? { confirmed: false } : s));
+  }
+
+  async function settled(txs: EsploraTx[]): Promise<EsploraTx[]> {
+    const statuses = await settle(txs.map((tx) => tx.status));
+    return txs.map((tx, i) => (statuses[i] === tx.status ? tx : { ...tx, status: statuses[i] }));
   }
 
   return {
@@ -225,6 +348,17 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName, cache }:
       return height;
     },
 
+    /**
+     * The tip's height and when it was mined (seconds since the epoch): how long the chain has gone
+     * without a block.
+     */
+    async tip(): Promise<{ height: number; time: number }> {
+      const blocks = await getJson("/blocks", "list of blocks");
+      const { height, timestamp } = ((Array.isArray(blocks) ? blocks[0] : undefined) ?? {}) as Record<string, unknown>;
+      if (!isCount(height) || !isCount(timestamp)) throw malformed("list of blocks");
+      return { height, time: timestamp };
+    },
+
     /** The address's unspent outputs, confirmed or not. */
     addressUtxos: async (address: string) => utxos(await getJson(`/address/${encodeURIComponent(address)}/utxo`, "list of outputs")),
 
@@ -242,7 +376,7 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName, cache }:
     async tx(txid: string): Promise<EsploraTx> {
       const tx = transaction(await getJson(`/tx/${txid}`, "transaction"));
       if (tx.txid !== txid) throw malformed("transaction");
-      return tx;
+      return (await settled([tx]))[0];
     },
 
     /**
@@ -252,7 +386,35 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName, cache }:
     addressTxs: (address: string) => transactions(`/address/${encodeURIComponent(address)}/txs`),
 
     /** The address's next `LISTED_CONFIRMED_TXS` confirmed transactions, newest first, after the confirmed `txid`. */
-    addressTxsBefore: (address: string, txid: string) => transactions(`/address/${encodeURIComponent(address)}/txs/chain/${txid}`),
+    addressTxsBefore: async (address: string, txid: string) => settled(await olderTxs(address, txid)),
+
+    /**
+     * The address's transactions, newest first: its mempool's, then its confirmed ones, reading up
+     * to `pages` older pages past the first. `complete` unless older ones may be missing: the
+     * mempool's list was full, the pages ran out first, or the server repeated a page.
+     */
+    async addressHistory(address: string, pages = HISTORY_PAGES): Promise<{ txs: EsploraTx[]; complete: boolean }> {
+      const first = transactionList(await getJson(`/address/${encodeURIComponent(address)}/txs`, "list of transactions"));
+      const mempool = first.filter((tx) => !tx.status.confirmed);
+      const confirmed = first.filter((tx) => tx.status.confirmed);
+      let complete = mempool.length < LISTED_MEMPOOL_TXS;
+      const seen = new Set(confirmed.map((tx) => tx.txid));
+      for (let page = confirmed, read = 0; page.length >= LISTED_CONFIRMED_TXS; read++) {
+        if (read === pages) {
+          complete = false;
+          break;
+        }
+        page = (await olderTxs(address, page[page.length - 1].txid)).filter((tx) => tx.status.confirmed);
+        const fresh = page.filter((tx) => !seen.has(tx.txid));
+        if (fresh.length < page.length) {
+          complete = false;
+          break;
+        }
+        for (const tx of fresh) seen.add(tx.txid);
+        confirmed.push(...fresh);
+      }
+      return { txs: await settled([...mempool, ...confirmed]), complete };
+    },
 
     /** The raw transaction, hex. Whoever uses it checks it hashes to `txid`. */
     async txHex(txid: string): Promise<string> {
@@ -266,12 +428,14 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName, cache }:
       const answer = await response(`/tx/${txid}/status`);
       if (answer.status === 404) return undefined;
       if (!answer.ok) throw refused(answer);
+      let parsed: EsploraTxStatus;
       try {
-        return status(JSON.parse(answer.body));
+        parsed = status(JSON.parse(answer.body));
       } catch (error) {
         if (error instanceof SidechainServerError) throw error;
         throw malformed("transaction status");
       }
+      return (await settle([parsed]))[0];
     },
 
     /**
@@ -381,6 +545,14 @@ export function esploraServer(config: EsploraServerConfig, fetchFn: Fetch): Side
     };
   }
 
+  /** The tip's time, if the chain has made no block for `stallAfter` seconds. */
+  async function stalled(): Promise<number | undefined> {
+    if (config.stallAfter === undefined) return undefined;
+    const { time } = await client.tip();
+    const now = Math.floor((config.now ?? Date.now)() / 1000);
+    return now - time >= config.stallAfter ? time : undefined;
+  }
+
   // Over Esplora the wallet builds and broadcasts transfers itself (send.ts, docs/adr/0006).
   const notHere = () => new SidechainServerError(url, `The Sidechain Server at ${url} speaks Esplora: it doesn't build transfers.`);
 
@@ -390,11 +562,12 @@ export function esploraServer(config: EsploraServerConfig, fetchFn: Fetch): Side
       await client.checkChain();
       const confirmed = new Map<string, bigint>();
       const unconfirmed = new Map<string, bigint>();
-      for (const { asset, amount, confirmed: isConfirmed } of (await eachAddress(watch, explicitOutputs)).flat()) {
+      const [outputs, stalledSince] = await Promise.all([eachAddress(watch, explicitOutputs), stalled()]);
+      for (const { asset, amount, confirmed: isConfirmed } of outputs.flat()) {
         const totals = isConfirmed ? confirmed : unconfirmed;
         totals.set(asset, (totals.get(asset) ?? 0n) + BigInt(amount));
       }
-      return { balances: listed(confirmed), unconfirmed: listed(unconfirmed) };
+      return { balances: listed(confirmed), unconfirmed: listed(unconfirmed), ...(stalledSince === undefined ? {} : { stalledSince }) };
     },
     /**
      * Each watched address's transactions, merged: a spend touches several of them. Unconfirmed
@@ -402,14 +575,10 @@ export function esploraServer(config: EsploraServerConfig, fetchFn: Fetch): Side
      */
     async history(watch, treasuries = []) {
       await client.checkChain();
-      const lists = await eachAddress(watch, client.addressTxs);
+      const lists = await eachAddress(watch, (address) => client.addressHistory(address));
       const txs = new Map<string, EsploraTx>();
-      for (const tx of lists.flat()) txs.set(tx.txid, tx);
-      // A full list may have left older transactions out.
-      const partial = lists.some((list) => {
-        const confirmed = list.filter((tx) => tx.status.confirmed).length;
-        return confirmed >= LISTED_CONFIRMED_TXS || list.length - confirmed >= LISTED_MEMPOOL_TXS;
-      });
+      for (const tx of lists.flatMap((list) => list.txs)) txs.set(tx.txid, tx);
+      const partial = lists.some((list) => !list.complete);
       const ours = new Set([...watch.receive, ...watch.change].map((a) => a.scriptPubkey));
       // Trust (Bitcoin Core's `IsTrusted`) needs each input's parent. A parent missing from the lists
       // counts as confirmed: it paid one of the wallet's addresses, and an address's list has all of

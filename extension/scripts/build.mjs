@@ -8,7 +8,7 @@
 // src/ bundled with esbuild. Fails if any shipped script contains `eval(` or `new Function(`.
 //
 // The manifests are hand-written except for the Sidechain Servers the wallet may reach: those come
-// from the Chain Entries (`core/l1/chain-entry.json`, `core/elements/chain-entry.json`), added as `host_permissions` and as the
+// from the Chain Entries (`core/{l1,elements,flush}/chain-entry.json`), added as `host_permissions` and as the
 // CSP's `connect-src`, so the wallet can talk to nothing else.
 //
 // The e2e build (e2e/scripts/build.mjs) points $ECX_CORE_DIST, $ECX_CHAIN_ENTRIES (comma-separated)
@@ -26,7 +26,7 @@ const dist = process.env.ECX_EXTENSION_DIST ?? path.join(root, "dist");
 const staging = path.join(dist, ".staging");
 const TARGETS = ["chromium", "firefox"];
 const CHAIN_ENTRIES = process.env.ECX_CHAIN_ENTRIES?.split(",") ??
-  ["l1", "elements"].map((module) => path.resolve(root, "..", "core", module, "chain-entry.json"));
+  ["l1", "elements", "flush"].map((module) => path.resolve(root, "..", "core", module, "chain-entry.json"));
 
 /** Every network's default Sidechain Server origin, across the bundled Chain Entries. */
 async function sidechainServerOrigins() {
