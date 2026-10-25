@@ -19,6 +19,11 @@ export interface ReportedState {
   balances: AssetAmount[];
   /** What unconfirmed outputs would add once confirmed, per asset; none if nothing is pending. */
   unconfirmed: AssetAmount[];
+  /**
+   * When the chain's last block was mined (seconds since the epoch), if it's been longer than the
+   * chain ever goes without one: nothing confirms until it moves again. Flush only (docs/adr/0012).
+   */
+  stalledSince?: number;
 }
 
 /** A transaction touching a watch, as its server reports it. Unverified by the wallet. */

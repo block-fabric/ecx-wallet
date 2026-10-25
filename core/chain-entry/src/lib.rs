@@ -99,6 +99,10 @@ pub enum ServerApi {
     /// The Esplora REST API, the subset both electrs forks serve.
     #[serde(rename = "esplora")]
     Esplora,
+    /// Flush's explorer: Esplora as mempool.space's electrs fork serves it, plus `/flush/blocks`,
+    /// which says how final a block is (docs/adr/0012).
+    #[serde(rename = "flush")]
+    Flush,
 }
 
 impl<P> ChainEntry<P> {

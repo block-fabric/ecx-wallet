@@ -6,7 +6,7 @@ The pull path was built for one protocol, the Standard Sidechain API (`/v1`): ev
 "sidechainServer": { "api": "esplora", "url": "https://explorer.bitnames.info/api" }
 ```
 
-`api` is `"ecx-v0"` (the Standard Sidechain API) or `"esplora"`, with no default. A user server override (spec #12) is the same `{api, url}` pair.
+`api` is `"ecx-v0"` (the Standard Sidechain API), `"esplora"`, or `"flush"` (Esplora with Flush's finality, ADR 0012), with no default. A user server override (spec #12) is the same `{api, url}` pair.
 
 `"esplora"` means the Esplora REST API as Blockstream electrs serves it, limited to endpoints mempool's electrs fork also serves, so either fork works:
 
@@ -14,7 +14,7 @@ The pull path was built for one protocol, the Standard Sidechain API (`/v1`): ev
 |---|---|
 | `GET /block-height/H` | Identity check: must equal the Chain Entry's `identityBlock` (`H` = 0 and the genesis, or a fork's first block: ADR 0003), else a hard error. Run on first contact and after every URL change; this stands in for `/v1`'s `info`. |
 | `GET /address/:a/utxo` | Reported state: outputs summed per asset, confirmed and unconfirmed apart. |
-| `GET /address/:a/txs` | History: each watched address's mempool transactions and latest 25 confirmed ones, merged by txid. No paging (`/txs/chain/:last_seen`) yet. |
+| `GET /address/:a/txs` | History: each watched address's mempool transactions and latest 25 confirmed ones, merged by txid. Older pages with `/txs/chain/:last_seen`, or mempool's `?after_txid=` where that 404s (ADR 0012). |
 | `GET /fee-estimates` | Fee rate for building transfers (may be `{}`). |
 | `POST /tx` | Broadcasting a finalized transaction. |
 

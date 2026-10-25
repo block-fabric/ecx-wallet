@@ -8,6 +8,7 @@
   import ActivityFeed from "$lib/ActivityFeed.svelte";
   import Icon from "$lib/Icon.svelte";
   import { amountText, unit } from "$lib/unit.svelte";
+  import { stalledText } from "$lib/stall";
 
   /** `l1` for the main chain, else a Slot. */
   const id: ChainId = page.params.id === "l1" ? "l1" : Number(page.params.id);
@@ -69,6 +70,9 @@
         <span class="big muted">—</span>
       {/if}
     </section>
+    {#if view.shown.report?.stalledSince}
+      <p class="notice" role="status" data-stalled>{stalledText(view.info.name, view.shown.report.stalledSince)}</p>
+    {/if}
 
     <Actions chains={chains.list ?? []} focus={view} bind:this={actions} />
 

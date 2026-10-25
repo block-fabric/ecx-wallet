@@ -15,7 +15,7 @@ import {
 import type { NamedAsset } from "./assets";
 
 /** Slots with a bundled Chain Module, and the .wasm each ships as. */
-export const CHAIN_MODULE_FILES: Readonly<Record<number, string>> = { 24: "elements.wasm" };
+export const CHAIN_MODULE_FILES: Readonly<Record<number, string>> = { 24: "elements.wasm", 46: "flush.wasm" };
 
 export const SUPPORTED_SLOTS: readonly number[] = Object.keys(CHAIN_MODULE_FILES).map(Number);
 
@@ -90,10 +90,10 @@ export function describeChain(module: ChainModule<never>): ChainDescription {
   return { name: entry.name, description: entry.description, chain, network: key, assets: network.assets, sends };
 }
 
-/** True if a sidechain can Send through this wallet: its server builds, or its module does over Esplora. */
+/** True if a sidechain can Send through this wallet: its server builds, or its module does over Esplora (Flush's included). */
 export function canSend(capabilities: string[], network: NetworkEntry): boolean {
   const { api } = network.sidechainServer;
-  return api === "ecx-v0" || (api === "esplora" && capabilities.includes("buildTransfer"));
+  return api === "ecx-v0" || ((api === "esplora" || api === "flush") && capabilities.includes("buildTransfer"));
 }
 
 /** Throws unless the entry puts the chain at the root: no Slot and no parent. */
@@ -174,8 +174,8 @@ export function createKeyRouting(deps: Keys & ChainModules) {
 export type KeyRouting = ReturnType<typeof createKeyRouting>;
 
 /**
- * How many receive addresses, from index 0, the wallet gives out. Must equal the Elements module's
- * `APP_RECEIVE_ADDRESSES`: a request may spend those without a `bip32_derivation` entry (docs/adr/0007).
+ * How many receive addresses, from index 0, the wallet gives out. Must equal the Elements and Flush
+ * modules' `APP_RECEIVE_ADDRESSES`: a request may spend those without a `bip32_derivation` entry (docs/adr/0007).
  */
 export const APP_RECEIVE_ADDRESSES = 1;
 

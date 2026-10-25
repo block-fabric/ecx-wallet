@@ -11,6 +11,7 @@
   import Mark from "$lib/Mark.svelte";
   import TopBar from "$lib/TopBar.svelte";
   import { amountText, unit } from "$lib/unit.svelte";
+  import { stalledText } from "$lib/stall";
 
   let status = $state<VaultStatus | undefined>(undefined);
   let chains = $state<Chains | undefined>(undefined);
@@ -163,6 +164,9 @@
             </a>
             <span class="grow"></span>
             {#if c.shown.refreshing}<span class="spinner small-spinner" title="Refreshing"></span>{/if}
+            {#if c.shown.report?.stalledSince}
+              <span class="pill bad" title={stalledText(c.info.name, c.shown.report.stalledSince)} data-stalled>Stalled</span>
+            {/if}
             {#if subtotal}<span class="small subtotal" data-subtotal>{amountText(subtotal.amount, subtotal.asset, c.info.assets)}</span>{/if}
             <button
               class="fold"

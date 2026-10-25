@@ -122,9 +122,14 @@ fn a_coin_must_pay_the_address_it_names_and_be_listed_once() {
 }
 
 #[test]
-fn a_fee_rate_below_flushs_relay_minimum_is_refused() {
-    let order = order(1000, vec![coin(1, 100_000)]).replace("\"feeRate\":1000", "\"feeRate\":99");
-    assert!(build_transfer(&order, STARTER).unwrap_err().message.contains("below what Flush relays"));
+fn a_send_pays_at_least_1_sat_per_vbyte() {
+    // The explorer's estimates on a quiet chain are Flush's relay floor, 0.1 sat/vB.
+    let fee = |rate: u64| {
+        let order = order(40_000, vec![coin(1, 100_000)]).replace("\"feeRate\":1000", &format!("\"feeRate\":{rate}"));
+        clear(&built(&order)).fee.amount.parse::<u64>().unwrap()
+    };
+    assert_eq!(fee(100), fee(1000));
+    assert!(fee(2000) > fee(1000));
 }
 
 #[test]

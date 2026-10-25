@@ -1,5 +1,6 @@
 // The stub Esplora server: the Esplora endpoints the wallet uses (docs/adr/0002), answered from
-// fixtures. The e2e build's Sidechain Servers.
+// fixtures. The e2e build's Sidechain Servers. With `config.flush` it answers as Flush's explorer
+// does (mempool.space's electrs fork plus `/flush/blocks`, docs/adr/0012), as recorded on #56.
 //
 // Like the Elements explorer it stands in for, it sends no CORS headers: the extension reaches it
 // through its `host_permissions`, as it reaches the real one. Dependency-free node `http`.
@@ -16,8 +17,12 @@ import { parseElementsTx } from "./elements-tx.mjs";
  *   txs?: TxFixture[], addressTxs?: Record<string, object[]>, feeEstimates?: Record<string, number>, refuseBroadcast?: string,
  *   delayMs?: number, pathDelayMs?: Record<string, number>, txHexOverrides?: Record<string, string>, elements?: boolean,
  *   txStatuses?: Record<string, { confirmed: boolean, blockHeight?: number, blockHash?: string }>,
- *   broadcastTxid?: string, assets?: Record<string, object> }} EsploraStubConfig
+ *   broadcastTxid?: string, assets?: Record<string, object>, flush?: boolean,
+ *   finality?: Record<string, "soft" | "anchored" | "final">, tipTime?: number }} EsploraStubConfig
  */
+
+/** How many confirmed transactions an address's list holds per page, as both electrs forks list them. */
+const PAGE = 25;
 
 /**
  * A stub answering from `config`, read on every request (a test may change it between calls):
@@ -30,10 +35,12 @@ import { parseElementsTx } from "./elements-tx.mjs";
  *   `GET /scripthash/{sha256}/utxo` (outputs no listed transaction spends), `GET /tx/{txid}`
  *   (with each input's `prevout`, when its transaction is listed), `/tx/{txid}/hex` and
  *   `/tx/{txid}/status` (`config.txHexOverrides[txid]` answers `/hex` instead, as a lying server would);
- * - `GET /address/{address}/txs`: `config.addressTxs[address]` as given (Esplora's JSON: Elements
- *   transactions, which the stub can't parse), else the transactions in `config.txs` that pay or
- *   spend from the address's script, as Esplora lists them: the mempool's first, newest first,
- *   then the 25 latest confirmed;
+ * - `GET /address/{address}/txs`: `config.addressTxs[address]` (Esplora's JSON: Elements
+ *   transactions, which the stub can't parse; mempool's first, then confirmed newest first), else
+ *   the transactions in `config.txs` that pay or spend from the address's script: the mempool's
+ *   first, newest first, then the 25 latest confirmed. Older pages: `/txs/chain/{txid}`
+ *   (Blockstream), or with `config.flush` `?after_txid={txid}` (mempool's fork; `/txs/chain` 404s);
+ * - `GET /blocks`: the tip, with `config.tipTime` (default: now) as its timestamp;
  * - `GET /fee-estimates`: `config.feeEstimates` (404 if absent);
  * - `GET /asset/{id}`: `config.assets[id]` as given (Esplora's JSON, e.g. its `issuance_prevout`), else 404;
  * - `POST /tx`: parses the transaction, adds it to `config.txs` unconfirmed and answers its txid,
@@ -43,6 +50,11 @@ import { parseElementsTx } from "./elements-tx.mjs";
  *   drop a broadcast there).
  * Every answer waits `config.delayMs` (default none), as a slow public server does, or
  * `config.pathDelayMs[path]` for that path, as a server stuck on one query does.
+ *
+ * With `config.flush`, as Flush's explorer answers: `/flush/blocks?hashes=a,b` gives each block's
+ * finality (`config.finality[hash]`, default `final`; null for a block it doesn't know); a coinbase
+ * input has `txid: ""`; `/utxo` statuses have no `block_time`; `/fee-estimates` is HTTP 203; a
+ * height past the tip is HTTP 500; errors are JSON `{ error }`, and unknown routes an HTML 404.
  */
 export function createEsploraStub(config) {
   /** Every request, in order: its path, or `POST <path>`. */
@@ -52,6 +64,22 @@ export function createEsploraStub(config) {
 
   const status = ({ confirmed = true, blockHeight = 1, blockHash = "00".repeat(32), blockTime = 1792000000 }) =>
     confirmed ? { confirmed, block_height: blockHeight, block_hash: blockHash, block_time: blockTime } : { confirmed };
+  /** An error with `text`: plain on Blockstream's electrs, `{ error }` on Flush's explorer. */
+  const error = (code, text) => [code, config.flush ? { error: text } : text];
+  /** Every block hash the stub knows: its identity block, `config.blocks`' and its transactions'. */
+  const knownBlocks = () =>
+    new Set([config.identityBlock.hash, ...Object.values(config.blocks ?? {}), "00".repeat(32), ...(config.txs ?? []).map((t) => t.blockHash).filter(Boolean)]);
+
+  /**
+   * An address's list from `txs` (Esplora's JSON, newest first): the first page is the mempool's
+   * and the first PAGE confirmed; `after` gives the PAGE confirmed after that txid ([] if absent).
+   */
+  function page(txs, after) {
+    const confirmed = txs.filter((tx) => tx.status?.confirmed !== false);
+    if (after === undefined) return [...txs.filter((tx) => tx.status?.confirmed === false), ...confirmed.slice(0, PAGE)];
+    const at = confirmed.findIndex((tx) => tx.txid === after);
+    return at === -1 ? [] : confirmed.slice(at + 1, at + 1 + PAGE);
+  }
 
   /** `config.txs`, parsed, by txid. */
   function indexed() {
@@ -66,6 +94,10 @@ export function createEsploraStub(config) {
       version: tx.version,
       locktime: tx.locktime,
       vin: tx.inputs.map((input) => {
+        if (input.txid === "00".repeat(32) && input.vout === 0xffffffff) {
+          // Flush's explorer names a coinbase input's txid "" and its vout 0.
+          return { txid: config.flush ? "" : input.txid, vout: config.flush ? 0 : input.vout, prevout: null, is_coinbase: true, sequence: input.sequence };
+        }
         const prev = txs.get(input.txid)?.outputs[input.vout];
         return {
           txid: input.txid,
@@ -82,7 +114,7 @@ export function createEsploraStub(config) {
     };
   }
 
-  function route(method, pathname, body) {
+  function route(method, pathname, body, query) {
     if (method === "POST" && pathname === "/tx") {
       if (config.refuseBroadcast) return [400, config.refuseBroadcast];
       let tx;
@@ -104,22 +136,51 @@ export function createEsploraStub(config) {
       const { identityBlock, blocks = {} } = config;
       const h = Number(height[1]);
       const hash = h === identityBlock.height ? identityBlock.hash : blocks[h];
-      return hash === undefined ? [404, "Block not found"] : [200, hash];
+      if (hash === undefined) return config.flush ? [500, { error: "Failed to get block at height" }] : [404, "Block not found"];
+      return [200, hash];
     }
     if (pathname === "/blocks/tip/height") return [200, String(config.tipHeight ?? config.identityBlock.height)];
-    if (pathname === "/fee-estimates") return config.feeEstimates ? [200, config.feeEstimates] : [404, "Not found"];
+    if (pathname === "/blocks") {
+      const height = config.tipHeight ?? config.identityBlock.height;
+      return [200, [{ height, timestamp: config.tipTime ?? Math.floor(Date.now() / 1000) }]];
+    }
+    if (pathname === "/fee-estimates") return config.feeEstimates ? [config.flush ? 203 : 200, config.feeEstimates] : error(404, "Not found");
+    if (config.flush && pathname === "/flush/blocks") {
+      const hashes = (query.get("hashes") ?? "").split(",");
+      if (hashes.length > 30 || !hashes.every((h) => /^[0-9a-f]{64}$/.test(h))) return [400, { error: "From 1 to 30 block hashes" }];
+      const known = knownBlocks();
+      const anchors = { soft: 0, anchored: 1, final: 3 };
+      return [
+        200,
+        Object.fromEntries(
+          hashes.map((hash) => {
+            const finality = config.finality?.[hash] ?? (known.has(hash) ? "final" : undefined);
+            return [hash, finality === undefined ? null : { hash, finality: { status: finality, anchors: anchors[finality] } }];
+          }),
+        ),
+      ];
+    }
     const asset = /^\/asset\/([0-9a-f]{64})$/.exec(pathname);
     if (asset) return config.assets?.[asset[1]] ? [200, config.assets[asset[1]]] : [404, "Asset id not found"];
 
     const utxo = /^\/address\/([^/]+)\/utxo$/.exec(pathname);
     if (utxo) {
       const address = decodeURIComponent(utxo[1]);
-      return [200, (config.utxos?.[address] ?? []).map(({ confirmed, ...output }) => ({ ...output, status: status({ confirmed }) }))];
+      return [
+        200,
+        (config.utxos?.[address] ?? []).map(({ confirmed, blockHash, ...output }) => {
+          const { block_time: _, ...flushStatus } = status({ confirmed, blockHash });
+          return { ...output, status: config.flush ? flushStatus : status({ confirmed, blockHash }) };
+        }),
+      ];
     }
-    const addressTxs = /^\/address\/([^/]+)\/txs$/.exec(pathname);
+    const addressTxs = /^\/address\/([^/]+)\/txs(?:\/chain\/([0-9a-f]{64}))?$/.exec(pathname);
     if (addressTxs) {
       const a = decodeURIComponent(addressTxs[1]);
-      if (config.addressTxs?.[a]) return [200, config.addressTxs[a]];
+      // Blockstream pages with `/txs/chain/:txid`; Flush's explorer only with `?after_txid=`.
+      if (addressTxs[2] !== undefined && config.flush) return [404, `<!DOCTYPE html><pre>Cannot GET /api/v1${pathname}</pre>`];
+      const after = addressTxs[2] ?? (config.flush ? (query.get("after_txid") ?? undefined) : undefined);
+      if (config.addressTxs?.[a]) return [200, page(config.addressTxs[a], after)];
       let script;
       try {
         script = addressScript(a);
@@ -133,7 +194,7 @@ export function createEsploraStub(config) {
       const confirmed = (tx) => tx.fixture.confirmed !== false;
       const mempool = touching.filter((tx) => !confirmed(tx)).reverse();
       const chain = touching.filter(confirmed).sort((a, b) => (b.fixture.blockHeight ?? 1) - (a.fixture.blockHeight ?? 1));
-      return [200, [...mempool, ...chain.slice(0, 25)].map((tx) => txJson(tx, txs))];
+      return [200, page([...mempool, ...chain].map((tx) => txJson(tx, txs)), after)];
     }
     const address = /^\/address\/([^/]+)$/.exec(pathname);
     if (address) {
@@ -162,25 +223,27 @@ export function createEsploraStub(config) {
     if (tx) {
       const txs = indexed();
       const found = txs.get(tx[1]);
-      if (found === undefined) return [404, "Transaction not found"];
+      if (found === undefined) return error(404, config.flush ? "No such mempool or blockchain transaction" : "Transaction not found");
       if (tx[2] === "/hex") return [200, config.txHexOverrides?.[tx[1]] ?? found.fixture.hex];
       if (tx[2] === "/status") return [200, status(found.fixture)];
       return [200, txJson(found, txs)];
     }
-    // Esplora's own wording for an unknown endpoint.
+    // Each server's own wording for an unknown endpoint.
+    if (config.flush) return [404, `<!DOCTYPE html><pre>Cannot GET /api/v1${pathname}</pre>`];
     return [404, `endpoint does not exist "${pathname}"`];
   }
 
   const server = createServer((request, response) => {
-    const { pathname } = new URL(request.url, "http://stub");
+    const { pathname, searchParams } = new URL(request.url, "http://stub");
     let body = "";
     request.on("data", (chunk) => (body += chunk));
     request.on("end", () => {
       requests.push(request.method === "GET" ? pathname : `${request.method} ${pathname}`);
-      const [status, answer] = route(request.method, pathname, body);
+      const [status, answer] = route(request.method, pathname, body, searchParams);
       const json = typeof answer !== "string";
+      const html = typeof answer === "string" && answer.startsWith("<!DOCTYPE html>");
       setTimeout(() => {
-        response.writeHead(status, { "Content-Type": json ? "application/json" : "text/plain" });
+        response.writeHead(status, { "Content-Type": json ? "application/json" : html ? "text/html" : "text/plain" });
         response.end(json ? JSON.stringify(answer) : answer);
       }, config.pathDelayMs?.[pathname] ?? config.delayMs ?? 0);
     });

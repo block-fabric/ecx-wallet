@@ -8,7 +8,7 @@
       "parent": "ecash:betanet",
       "identityBlock": { "height": 0, "hash": "7d66b10e351e5ad86c562ba761b5476f75c6f1b9f13aa7cf469df3a8d5701b75" },
       "depositConfirmations": 2,
-      "sidechainServer": { "api": "esplora", "url": "https://flush-slot46.invalid/api" },
+      "sidechainServer": { "api": "flush", "url": "https://flush-slot46.invalid/api" },
       "officialApps": [],
       "assets": [
         { "id": "", "ticker": "ECX", "name": "eCash on Flush", "decimals": 8, "ecx": true }

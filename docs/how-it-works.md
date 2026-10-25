@@ -53,12 +53,13 @@ Every chain has a Chain Entry, and its keys follow its place in the chain tree (
 
 ## Sidechain Servers
 
-Each chain is read from the Sidechain Server its Chain Entry names for the module's network, in the Server API named next to the URL: `sidechainServer: { api, url }` (ADR 0002). Today both are Esplora:
+Each chain is read from the Sidechain Server its Chain Entry names for the module's network, in the Server API named next to the URL: `sidechainServer: { api, url }` (ADR 0002). All three speak Esplora; Flush's explorer adds finality (`"flush"`, ADR 0012):
 
 | Chain | Server (betanet) | Chain Entry |
 |---|---|---|
 | eCash | `https://esplora.beta.ecash.ninja` | `core/l1/chain-entry.json` |
 | Slot 24 | `https://explorer.bitnames.info/api` | `core/elements/chain-entry.json` |
+| Slot 46 (Flush, provisional) | none yet: `https://flush-slot46.invalid/api` is a placeholder | `core/flush/chain-entry.json` |
 
 The extension build turns those URLs into `host_permissions` and the CSP's `connect-src`. `wallet/src/server-api.ts` picks the client for the Server API.
 
@@ -68,6 +69,7 @@ The extension build turns those URLs into `host_permissions` and the CSP's `conn
 - **Balance:** the sum of the explicit outputs (`/address/:a/utxo`) of the first 20 receive and 20 change addresses, per asset, with confirmed and unconfirmed kept apart. eCash's outputs have no asset: they're its coin (`NATIVE_COIN`), shown in sats.
 - electrs already leaves out outputs its mempool spends. So a Deposit's coin leaves the confirmed balance at once, and its change shows as unconfirmed.
 - Lookups run 20 at once (`QUERIES_AT_ONCE`).
+- **Flush** (`"flush"`, ADR 0012): a block counts as confirmed once an eCash block anchors it (`/flush/blocks`; `CONFIRMED_AT`), so ECX in a soft block shows as unconfirmed. Five minutes without a block (`FLUSH_STALL_SECONDS`) shows "Stalled" on home and a notice on Flush's screen. Its explorer lists no unconfirmed incoming outputs.
 - Over Esplora the wallet builds its own transactions: Send (below) on a Slot, Deposit (below) on eCash.
 
 ### The Standard Sidechain API, `ecx-v0` (`wallet/src/standard-sidechain-api.ts`)
@@ -109,7 +111,7 @@ The API this project defines, for a sidechain with no indexer. Its protocol draf
   - "Deposit to Slot N" for an M5 it funded to the Treasury script of a Slot it supports;
   - "Deposit from the main chain" for a transaction with an input claiming a Deposit (Esplora's `is_pegin`), whose `txid` is that Deposit's;
   - "+ confidential amounts not shown" for its outputs with no explicit value.
-- **No paging yet** (#36): History reads only each address's first page (only finding a Deposit's credit pages back, under Deposit). When an address's list is full (25 confirmed or 50 unconfirmed), the screen says older transactions may not be shown.
+- **Paging:** History reads up to 3 older pages of an address's confirmed transactions past the first 25 (`HISTORY_PAGES`), with Blockstream's `/txs/chain/:txid` or, on mempool's fork (Flush's explorer), `?after_txid=` (ADR 0012). When pages remain past those, the mempool's list is full (50), or the server repeats a page, the screen says older transactions may not be shown.
 - **Trust needs each input's parent.** Over Esplora the wallet assumes a parent missing from the lists is confirmed. It paid a watched address, whose list has every one of its mempool transactions (up to 50), so only an older confirmed one can be missing.
 
 ## Assets
@@ -132,10 +134,10 @@ A ticker of the Chain Entry's, in any case, is refused, with the reason shown. A
 
 1. It gathers the **Spendable** coins: confirmed coins, plus outputs of trusted unconfirmed transactions, less held coins.
 2. It picks the first unused change address (else `/1/19`) and the fee rate.
-3. `elements.wasm`'s `build_transfer` builds the PSET: largest coins first, dust change goes to the fee, and confidential destinations are refused.
+3. The Slot's module builds it (`build_transfer`): largest coins first, dust change goes to the fee. `elements.wasm` builds a PSET from the coins as reported, and refuses confidential destinations. `flush.wasm` builds a PSBT of ECX from each coin's whole transaction (`/tx/:txid/hex`), never spends a value-0 output (a token's), and pays at least 1 sat/vB. The wallet refuses to go on if it spends an outpoint the server never listed.
 4. The module's Clear View goes to the approval window as "This wallet (Send on <chain>)". It must be exactly the payments asked for, plus outputs back to the wallet (`isTransferAskedFor`).
 5. After approval: `sign`, `finalize`, `POST /tx`.
-6. The coins it spent are **held** in `storage.local` (`held:<txid>`) until it confirms, or until the server hasn't known it for 6 blocks.
+6. The coins it spent are **held** in `storage.local` (`held:<txid>`) until it confirms (on Flush: its block is anchored), or until the server hasn't known it for 6 blocks.
 
 **Over `/v1`**, the server builds the transfer. Its Signing Request gets the same validation, Chain Module and approval window as a website's (`wallet/src/signing.ts`), with the server's URL as the requester. It must be Clear Signed, because there's no Grant to opt into Blind Signing, and it must be the transfer asked for. Anything wrong with it is refused as the server's error, without a window. After approval the wallet submits the signed PSET back to the server.
 

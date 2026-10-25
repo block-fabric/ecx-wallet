@@ -458,6 +458,24 @@ describe("Send over Esplora", () => {
     }
   });
 
+  test("the history reads older pages past Esplora's first 25 confirmed transactions", async () => {
+    const ours = account.receive[0].scriptPubkey;
+    const confirmedTx = (i) => ({
+      txid: i.toString(16).padStart(64, "c"),
+      vin: [],
+      vout: [{ scriptpubkey: ours, value: 1, asset: POLICY_ASSET }],
+      status: { confirmed: true, block_height: 100 - i, block_hash: "00".repeat(32), block_time: 1792000000 },
+    });
+    config.addressTxs = { [RECEIVE_0]: Array.from({ length: 60 }, (_, i) => confirmedTx(i)) };
+    try {
+      const history = await pullPathWith(esplora()).pullPath.history(24);
+      assert.equal(history.entries.length, 60);
+      assert.equal(history.partial, false);
+    } finally {
+      config.addressTxs = undefined;
+    }
+  });
+
   test("a partial history spends confirmed coins only: an unlisted parent could pass for trusted", async () => {
     const ours = account.receive[0].scriptPubkey;
     const confirmedTx = (i) => ({
@@ -473,8 +491,9 @@ describe("Send over Esplora", () => {
       status: { confirmed: false },
     };
     config.utxos = { [RECEIVE_0]: [utxo("a0", 150000), utxo("b1", 4000, { confirmed: false })] };
-    // 25 confirmed transactions: Esplora's full first page, so older ones may be missing.
-    config.addressTxs = { [RECEIVE_0]: [trustedPending, ...Array.from({ length: 25 }, (_, i) => confirmedTx(i))] };
+    // Full pages past the last one the history reads, so older ones may be missing.
+    const confirmed = 25 * (wallet.HISTORY_PAGES + 1) + 1;
+    config.addressTxs = { [RECEIVE_0]: [trustedPending, ...Array.from({ length: confirmed }, (_, i) => confirmedTx(i))] };
     try {
       assert.deepEqual(await sendsWith(esplora()).sends.spendable(24), [{ asset: POLICY_ASSET, amount: "150000" }]);
     } finally {
