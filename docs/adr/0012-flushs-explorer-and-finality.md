@@ -29,9 +29,10 @@ Flush's module builds from whole transactions (its format is `psbt`, as L1's Dep
 - **Confirmed at `final`:** not for now. Three anchors take about 30 minutes, three times what an eCash confirmation takes, and the wallet already treats one eCash confirmation as enough elsewhere. Whether wallets should wait for `final` was asked of Flush's developer on 2026-10-25. `CONFIRMED_AT` in `wallet/src/esplora.ts` is the one place to change.
 - **Count every block as confirmed, as `"esplora"` does:** rejected. Someone else's payment in a soft block would be spendable, and a replaced block would take it back.
 - **A stall threshold of one eCash block (10 minutes):** rejected. Flush's own blocks come every 15 seconds; 5 minutes without one is already 20 missed slots.
+- **The explorer's `/flush/status.halted` as the stall signal** (block-fabric/explorer `58882ec`, 2026-10-25): not for now. `halted` is true when blocks of stake have stopped, either because PoS is inactive or because no anchor has covered the chain for `maxUnanchoredSlots` (24 hours). With PoS inactive, Flush still makes BMM blocks, one per eCash block, and they confirm transactions. So `halted` doesn't mean "nothing confirms", which is what "Stalled" tells the user. The tip's age measures that directly. `slotsUntilHalt` could warn before a halt; nothing shows it yet.
 
 ## Consequences
 
-- Flush's explorer has no unconfirmed incoming outputs on `/address/*` (recorded 2026-10-25). A payment to the wallet shows only once it's in a block, and a Send's change only then too.
+- Flush's explorer had no unconfirmed incoming outputs on `/address/*` (recorded 2026-10-25). A payment to the wallet showed only once it was in a block, and a Send's change only then too. Its `58882ec` merges the mempool into `/address/*` and adds Blockstream's `/txs/chain/:txid`, so the client's `?after_txid=` fallback stops being needed. Neither was observable live: the mempool was empty, and `/address/:a/txs*` returned 502 from 2026-10-25 20:16 UTC (#55).
 - A Send's held coins are released once its block is anchored, or once the server has forgotten it for 6 blocks (`HOLD_BLOCKS`), which on Flush is 90 seconds.
 - `"flush"` is provisional with the rest of Slot 46's Chain Entry. If Slot 46's explorer differs from today's Slot 99 one, this ADR changes with it.
