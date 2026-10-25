@@ -59,7 +59,7 @@ Each chain is read from the Sidechain Server its Chain Entry names for the modul
 |---|---|---|
 | eCash | `https://esplora.beta.ecash.ninja` | `core/l1/chain-entry.json` |
 | Slot 24 | `https://explorer.bitnames.info/api` | `core/elements/chain-entry.json` |
-| Slot 46 (Flush, provisional) | none yet: `https://flush-slot46.invalid/api` is a placeholder | `core/flush/chain-entry.json` |
+| Slot 46 (Flush, provisional) | `https://explorer.blockfab.org/betanet/flush/api` (serves the temporary Slot 99 chain for now, so its identity check fails) | `core/flush/chain-entry.json` |
 
 The extension build turns those URLs into `host_permissions` and the CSP's `connect-src`. `wallet/src/server-api.ts` picks the client for the Server API.
 
