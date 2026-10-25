@@ -77,7 +77,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     assert.deepEqual(sections, ["l1"]);
     assert.equal(label, "Balance", "one chain: no total across chains");
     assert.equal(total, "0.001 ECX");
-    assert.equal(manage, "Manage chains 1 of 2 on · turn chains on or off");
+    assert.equal(manage, "Manage chains 1 of 3 on · turn chains on or off");
     const page = await openHome(session);
     await page.click("[data-deposit-action]");
     await page.waitForSelector("[data-deposit-sheet]");
@@ -93,7 +93,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
 
   test("the Chains screen lists every chain this release supports; turning one on shows it on home", async () => {
     const page = await openWalletPage(session, "#/chains");
-    assert.deepEqual(await readChains(page), [["l1", "always"], ["24", "false"]]);
+    assert.deepEqual(await readChains(page), [["l1", "always"], ["24", "false"], ["46", "false"]], "Flush starts off too");
     await page.click('[data-chain-switch="24"]');
     await page.waitForSelector('[data-chain-switch="24"][aria-checked="true"]', { timeout: 10_000 });
     await page.close();

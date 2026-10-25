@@ -1,10 +1,12 @@
 // Runs stubs on the e2e build's Sidechain Server URLs (e2e/scripts/build.mjs), answering for the
-// "abandon … about" test wallet from the e2e fixtures: eCash's Esplora stub, plus one for Slot 24.
+// "abandon … about" test wallet from the e2e fixtures: eCash's Esplora stub, one for Slot 24, and
+// one for Slot 46 in Flush mode (its chain is right, but it holds no coins: Flush's addresses come
+// from the Starter, which only the wallet derives).
 //
 //   pnpm --filter @ecx/stub-server start             Slot 24's Esplora stub, which the e2e build speaks to
 //   pnpm --filter @ecx/stub-server start -- ecx-v0   the Standard Sidechain API stub, on the same URL
 import { readFile } from "node:fs/promises";
-import { E2E_L1_SERVER, E2E_SIDECHAIN_SERVER } from "../../e2e/scripts/build.mjs";
+import { E2E_FLUSH_SERVER, E2E_L1_SERVER, E2E_SIDECHAIN_SERVER } from "../../e2e/scripts/build.mjs";
 import { encodeTx, parseTx } from "./bitcoin-tx.mjs";
 import { createEsploraStub } from "./esplora.mjs";
 import { createStubServer } from "./server.mjs";
@@ -55,4 +57,9 @@ const l1Stub = createEsploraStub({
 });
 const l1Url = new URL(E2E_L1_SERVER.url);
 console.log(`stub esplora server for ${l1Entry.chain} at ${await l1Stub.listen(Number(l1Url.port), l1Url.hostname)}`);
+
+const flushEntry = JSON.parse(await readFile(new URL("core/flush/chain-entry.json", root), "utf8")).networks.betanet;
+const flushStub = createEsploraStub({ flush: true, identityBlock: flushEntry.identityBlock, tipHeight: 100, feeEstimates: { 6: 0.1, 1008: 0.1 } });
+const flushUrl = new URL(E2E_FLUSH_SERVER.url);
+console.log(`stub flush server for ${flushEntry.chain} at ${await flushStub.listen(Number(flushUrl.port), flushUrl.hostname)}`);
 console.log(`stub ${api} Sidechain Server for ${entry.chain} at ${await stub.listen(Number(url.port), url.hostname)}`);

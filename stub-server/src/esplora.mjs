@@ -75,6 +75,7 @@ export function createEsploraStub(config) {
    * and the first PAGE confirmed; `after` gives the PAGE confirmed after that txid ([] if absent).
    */
   function page(txs, after) {
+    if (!Array.isArray(txs)) return txs; // a malformed list, as given
     const confirmed = txs.filter((tx) => tx.status?.confirmed !== false);
     if (after === undefined) return [...txs.filter((tx) => tx.status?.confirmed === false), ...confirmed.slice(0, PAGE)];
     const at = confirmed.findIndex((tx) => tx.txid === after);
