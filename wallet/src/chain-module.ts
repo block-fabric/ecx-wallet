@@ -67,7 +67,7 @@ export interface NetworkEntry<P = unknown> {
 
 /** An asset the wallet shows by name (docs/adr/0005). */
 export interface AssetEntry {
-  /** Lowercase display hex; `NATIVE_COIN` for the root's coin. */
+  /** Lowercase display hex; `NATIVE_COIN` for the chain's own coin (docs/adr/0005). */
   id: string;
   ticker: string;
   name: string;
@@ -117,11 +117,14 @@ export interface Account {
   change: DerivedAddress[];
 }
 
-/** `AssetAmount.asset` on a chain without assets (eCash): its only coin, in sats. */
+/**
+ * `AssetAmount.asset` for a chain's own coin, which its server reports without an asset id (eCash's
+ * only coin, Flush's ECX), in sats.
+ */
 export const NATIVE_COIN = "";
 
 export interface AssetAmount {
-  /** Display hex, or NATIVE_COIN on a chain without assets. */
+  /** Display hex, or NATIVE_COIN for the chain's own coin. */
   asset: string;
   /** Base units, as a decimal string (negative only in `totalLeaving`, where it means coming in). */
   amount: string;
