@@ -65,8 +65,7 @@ function splitManifest(manifest) {
 for (const target of Object.keys(DIST)) {
   test(`${target}: the shipped build reaches eCash's, Slot 24's and Slot 46's betanet servers, and nothing else`, async () => {
     const { hostPermissions, connectSrc } = splitManifest(JSON.parse(await readFile(path.join(DIST[target], "manifest.json"), "utf8")));
-    // Slot 46's is a placeholder until it has an explorer (core/flush/src/chain_entry.rs).
-    const servers = ["https://esplora.beta.ecash.ninja", "https://explorer.bitnames.info", "https://flush-slot46.invalid"];
+    const servers = ["https://esplora.beta.ecash.ninja", "https://explorer.bitnames.info", "https://explorer.blockfab.org"];
     assert.deepEqual(hostPermissions, servers.map((s) => `${s}/*`));
     assert.equal(connectSrc, `connect-src 'self' ${servers.join(" ")}`);
   });

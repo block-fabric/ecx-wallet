@@ -17,7 +17,8 @@
 //!   asset id, so the entry names it with the empty id (docs/adr/0005).
 //! - **Address params:** `CEcashSidechainParams` copies `CMainParams` (P2PKH 0, P2SH 5) and sets
 //!   only the HRP, `bflx` on betanet.
-//! - **Server:** unknown until Slot 46 has an explorer; `flush-slot46.invalid` is a placeholder.
+//! - **Server:** Flush's explorer, `explorer.blockfab.org/betanet/flush/api`. On 2026-10-25 it served
+//!   the temporary Slot 99 chain, so the identity check fails there until it serves Slot 46.
 //!
 //! `build.rs` picks the file: `chain-entry.json`, or `$ECX_FLUSH_CHAIN_ENTRY` for the e2e build,
 //! whose Chain Entry differs only in its Sidechain Servers.
