@@ -78,6 +78,14 @@ _Avoid_: Asset registry (Liquid's, fetched from a server), token list
 What a Send on a chain can spend now, per asset: confirmed coins, plus change from the wallet's own unconfirmed transactions that only it could replace, less coins a pending Send already spent (docs/adr/0006).
 _Avoid_: Available balance
 
+**Finality**:
+How settled a block is on a chain that reports it, as Flush's explorer does: `soft` until an eCash block anchors it, `anchored` by one anchor, `final` by three. On Flush the Wallet Base counts a transaction as confirmed once its block is anchored (docs/adr/0012).
+_Avoid_: Confirmations, depth (on Flush, a deep block can still be soft)
+
+**Stalled**:
+What the Wallet Base shows for a chain that has made no block for longer than its Server API allows (5 minutes on Flush), measured from the age of the chain's tip: nothing on it confirms until it moves again.
+_Avoid_: Halted (Flush's own word, for a different condition), down, offline
+
 **Sidechain Server**:
 A server, by default run by a sidechain's maintainers, from which the Wallet Base reads that chain's state over the Server API its Chain Entry names; over the Standard Sidechain API it also builds unsigned payloads for the Wallet Base to sign and broadcasts the signed ones. Over Esplora the Wallet Base builds and broadcasts them itself.
 _Avoid_: Adapter, backend, sidechain plugin
