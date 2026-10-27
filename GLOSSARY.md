@@ -78,6 +78,10 @@ _Avoid_: Asset registry (Liquid's, fetched from a server), token list
 What a Send on a chain can spend now, per asset: confirmed coins, plus change from the wallet's own unconfirmed transactions that only it could replace, less coins a pending Send already spent (docs/adr/0006).
 _Avoid_: Available balance
 
+**Preconf**:
+On Flush, a transaction in a block no eCash block anchors yet (a `soft` block): it counts as confirmed and can be spent, but Flush may still replace that block until an anchor covers it (docs/adr/0012).
+_Avoid_: Soft-confirmed, pending
+
 **Sidechain Server**:
 A server, by default run by a sidechain's maintainers, from which the Wallet Base reads that chain's state over the Server API its Chain Entry names; over the Standard Sidechain API it also builds unsigned payloads for the Wallet Base to sign and broadcasts the signed ones. Over Esplora the Wallet Base builds and broadcasts them itself.
 _Avoid_: Adapter, backend, sidechain plugin
