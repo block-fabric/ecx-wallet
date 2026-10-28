@@ -29,6 +29,7 @@ import { ErrorCode, ProviderRpcError } from "./errors";
 import { feeRate, QUERIES_AT_ONCE, type EsploraClient } from "./esplora";
 import { checkedOrder, isTransferAskedFor, WATCHED_CHANGE_ADDRESSES, WATCHED_RECEIVE_ADDRESSES, type PullPath, type SendResult } from "./pull-path";
 import { rejected, type SignPrompt, type SigningApproval } from "./signing";
+import { speaksEsplora } from "./server-api";
 import { SidechainServerError, type TransferOrder } from "./sidechain-server";
 
 /** Blocks past its broadcast after which a Send the server doesn't know releases its coins. */
@@ -88,7 +89,7 @@ export function createSends(deps: SendDeps) {
 
   function esplora(target: KeyedChain<Starter>): EsploraClient | undefined {
     const { api } = target.network.sidechainServer;
-    if (api !== "esplora" && api !== "flush") return undefined;
+    if (!speaksEsplora(api)) return undefined;
     if (!canSend(target.module.declare().capabilities, target.network)) {
       throw refusal(`This wallet can't send on ${target.entry.name}: its Chain Module doesn't build transfers.`);
     }
