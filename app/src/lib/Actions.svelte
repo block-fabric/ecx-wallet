@@ -176,13 +176,18 @@
     border-radius: 50%;
     background: linear-gradient(180deg, color-mix(in srgb, var(--accent), #fff 18%), var(--accent));
     color: var(--on-accent);
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 40%), 0 6px 18px -8px var(--glow);
-    transition: transform 0.2s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.2s;
+    /* A glass ring around each gold circle, gold-edged under the pointer. */
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 40%), 0 0 0 5px var(--glass), 0 0 0 6px var(--glass-border), 0 6px 18px -8px var(--glow);
+    transition: transform 0.3s var(--ease-spring), box-shadow 0.3s;
   }
   .action:hover .circle {
     background: var(--accent-hover);
-    transform: translateY(-2px);
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 40%), 0 0 24px var(--glow);
+    transform: translateY(-3px) scale(1.04);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 40%), 0 0 0 6px var(--glass), 0 0 0 7px color-mix(in srgb, var(--accent) 50%, transparent), 0 0 30px var(--glow);
+  }
+  .action:active .circle {
+    transform: scale(0.94);
+    transition-duration: 0.08s;
   }
   .off {
     opacity: 0.45;
@@ -202,8 +207,12 @@
     color: var(--text);
     text-decoration: none;
   }
+  .pick {
+    transition: background-color 0.15s, transform 0.25s var(--ease-out);
+  }
   .pick:hover {
-    background: var(--surface-2);
+    background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+    transform: translateX(2px);
   }
   .grow {
     flex: 1;

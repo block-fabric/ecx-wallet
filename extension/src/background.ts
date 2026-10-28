@@ -427,6 +427,19 @@ const signing = {
   rememberSigned: assets.rememberSigned,
 };
 
+/**
+ * Tells open wallet pages that the wallet sent on these chains, once `run` settles (sent or not:
+ * reading again is harmless), so they show it without a Retry. None may be open.
+ */
+/** A read a shown page makes by itself (`unattended`, see `Chains.watch`) doesn't count as activity. */
+function byItself<T>(message: { unattended?: boolean }, read: () => Promise<T>): Promise<T> {
+  return message.unattended === true ? vault.unattended(read) : read();
+}
+
+function announcing<T>(ids: ("l1" | number)[], run: Promise<T>): Promise<T> {
+  return run.finally(() => chrome.runtime.sendMessage({ kind: "chains.changed", ids }).catch(() => {}));
+}
+
 const handleProviderRequest = createProviderHandler({
   ...signing,
   grants,
@@ -434,8 +447,8 @@ const handleProviderRequest = createProviderHandler({
   askToTurnOn,
   chains: chainsOn,
   receiveAddresses: (slot) => accounts.receiveAddresses(slot),
-  send: (slot, order, from) => sends.send(slot, order, from),
-  sendAction: (slot, action, from) => sends.trade(slot, action, from),
+  send: (slot, order, from) => announcing([slot], sends.send(slot, order, from)),
+  sendAction: (slot, action, from) => announcing([slot], sends.trade(slot, action, from)),
   askToNameAsset,
   async assetSuggestion(slot, origin, suggestion) {
     const module = await chainModule(slot)!;
@@ -635,6 +648,13 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
       await settings.setUnit(String(message.unit ?? ""));
       return settings.unit();
+    case "settings.rereadSeconds":
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      return settings.rereadSeconds();
+    case "settings.setRereadSeconds":
+      if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+      await settings.setRereadSeconds(Number(message.seconds));
+      return settings.rereadSeconds();
     case "view.pinned":
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
       return pinned();
@@ -651,7 +671,7 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
       return { addresses: await accounts.l1ReceiveAddresses() };
     case "l1.reported":
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
-      return pullPath.reportedL1State();
+      return byItself(message, () => pullPath.reportedL1State());
     case "l1.cached":
       // The last report this session, shown while `l1.reported` refreshes it; null if none.
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
@@ -662,17 +682,26 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
     case "accounts.reported":
       // What a Slot's Sidechain Server reports for the addresses the wallet watches.
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
-      return pullPath.reportedState(await onSlot(message.slot));
+      {
+        const slot = await onSlot(message.slot);
+        return byItself(message, () => pullPath.reportedState(slot));
+      }
     case "history.reported":
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
-      return message.slot === undefined ? pullPath.l1History() : pullPath.history(await onSlot(message.slot));
+      {
+        const slot = message.slot === undefined ? undefined : await onSlot(message.slot);
+        return byItself(message, () => (slot === undefined ? pullPath.l1History() : pullPath.history(slot)));
+      }
     case "history.cached":
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
       return (await (message.slot === undefined ? pullPath.cachedL1History() : pullPath.cachedHistory(await onSlot(message.slot)))) ?? null;
     case "send.start":
       // The wallet's own Send: resolves once broadcast, or once a `/v1` server accepted it.
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
-      return sends.send(await onSlot(message.slot), { outputs: Array.isArray(message.outputs) ? (message.outputs as TransferOutput[]) : [] }, undefined, hostOf(message));
+      {
+        const slot = await onSlot(message.slot);
+        return announcing([slot], sends.send(slot, { outputs: Array.isArray(message.outputs) ? (message.outputs as TransferOutput[]) : [] }, undefined, hostOf(message)));
+      }
     case "send.spendable":
       // What a Send on the Slot can spend now, per asset.
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
@@ -688,10 +717,13 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
     case "deposit.start":
       // Resolves once the M5 is broadcast (after the user's approval).
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
-      return deposits.start(await onSlot(message.slot), String(message.amount ?? ""), hostOf(message));
+      {
+        const slot = await onSlot(message.slot);
+        return announcing(["l1", slot], deposits.start(slot, String(message.amount ?? ""), hostOf(message)));
+      }
     case "deposit.list":
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
-      return deposits.list(supportedSlot(message.slot));
+      return byItself(message, () => deposits.list(supportedSlot(message.slot)));
     case "deposit.dismiss":
       if (!fromWalletPage(sender)) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
       await deposits.dismiss(String(message.txid ?? ""));

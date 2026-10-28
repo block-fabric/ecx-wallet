@@ -1,9 +1,11 @@
 // What the unlocked home and chain screens show about each chain: its Chain Entry's word on it, its
 // receive address, what its server reports, and (for a Slot) its Deposits. Each read is the
-// background's; this only keeps the answers, per chain, and asks again on Retry.
+// background's; this only keeps the answers, per chain, and asks again on Retry, after one of the
+// wallet's own transactions, and every so often while shown.
 import {
   cachedHistory,
   cachedState,
+  getRereadSeconds,
   l1Account,
   l1Cached,
   l1Reported,
@@ -11,6 +13,7 @@ import {
   listChains,
   listDeposits,
   nameFromRegistrations,
+  onChainsChanged,
   refusedDeposit,
   refusedSend,
   reportedHistory,
@@ -26,7 +29,17 @@ import {
   type RefusedSend,
   type ShownReport,
 } from "$lib/background";
+import { REREAD_SECONDS } from "@ecx/wallet";
+import { attention } from "$lib/attention";
 import { assetsOf } from "$lib/unit.svelte";
+
+/** A shown wallet nobody is at (not hovered or focused) reads its chains again this often, at most. */
+const UNATTENDED_MS = 300_000;
+/** Coming back to a page read longer ago than this reads it at once. */
+const STALE_MS = 60_000;
+/** How often `watch` checks whether a read is due. */
+const TICK_MS = 5_000;
+
 
 export interface ChainView {
   info: ChainInfo;
@@ -48,6 +61,16 @@ export class Chains {
   /** Every chain this release supports, on or off. */
   all = $state<ChainView[] | undefined>(undefined);
   error = $state("");
+  /** Each read's number, per chain and kind: only the newest one's answer is kept, so a re-read can't undo a later change. */
+  private reads = new Map<string, number>();
+
+  /** Starts a read of `what` on `id`; the returned check says whether it's still the newest. */
+  private begin(what: string, id: ChainId): () => boolean {
+    const key = `${what}:${id}`;
+    const n = (this.reads.get(key) ?? 0) + 1;
+    this.reads.set(key, n);
+    return () => this.reads.get(key) === n;
+  }
 
   /** The chains the user has on: the only ones shown, counted and read. */
   get list(): ChainView[] | undefined {
@@ -78,6 +101,41 @@ export class Chains {
     }
   }
 
+  /**
+   * Keeps what's shown current while the page is: reads a chain again when the wallet sent on it,
+   * and every so often by how closely the user is looking (`attention`). Coming back to a page
+   * last read over `STALE_MS` ago reads it at once. Returns the stop.
+   */
+  watch(only?: ChainId): () => void {
+    let readAt = Date.now();
+    const reread = (ids?: ChainId[]) => {
+      if (ids === undefined) readAt = Date.now();
+      for (const c of this.list ?? []) if ((ids === undefined || ids.includes(c.info.id)) && (only === undefined || c.info.id === only)) this.reread(c.info.id);
+    };
+    const stopListening = onChainsChanged((ids) => reread(ids));
+    const looking = attention();
+    // The setting's default until the page has the user's.
+    let everyMs = REREAD_SECONDS.default * 1000;
+    getRereadSeconds().then(
+      (seconds) => (everyMs = seconds * 1000),
+      () => {},
+    );
+    // Due by the user's setting while they're at the page, slowly while it's shown unattended, never while hidden.
+    const tick = setInterval(() => {
+      const state = looking.state();
+      const due = state === "attended" ? everyMs : state === "shown" ? Math.max(everyMs, UNATTENDED_MS) : Infinity;
+      if (Date.now() - readAt >= due) reread();
+    }, TICK_MS);
+    looking.onReturn(() => {
+      if (Date.now() - readAt > STALE_MS) reread();
+    });
+    return () => {
+      clearInterval(tick);
+      stopListening();
+      looking.stop();
+    };
+  }
+
   get(id: ChainId): ChainView | undefined {
     return this.all?.find((c) => c.info.id === id);
   }
@@ -91,23 +149,26 @@ export class Chains {
   readHistory(ids: ChainId[]) {
     for (const id of ids) {
       const slot = id === "l1" ? undefined : id;
-      showReport(() => cachedHistory(slot), () => reportedHistory(slot), (history) => this.update(id, { history }));
+      const newest = this.begin("history", id);
+      showReport(() => cachedHistory(slot), () => reportedHistory(slot), (history) => newest() && this.update(id, { history }));
     }
   }
 
   /** Reads a Slot's Deposits and refused Send again (after Stop tracking or closing a refused one). */
-  readDeposits(slot: number) {
+  readDeposits(slot: number, unattended?: boolean) {
+    const newest = this.begin("deposits", slot);
+    const keep = (change: Partial<ChainView>) => newest() && this.update(slot, change);
     refusedSend(slot).then(
-      (r) => this.update(slot, { refusedSend: r }),
-      () => this.update(slot, { refusedSend: null }),
+      (r) => keep({ refusedSend: r }),
+      () => keep({ refusedSend: null }),
     );
     refusedDeposit(slot).then(
-      (r) => this.update(slot, { refused: r }),
-      () => this.update(slot, { refused: null }),
+      (r) => keep({ refused: r }),
+      () => keep({ refused: null }),
     );
-    listDeposits(slot).then(
-      (d) => this.update(slot, { deposits: d }),
-      (e) => this.update(slot, { deposits: { error: (e as Error).message } }),
+    listDeposits(slot, unattended).then(
+      (d) => keep({ deposits: d }),
+      (e) => keep({ deposits: { error: (e as Error).message } }),
     );
   }
 
@@ -116,8 +177,37 @@ export class Chains {
     if (view) Object.assign(view, change);
   }
 
+  /**
+   * Reads a chain again quietly: what's shown stays, without a spinner, until the fresh answer
+   * replaces it. Its Activity too, if opened, and a Slot's Deposits. Skipped while a read is on.
+   */
+  private reread(id: ChainId) {
+    const view = this.get(id);
+    if (view === undefined || view.shown.refreshing) return;
+    const slot = id === "l1" ? undefined : id;
+    const newest = this.begin("report", id);
+    (slot === undefined ? l1Reported(true) : reportedState(slot, true)).then(
+      (report) => {
+        if (!newest()) return;
+        this.update(id, { shown: { report, refreshing: false } });
+        if (slot !== undefined) this.nameUnknown(slot, report);
+      },
+      (e) => newest() && this.update(id, { shown: { report: this.get(id)?.shown.report, refreshing: false, error: (e as Error).message } }),
+    );
+    if (view.history !== undefined && !view.history.refreshing) {
+      const newestHistory = this.begin("history", id);
+      reportedHistory(slot, true).then(
+        (report) => newestHistory() && this.update(id, { history: { report, refreshing: false } }),
+        () => {},
+      );
+    }
+    if (slot !== undefined) this.readDeposits(slot, true);
+  }
+
   private readReport(id: ChainId) {
+    const newest = this.begin("report", id);
     const show = (shown: ShownReport) => {
+      if (!newest()) return;
       this.update(id, { shown });
       if (id !== "l1" && shown.report !== undefined && !shown.refreshing) this.nameUnknown(id, shown.report);
     };

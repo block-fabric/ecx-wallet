@@ -33,6 +33,41 @@ fn a_swap_names_its_pool_sides_amount_and_floor() {
     assert!(matches!(parse_action(&swap(""), NOW).unwrap(), Action::Swap { slippage_bps: None, .. }));
 }
 
+/// A route through `pools` (comma-separated, as flush.markets percent-encodes it).
+fn route(pools: &str) -> String {
+    format!("flush:route?v=1&network=ecashbeta&exp={}&pools={pools}&from=FORK&to=BROSEVELT&amount=0.05&min_out=12.3", NOW + 600)
+}
+
+#[test]
+fn a_route_names_its_pools_in_turn() {
+    let other = "ab".repeat(32);
+    assert_eq!(
+        parse_action(&route(&format!("{POOL}%2C{other}")), NOW).unwrap(),
+        Action::Route {
+            expires: NOW + 600,
+            pools: vec![POOL.into(), other.clone()],
+            from: "FORK".into(),
+            to: "BROSEVELT".into(),
+            amount: "0.05".into(),
+            min_out: "12.3".into(),
+            slippage_bps: None,
+        }
+    );
+    let ids = |n: usize| (0..n).map(|i| format!("{i:02x}").repeat(32)).collect::<Vec<_>>().join("%2C");
+    assert!(parse_action(&route(&ids(4)), NOW).is_ok());
+    for refused_route in [
+        route(POOL),
+        route(&ids(5)),
+        route(&format!("{POOL}%2C{POOL}")),
+        route(&format!("{POOL},{other}")),
+        route(&format!("{POOL}%2C")),
+        route(&format!("{POOL}%2C{other}")).replace("to=BROSEVELT", "to=FORK"),
+        route(&format!("{POOL}%2C{other}")).replace("&min_out=12.3", ""),
+    ] {
+        assert_eq!(refused(&refused_route), RefusalCode::InvalidAction, "{refused_route}");
+    }
+}
+
 #[test]
 fn a_buy_pays_ecx_and_a_sale_pays_tokens() {
     let buy = format!("flush:buy?v=1&network=ecashbeta&exp={}&launch=FORK&asset={FORK}&ecx=0.0001&min_tokens=0.04", NOW + 60);
@@ -99,10 +134,10 @@ fn what_flushs_app_refuses_is_refused() {
 
 #[test]
 fn other_actions_are_unsupported_not_invalid() {
-    for verb in ["connect", "route", "deposit", "withdraw", "order", "launch", "pegout"] {
+    for verb in ["connect", "deposit", "withdraw", "order", "launch", "pegout"] {
         let uri = format!("flush:{verb}?v=1&network=ecashbeta&exp={}", NOW + 60);
         assert_eq!(refused(&uri), RefusalCode::UnsupportedAction, "{verb}");
     }
     // The version and the network are checked first, as the app does.
-    assert_eq!(refused(&format!("flush:route?v=2&network=ecashbeta&exp={}", NOW + 60)), RefusalCode::InvalidAction);
+    assert_eq!(refused(&format!("flush:deposit?v=2&network=ecashbeta&exp={}", NOW + 60)), RefusalCode::InvalidAction);
 }

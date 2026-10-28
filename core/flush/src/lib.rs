@@ -40,7 +40,7 @@ mod transfer;
 pub use chain_entry::{chain_entry, ChainEntry, NetworkEntry, ServerApi, SidechainServerEntry};
 pub use deposit::{deposit_destination, long_form, DepositDestination, MAX_DESTINATION_BYTES};
 pub use decode::{decode, decode_with_evidence, ClearInput, ClearOutput, ClearTrade, ClearView, DangerousMode, Decoded, Destination, VerifiableFacts};
-pub use link::{parse_action, Action, CLOCK_SKEW, MAX_LIFETIME, MAX_LINK_BYTES, MAX_SLIPPAGE_BPS};
+pub use link::{parse_action, Action, CLOCK_SKEW, MAX_LIFETIME, MAX_LINK_BYTES, MAX_ROUTE_POOLS, MAX_SLIPPAGE_BPS};
 pub use psbt::{check, AssetAmount, OwnedInput, Refusal, RefusalCode};
 pub use sign::{finalize, sign, Finalized};
 pub use tokens::{asset_logo, asset_registration, output_tokens, CheckedLogo, CheckedRegistration, OutputToken, OutputTokens, SwapOrder, TokenAmount, MAX_DECIMALS, MAX_LOGO_BYTES};

@@ -216,6 +216,8 @@ for (const browserName of BROWSERS) describe(browserName, () => {
         { timeout: 10_000 },
       );
       await page.waitForFunction(() => document.querySelector("[data-lock-countdown]").textContent.trim() === "Locks in 15 min", { timeout: 10_000 });
+      // Opening Activity reads its history, whose keys count as use: let it finish first.
+      await page.waitForSelector("[data-activity]:not([data-refreshing])", { timeout: 20_000 });
 
       await deadlineIn(page, 180_000);
       await page.click('[data-tab="assets"]');

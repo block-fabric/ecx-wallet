@@ -64,6 +64,8 @@ await esbuild.build({ ...common, entryPoints: [path.join(root, "src", "backgroun
 await esbuild.build({ ...common, entryPoints: [path.join(root, "src", "content.ts")], format: "iife", outfile: path.join(staging, "content.js") });
 await esbuild.build({ ...common, entryPoints: [path.join(root, "src", "inpage.ts")], format: "iife", outfile: path.join(staging, "inpage.js") });
 await cp(appBuild, staging, { recursive: true });
+// The toolbar and extension icons (icons/icon.svg, rendered at each size).
+await cp(path.join(root, "icons"), path.join(staging, "icons"), { recursive: true, filter: (f) => !f.endsWith(".svg") });
 // The core modules' WASM, staged once so both browsers ship the same bytes.
 for (const file of (await readdir(coreDist)).filter((f) => f.endsWith(".wasm"))) {
   await cp(path.join(coreDist, file), path.join(staging, file));

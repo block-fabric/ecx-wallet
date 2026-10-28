@@ -1,5 +1,6 @@
 <script lang="ts">
   import { totalAcrossChains } from "@ecx/wallet";
+  import { page } from "$app/state";
   import { lockVault, unlockVault, vaultStatus, type VaultStatus } from "$lib/background";
   import Actions from "$lib/Actions.svelte";
   import AssetRows from "$lib/AssetRows.svelte";
@@ -9,6 +10,7 @@
   import Icon from "$lib/Icon.svelte";
   import LockCountdown from "$lib/LockCountdown.svelte";
   import Mark from "$lib/Mark.svelte";
+  import { nav } from "$lib/nav.svelte";
   import TopBar from "$lib/TopBar.svelte";
   import { amountText, unit } from "$lib/unit.svelte";
   import { stalledText } from "$lib/stall";
@@ -19,7 +21,6 @@
   let password = $state("");
   let error = $state("");
   let busy = $state(false);
-  let tab = $state<"assets" | "activity">("assets");
   /** Chains whose section in Assets is folded away. */
   let folded = $state<Record<string, boolean>>({});
   let actions = $state<Actions | undefined>(undefined);
@@ -31,6 +32,18 @@
   );
 
   vaultStatus().then((s) => (status = s));
+  // The bottom bar opens home on a panel (`#/?tab=activity`).
+  $effect(() => {
+    const tab = new URLSearchParams(page.url.hash.split("?")[1] ?? "").get("tab");
+    if (tab === "assets" || tab === "activity") nav.tab = tab;
+  });
+  // The bottom bar shows while the wallet is unlocked.
+  $effect(() => {
+    nav.unlocked = vaultState === "unlocked";
+  });
+  $effect(() => {
+    nav.deposits = deposits.length;
+  });
 
   // The account screen: read in the background whenever the wallet is (or becomes) unlocked.
   $effect(() => {
@@ -41,17 +54,20 @@
     const next = new Chains();
     chains = next;
     next.load();
+    return next.watch();
   });
 
   const list = $derived(chains?.list ?? []);
   const main = $derived(list.find((c) => c.info.id === "l1"));
   /** Every Slot, on or off: their Deposits in progress show either way. */
   const slots = $derived(chains?.slots ?? []);
-  /** Chains this release supports, on or off. */
-  const supported = $derived(chains?.all ?? []);
   /** The main chain's coin: how every ECX total and Deposit is written. */
   const ecx = $derived(main?.info.assets ?? []);
   const total = $derived(totalAcrossChains(list.map((c) => ({ name: c.info.name, assets: c.info.assets, report: c.shown.report }))));
+  /** Chains whose first report is in (or failed): the sync's progress, while any is still reading. */
+  const synced = $derived(list.filter((c) => !c.shown.refreshing || c.shown.report !== undefined).length);
+  /** Chains still unread once their sync is over: a warning, not a state of the sync. */
+  const unavailable = $derived(total.unavailable.filter((name) => list.some((c) => c.info.name === name && !c.shown.refreshing)));
   const deposits = $derived(slots.flatMap((s) => (Array.isArray(s.deposits) ? s.deposits : [])));
   const inFlight = $derived(onTheWay(deposits));
   /** The network the whole wallet is on, shown once by its name ("betanet" as BETANET). */
@@ -128,38 +144,42 @@
       <button class="icon-button" disabled={busy} aria-label="Lock" title="Lock" onclick={() => act(lockVault)} data-lock>
         <Icon name="lock" />
       </button>
-      <a class="icon-button" href="#/settings" aria-label="Settings" title="Settings" data-settings-link><Icon name="settings" /></a>
+      {#if synced < list.length}
+        <!-- Along the header's bottom edge, between it and the page, while chains are still read. -->
+        <div class="sync" role="progressbar" aria-valuemin={0} aria-valuemax={list.length} aria-valuenow={synced} aria-label="Syncing chains" data-syncing>
+          <span class="sync-fill" style:width="{((synced + 0.5) / list.length) * 100}%"></span>
+          <span class="sync-text tiny">Syncing {synced} of {list.length} chains…</span>
+        </div>
+      {/if}
     </header>
+
+    {#if unavailable.length > 0}
+      <div class="banner warn" role="status">
+        <Icon name="warning" size={18} />
+        <span data-unavailable>{unavailable.join(", ")} unavailable, not counted</span>
+      </div>
+    {/if}
 
     <section class="hero" data-total-ready={list.length > 0 && list.every((c) => !c.shown.refreshing) ? "" : undefined}>
       <span class="muted tiny">{list.length > 1 ? "Total across chains" : "Balance"}</span>
       <button class="big" onclick={() => unit.toggle()} title="Show amounts in {unit.value === "ecx" ? "sats" : "ECX"}" data-total data-unit={unit.value}>
-        {amountText(total.amount, "", ecx)}
+        {#key amountText(total.amount, "", ecx)}<span class="settle">{amountText(total.amount, "", ecx)}</span>{/key}
       </button>
       {#if total.unconfirmed !== "0"}
         <span class="pill pending" data-total-unconfirmed>+{amountText(total.unconfirmed, "", ecx)} unconfirmed</span>
       {/if}
       {#if inFlight !== "0"}
-        <button class="pill on-the-way" onclick={() => (tab = "activity")} data-on-the-way>
+        <button class="pill on-the-way" onclick={() => (nav.tab = "activity")} data-on-the-way>
           +{amountText(inFlight, "", ecx)} in Deposits on the way
         </button>
-      {/if}
-      {#if total.unavailable.length > 0}
-        <span class="pill bad" data-unavailable>{total.unavailable.join(", ")} unavailable, not counted</span>
       {/if}
     </section>
 
     <Actions chains={list} bind:this={actions} />
 
-    <div class="tabs" role="tablist">
-      <button role="tab" aria-selected={tab === "assets"} onclick={() => (tab = "assets")} data-tab="assets">Assets</button>
-      <button role="tab" aria-selected={tab === "activity"} onclick={() => (tab = "activity")} data-tab="activity">
-        Activity{#if deposits.length > 0}<span class="count" title="Deposits in progress">{deposits.length}</span>{/if}
-      </button>
-    </div>
 
     <!-- Both panels stay in the page, the hidden one hidden: each chain's state is read once. -->
-    <div class="panel" role="tabpanel" hidden={tab !== "assets"}>
+    <div class="panel" role="tabpanel" hidden={nav.tab !== "assets"}>
       {#each list as c (c.info.id)}
         {@const subtotal = c.shown.report?.balances.find((b) => b.asset === c.info.assets.find((a) => a.ecx)?.id)}
         <section
@@ -197,20 +217,12 @@
       {/each}
       {#if list.length > 0}
         <p class="note">Balances are as each chain's server reports them. This wallet doesn't verify them.</p>
-        <a class="card nav-row manage" href="#/chains" data-manage-chains>
-          <span class="manage-icon"><Icon name="plus" size={16} /></span>
-          <span class="grow">
-            <strong class="small">Manage chains</strong>
-            <span class="muted tiny">{list.length} of {supported.length} on · turn chains on or off</span>
-          </span>
-          <Icon name="forward" size={16} />
-        </a>
       {/if}
     </div>
 
-    <div class="panel" role="tabpanel" hidden={tab !== "activity"}>
+    <div class="panel" role="tabpanel" hidden={nav.tab !== "activity"}>
       {#if chains}
-        <ActivityFeed {chains} views={list} {slots} active={tab === "activity"} chips />
+        <ActivityFeed {chains} views={list} {slots} active={nav.tab === "activity"} chips />
       {/if}
     </div>
   {/if}
@@ -219,6 +231,7 @@
     <p class="error" role="alert" data-error>{error || chains?.error}</p>
   {/if}
 </main>
+
 
 <style>
   .welcome {
@@ -315,7 +328,25 @@
     font-variant-numeric: tabular-nums;
     line-height: 1.15;
   }
+  /* The total settles in each time it changes. */
+  .settle {
+    display: inline-block;
+    animation: pop 0.45s var(--ease-out) both;
+  }
+  .big {
+    background: linear-gradient(180deg, var(--text) 30%, color-mix(in srgb, var(--text), var(--accent) 45%)) text;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .big:hover {
+    background: linear-gradient(180deg, var(--text) 20%, var(--accent)) text;
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
   .pill {
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     min-height: 0;
     padding: 2px 10px;
     border: none;
@@ -339,36 +370,62 @@
     background: var(--danger-bg);
     color: var(--danger);
   }
-  .tabs {
+  /* A chain that couldn't be read: under the header, above the total, until it's read. */
+  .banner {
     display: flex;
-    border-bottom: 1px solid var(--border);
-  }
-  .tabs button {
-    flex: 1;
-    min-height: 40px;
-    border: none;
-    border-bottom: 2px solid transparent;
-    border-radius: 0;
-    background: none;
-    color: var(--muted);
-    transition: color 0.2s, border-color 0.2s;
-  }
-  .tabs button[aria-selected="true"] {
-    border-bottom-color: var(--accent);
-    color: var(--text);
-  }
-  .count {
-    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    min-width: 18px;
-    height: 18px;
-    margin-left: 6px;
-    padding: 0 5px;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    font-weight: 600;
+    animation: rise 0.3s ease both;
+  }
+  .banner.warn {
+    border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+    background: color-mix(in srgb, var(--warn-bg) 80%, transparent);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    color: var(--warn);
+  }
+  /* The sync's progress: a gold line along the header's bottom edge, its words just under it. */
+  .sync {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    animation: fade-in 0.3s ease both;
+  }
+  .sync-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: 0 999px 999px 0;
+    background: linear-gradient(90deg, var(--accent-hover), var(--accent), #ffe7a8, var(--accent));
+    background-size: 200% 100%;
+    box-shadow: 0 0 10px var(--glow);
+    animation: shimmer 1.2s linear infinite;
+    transition: width 0.4s ease;
+  }
+  .sync-text {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    padding: 1px 10px;
+    border: 1px solid var(--glass-border);
     border-radius: 999px;
-    background: var(--accent);
-    color: var(--on-accent);
-    font-size: 0.7rem;
+    background: var(--glass-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    color: var(--muted);
+    white-space: nowrap;
+    transform: translateX(-50%);
+  }
+  @keyframes shimmer {
+    to {
+      background-position: -200% 0;
+    }
   }
   .panel {
     display: flex;
@@ -435,29 +492,5 @@
     font-size: 0.75rem;
     font-style: italic;
     text-align: center;
-  }
-  .nav-row {
-    flex-direction: row;
-    align-items: center;
-    gap: 12px;
-    color: var(--text);
-    text-decoration: none;
-  }
-  a.nav-row:hover {
-    background: var(--surface-2);
-  }
-  .manage {
-    display: flex;
-    padding: 10px 14px;
-  }
-  .manage-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    background: color-mix(in srgb, var(--accent) 14%, transparent);
-    color: var(--accent-text);
   }
 </style>

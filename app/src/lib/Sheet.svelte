@@ -22,7 +22,10 @@
     position: fixed;
     inset: 0;
     z-index: 10;
-    background: rgb(0 0 0 / 45%);
+    background: rgb(0 0 0 / 35%);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    animation: fade-in 0.25s ease both;
   }
   .sheet {
     position: fixed;
@@ -38,8 +41,35 @@
     margin: 0 auto;
     padding: 16px;
     overflow-y: auto;
-    border-radius: 16px 16px 0 0;
-    background: var(--surface);
+    border: 1px solid var(--glass-border);
+    border-bottom: none;
+    border-radius: 20px 20px 0 0;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--glass-edge) 35%, transparent), transparent 120px),
+      var(--glass-strong);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    backdrop-filter: blur(24px) saturate(180%);
+    box-shadow: inset 0 1px 0 var(--glass-edge), 0 -18px 50px -20px rgb(0 0 0 / 45%);
+    transform-origin: 50% 100%;
+    animation: sheet-up 0.36s var(--ease-spring) both;
+  }
+  /* The grip along its top edge. */
+  .sheet::before {
+    content: "";
+    align-self: center;
+    width: 36px;
+    height: 4px;
+    margin: -6px 0 -4px;
+    border-radius: 999px;
+    background: var(--border);
+    flex: none;
+  }
+  /* It grows up from the bottom edge rather than sliding in: nothing in it starts off screen. */
+  @keyframes sheet-up {
+    from {
+      transform: scale(0.92, 0.85);
+      opacity: 0;
+    }
   }
   .head {
     display: flex;
@@ -54,5 +84,9 @@
     border-radius: 50%;
     background: none;
     color: var(--muted);
+    transition: transform 0.3s var(--ease-spring), background-color 0.2s;
+  }
+  .close:hover {
+    transform: rotate(90deg);
   }
 </style>

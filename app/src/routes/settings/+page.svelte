@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { lockVault, vaultStatus, type VaultStatus } from "$lib/background";
+  import { REREAD_SECONDS } from "@ecx/wallet";
+  import { getRereadSeconds, lockVault, setRereadSeconds, vaultStatus, type VaultStatus } from "$lib/background";
   import Icon from "$lib/Icon.svelte";
   import TopBar from "$lib/TopBar.svelte";
   import { unit } from "$lib/unit.svelte";
@@ -7,7 +8,23 @@
   let status = $state<VaultStatus | undefined>(undefined);
   let error = $state("");
 
+  /** How often a shown wallet reads its chains again: these, or the stored value if it's another. */
+  const REREAD_CHOICES = [15, 30, 60, 120, 300];
+  let reread = $state<number | undefined>(undefined);
+  const rereadChoices = $derived(reread === undefined || REREAD_CHOICES.includes(reread) ? REREAD_CHOICES : [...REREAD_CHOICES, reread].sort((a, b) => a - b));
+
   vaultStatus().then((s) => (status = s));
+  getRereadSeconds().then((s) => (reread = s), () => (reread = REREAD_SECONDS.default));
+
+  async function chooseReread(seconds: number) {
+    try {
+      reread = await setRereadSeconds(seconds);
+    } catch (e) {
+      error = (e as Error).message;
+    }
+  }
+
+  const secondsText = (s: number) => (s < 60 ? `${s} s` : s % 60 === 0 ? `${s / 60} min` : `${s} s`);
 
   async function lockNow() {
     try {
@@ -52,6 +69,21 @@
           <button aria-pressed={unit.loaded && unit.value === value} onclick={() => unit.set(value)} data-unit-option={value}>{label}</button>
         {/each}
       </span>
+    </li>
+    <li class="setting">
+      <Icon name="refresh" />
+      <span class="grow"><strong class="small">Refresh balances</strong><span class="muted tiny">How often an open wallet reads its chains again</span></span>
+      <select
+        aria-label="Refresh balances every"
+        value={reread}
+        disabled={reread === undefined}
+        onchange={(e) => chooseReread(Number(e.currentTarget.value))}
+        data-reread
+      >
+        {#each rereadChoices as seconds (seconds)}
+          <option value={seconds}>Every {secondsText(seconds)}</option>
+        {/each}
+      </select>
     </li>
     <li class="setting">
       <Icon name="history" />
@@ -113,6 +145,12 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
+  }
+  .setting select {
+    width: auto;
+    min-height: 32px;
+    padding: 4px 8px;
+    font-size: 0.8rem;
   }
   .segmented {
     display: flex;

@@ -11,7 +11,7 @@ import { parseElementsTx } from "./elements-tx.mjs";
 
 /**
  * @typedef {{ txid: string, vout: number, value?: number, asset?: string, valuecommitment?: string,
- *   assetcommitment?: string, confirmed: boolean }} UtxoFixture
+ *   assetcommitment?: string, confirmed: boolean, blockHeight?: number, blockHash?: string }} UtxoFixture
  * @typedef {{ hex: string, confirmed?: boolean, blockHeight?: number, blockHash?: string, blockTime?: number }} TxFixture
  * @typedef {{ identityBlock: { height: number, hash: string }, blocks?: Record<number, string>,
  *   tipHeight?: number, utxos?: Record<string, UtxoFixture[]>, addressTxCounts?: Record<string, number>,
@@ -21,7 +21,7 @@ import { parseElementsTx } from "./elements-tx.mjs";
  *   broadcastTxid?: string, assets?: Record<string, object>, flush?: boolean,
  *   finality?: Record<string, "soft" | "anchored" | "final">, tipTime?: number,
  *   flushAssets?: Record<string, object>, holdings?: Record<string, object[]>, rejectReason?: string,
- *   marketHeight?: number, instantPayoutsFrom?: number, marketTrades?: Record<string, object>, marketDown?: boolean,
+ *   marketHeight?: number, instantPayoutsFrom?: number, marketTrades?: Record<string, object>, marketDown?: boolean, blocksDown?: boolean,
  *   flushRpc?: Record<string, ((args: unknown[]) => unknown) | unknown>, flushRpcStatus?: Record<string, number> }} EsploraStubConfig
  */
 
@@ -56,7 +56,8 @@ const PAGE = 25;
  * `config.pathDelayMs[path]` for that path, as a server stuck on one query does.
  *
  * With `config.flush`, as Flush's explorer answers: `/flush/blocks?hashes=a,b` gives each block's
- * finality (`config.finality[hash]`, default `final`; null for a block it doesn't know); a coinbase
+ * finality (`config.finality[hash]`, default `final`; null for a block it doesn't know; 503 with
+ * `config.blocksDown`); a coinbase
  * input has `txid: ""`; `/utxo` statuses have no `block_time`; `/fee-estimates` is HTTP 203; a
  * height past the tip is HTTP 500; errors are JSON `{ error }`, and unknown routes an HTML 404.
  * `/flush/rpc/getasset?args=["0x<id>"]` answers `config.flushAssets[id]` (getasset's JSON), else 404
@@ -169,6 +170,7 @@ export function createEsploraStub(config) {
     }
     if (pathname === "/fee-estimates") return config.feeEstimates ? [config.flush ? 203 : 200, config.feeEstimates] : error(404, "Not found");
     if (config.flush && pathname === "/flush/blocks") {
+      if (config.blocksDown) return [503, { error: "Busy" }];
       const hashes = (query.get("hashes") ?? "").split(",");
       if (hashes.length > 30 || !hashes.every((h) => /^[0-9a-f]{64}$/.test(h))) return [400, { error: "From 1 to 30 block hashes" }];
       const known = knownBlocks();
@@ -227,9 +229,9 @@ export function createEsploraStub(config) {
       const address = decodeURIComponent(utxo[1]);
       return [
         200,
-        (config.utxos?.[address] ?? []).map(({ confirmed, blockHash, ...output }) => {
-          const { block_time: _, ...flushStatus } = status({ confirmed, blockHash });
-          return { ...output, status: config.flush ? flushStatus : status({ confirmed, blockHash }) };
+        (config.utxos?.[address] ?? []).map(({ confirmed, blockHeight, blockHash, ...output }) => {
+          const { block_time: _, ...flushStatus } = status({ confirmed, blockHeight, blockHash });
+          return { ...output, status: config.flush ? flushStatus : status({ confirmed, blockHeight, blockHash }) };
         }),
       ];
     }

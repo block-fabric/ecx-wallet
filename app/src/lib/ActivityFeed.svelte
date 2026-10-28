@@ -32,8 +32,6 @@
 
   /** The chain the chips narrow the transactions to; Deposits in progress show under every chip. */
   let only = $state<ChainId | "all">("all");
-  /** What a preconfirmed transaction is (Flush's soft blocks, docs/adr/0012). */
-  const PRECONF = "In a block that no eCash block anchors yet. It counts and can be spent; until an anchor covers it, the chain may still replace that block.";
 
   const shown = $derived(views.filter((v) => only === "all" || v.info.id === only));
   const days = $derived(
@@ -43,6 +41,8 @@
     ),
   );
   const refreshing = $derived(views.some((v) => v.history === undefined || v.history.refreshing));
+  /** Chains shown whose activity hasn't been read once yet (and hasn't failed). */
+  const loading = $derived(shown.filter((v) => v.history?.report === undefined && v.history?.error === undefined));
   const ecx = $derived(chains.get("l1")?.info.assets ?? []);
   const anyDeposits = $derived(slots.some((s) => Array.isArray(s.deposits) && s.deposits.length > 0));
   /** The transaction whose details sheet is open. */
@@ -189,7 +189,6 @@
     <span data-history-status>
       {#if entry.time !== undefined}<time datetime={new Date(entry.time * 1000).toISOString()}>{timeOf(entry.time)}</time>{:else}Confirmed{/if}
     </span>
-    {#if entry.preconfirmed}<span class="pill" title={PRECONF} data-history-preconfirmed>Preconf</span>{/if}
   {:else if entry.trusted}
     <span class="pill" data-history-status>Pending</span>
   {:else}
@@ -224,6 +223,20 @@
       </p>
     {/if}
   {/each}
+
+  {#if loading.length > 0}
+    {#if days.length === 0}
+      <!-- Nothing read yet: rows of placeholder, shimmering, where transactions will show. -->
+      <div class="skeleton" role="status" aria-label="Loading activity" data-history-loading>
+        {#each [0, 1, 2, 3] as i (i)}
+          <div class="ghost" style:--i={i}><span class="ghost-icon"></span><span class="ghost-lines"><span></span><span></span></span><span class="ghost-amount"></span></div>
+        {/each}
+        <p class="loading tiny"><span class="spinner"></span>Loading {loading.map((v) => v.info.name).join(", ")} activity…</p>
+      </div>
+    {:else}
+      <p class="loading tiny" role="status" data-history-loading><span class="spinner"></span>Loading {loading.map((v) => v.info.name).join(", ")} activity…</p>
+    {/if}
+  {/if}
 
   {#each days as { day, items } (day)}
     <section class="day">
@@ -344,7 +357,7 @@
     <dl class="facts">
       <dt>Status</dt>
       <dd>
-        {#if entry.preconfirmed}Preconfirmed. {PRECONF}{:else if entry.confirmed}Confirmed{:else if entry.trusted}Pending{:else}Unconfirmed: {unconfirmedWhy(entry)}{/if}
+        {#if entry.confirmed}Confirmed{:else if entry.trusted}Pending{:else}Unconfirmed: {unconfirmedWhy(entry)}{/if}
       </dd>
       {#if entry.time !== undefined}<dt>Mined</dt><dd data-details-mined>{minedAt(entry.time)}</dd>{/if}
       <dt>Chain</dt>
@@ -673,5 +686,65 @@
     border: none;
     background: none;
     color: var(--muted);
+  }
+  .loading {
+    justify-content: center;
+    gap: 8px;
+  }
+  .loading .spinner {
+    width: 12px;
+    height: 12px;
+  }
+  .skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .ghost {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 8px;
+    animation: rise 0.4s var(--ease-out) both;
+    animation-delay: calc(var(--i) * 60ms);
+  }
+  .ghost span,
+  .ghost-lines span {
+    display: block;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--surface-2) 25%, color-mix(in srgb, var(--surface-2), var(--text) 8%) 50%, var(--surface-2) 75%);
+    background-size: 200% 100%;
+    animation: ghost-shimmer 1.4s linear infinite;
+  }
+  .ghost .ghost-icon {
+    flex: none;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+  }
+  .ghost .ghost-lines {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: none;
+    animation: none;
+  }
+  .ghost-lines span:first-child {
+    width: 45%;
+    height: 10px;
+  }
+  .ghost-lines span:last-child {
+    width: 28%;
+    height: 8px;
+  }
+  .ghost .ghost-amount {
+    width: 64px;
+    height: 10px;
+  }
+  @keyframes ghost-shimmer {
+    to {
+      background-position: -200% 0;
+    }
   }
 </style>

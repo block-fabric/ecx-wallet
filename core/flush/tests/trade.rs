@@ -1,5 +1,5 @@
 //! A trade a `flush:` link asks for, built by the module (docs/adr/0016): one kind-21 marker
-//! through the pool, laid out as Flush's own wallet lays it out (live tx 0f18f338…4e33), the pool
+//! through the pool (or a route's pools in turn), laid out as Flush's own wallet lays it out (live tx 0f18f338…4e33), the pool
 //! proven from its id and the token's decimals from its registration, the floor checked against
 //! the node's quote.
 mod common;
@@ -17,6 +17,9 @@ const FIXTURES: &str = include_str!("trade-fixtures.json");
 const NOW: i64 = 1_800_000_000;
 const FORK: &str = "6bb2ae6e23e626cd2fba1f8845d8bbc047aeb9a8f4690ee9a21b5d04584dfb03";
 const FORK_POOL: &str = "2b16f8c06c0f98034bacfe23cec9e36ce96b3d1282766dd957901435354b402a";
+const BROSEVELT: &str = "7351ccd9fd2f091cce3f9d8e3cd0b95f278885f4610620784b8c64be8b0237c1";
+/// BROSEVELT's concentrated pool with ECX: a route's second pool after FORK's.
+const BROSEVELT_POOL: &str = "2a1dbe3c10bc5781a59dd40e2f516dab62b1d15170c8788a7a5c87a4076cc7a9";
 /// 1 sat/vB.
 const FEE_RATE: u64 = 1000;
 
@@ -45,7 +48,7 @@ fn buy(ecx: &str, min_tokens: &str) -> String {
 fn order(link: &str, quote: f64, coins: Vec<Value>) -> Value {
     let f = fixtures();
     json!({
-        "link": link, "now": NOW, "pool": f["forkPool"], "registrations": [f["forkRegistration"]["hex"]],
+        "link": link, "now": NOW, "pools": [f["forkPool"]], "registrations": [f["forkRegistration"]["hex"]],
         "quote": quote, "minPayout": 0.00005, "coins": coins, "feeRate": FEE_RATE, "changeIndex": 2,
     })
 }
@@ -129,9 +132,9 @@ fn what_the_wallet_cant_prove_or_wouldnt_mean_is_refused() {
     let cases: Vec<(&str, Value)> = vec![
         (
             "a swap's pool whose kind isn't what makes the link's id",
-            with(order(&link("swap", &format!("pool={FORK_POOL}&from=ECX&to=FORK&amount=0.0001&min_out=0.044")), 0.044482, coins()), "pool", other_fee),
+            with(order(&link("swap", &format!("pool={FORK_POOL}&from=ECX&to=FORK&amount=0.0001&min_out=0.044")), 0.044482, coins()), "pools", json!([other_fee])),
         ),
-        ("an abandoned pool", with(order(&buy("0.0001", "0.044"), 0.044482, coins()), "pool", abandoned)),
+        ("an abandoned pool", with(order(&buy("0.0001", "0.044"), 0.044482, coins()), "pools", json!([abandoned]))),
         ("no registration of FORK", with(order(&buy("0.0001", "0.044"), 0.044482, coins()), "registrations", json!([]))),
         (
             "another launch's ticker",
@@ -153,7 +156,7 @@ fn what_the_wallet_cant_prove_or_wouldnt_mean_is_refused() {
     }
     let sell_floor = link("sell", &format!("launch=FORK&asset={FORK}&tokens=0.05&min_ecx=0.00001"));
     assert_eq!(refused(&order(&sell_floor, 0.000011, vec![fork_coin(1, 80_000), ecx_coin(2, 20_000)])).0, RefusalCode::InvalidAction, "ECX out below the payout");
-    assert_eq!(refused(&order(&link("route", "pools=x"), 0.0, coins())).0, RefusalCode::UnsupportedAction);
+    assert_eq!(refused(&order(&link("deposit", "pool=x"), 0.0, coins())).0, RefusalCode::UnsupportedAction);
     assert_eq!(refused(&order(&buy("0.0001", "0.044"), 0.044482, vec![ecx_coin(1, 5_000)])).0, RefusalCode::InsufficientFunds);
 }
 
@@ -184,7 +187,7 @@ fn a_built_buy_decodes_clear_with_its_pool_as_evidence() {
     assert_eq!(
         view["trade"],
         json!({
-            "pool": FORK_POOL, "assetIn": "", "amountIn": "10000", "assetOut": FORK, "minOut": "44000", "result": 0,
+            "pools": [FORK_POOL], "assetIn": "", "amountIn": "10000", "via": [], "assetOut": FORK, "minOut": "44000", "result": 0,
             "payout": { "kind": "address", "address": given_out, "yours": true }, "warnings": [],
         })
     );
@@ -241,9 +244,87 @@ fn a_trade_the_decoder_cant_fully_check_is_blind() {
     psbt.unsigned_tx.output[1].value = bitcoin::Amount::from_sat(9_000);
     psbt.unsigned_tx.output[2].value += bitcoin::Amount::from_sat(1_000);
     assert!(blind_reason(decoded(&psbt, &evidence)).contains("ECX"));
-    // Two pools: a route.
+    // A route back to where it started: ECX through FORK's pool and back again.
     let mut psbt = base.clone();
     let route = bast::swap_pools_marker(&"00".repeat(32), &[FORK_POOL, FORK_POOL], 10_000, 44_000, &[], &[(0, None)]).unwrap();
     psbt.unsigned_tx.output[1].script_pubkey = ScriptBuf::from_bytes(route);
-    assert!(blind_reason(decoded(&psbt, &evidence)).contains("pool"));
+    let both = json!({ "pools": [fixtures()["forkPool"], fixtures()["forkPool"]] });
+    assert!(blind_reason(decoded(&psbt, &both)).contains("comes back"));
+    // Two pools described by one: the evidence doesn't check out.
+    assert_eq!(decode_with_evidence(&psbt.to_string(), STARTER, &evidence.to_string()).unwrap_err().code, RefusalCode::InvalidEvidence);
+}
+
+/// A route of FORK through ECX to BROSEVELT, as flush.markets links it: both pools and both registrations.
+fn route_order(pools: &str, quote: f64) -> Value {
+    let f = fixtures();
+    let mut order = order(
+        &link("route", &format!("pools={pools}&from=FORK&to=BROSEVELT&amount=0.05&min_out=12.3")),
+        quote,
+        vec![fork_coin(1, 80_000), ecx_coin(2, 20_000)],
+    );
+    order["pools"] = json!([f["forkPool"], f["brosevelt"]["pool"]]);
+    order["registrations"] = json!([f["forkRegistration"]["hex"], f["brosevelt"]["registration"]["hex"]]);
+    order
+}
+
+#[test]
+fn a_route_builds_one_marker_through_its_pools_in_turn() {
+    let order = route_order(&format!("{FORK_POOL}%2C{BROSEVELT_POOL}"), 12.34);
+    let built = build_trade(&order.to_string(), STARTER).unwrap();
+    let psbt = Psbt::from_str(&built.pset).unwrap();
+    let tx = &psbt.unsigned_tx;
+    let given_out = script(STARTER, 0, 0);
+    // FORK's change, then the result, both at the address the site knows; then the marker, holding no ECX.
+    assert_eq!((&tx.output[0].script_pubkey, &tx.output[1].script_pubkey), (&given_out, &given_out));
+    assert_eq!((tx.output[2].value.to_sat(), built.burn.as_str()), (0, "0"));
+    let marker = bast::parse(tx.output[2].script_pubkey.as_bytes()).unwrap().to_json();
+    assert_eq!(marker["fields"], json!({ "asset_in": FORK, "pools": [FORK_POOL, BROSEVELT_POOL], "amount_in": 50_000, "min_out": 1_230, "chn_to": "" }));
+    assert_eq!(marker["outputs"], json!([{ "n": 0, "carries": "asset", "id": FORK, "amount": 30_000 }, { "n": 1, "carries": "result" }]));
+    let trade = serde_json::to_value(&built.trade).unwrap();
+    assert_eq!((&trade["verb"], &trade["pools"], &trade["via"][0]["ticker"], &trade["assetOut"]["ticker"]), (&json!("route"), &json!([FORK_POOL, BROSEVELT_POOL]), &json!("ECX"), &json!("BROSEVELT")));
+    assert_eq!((&trade["minOut"], &trade["quote"]), (&json!("1230"), &json!("1234")));
+
+    // Clear, with each pool as evidence: the path is the Decoder's own walk.
+    let f = fixtures();
+    let view = match decoded(&psbt, &json!({ "pools": [f["forkPool"], f["brosevelt"]["pool"]] })) {
+        Decoded::Clear { view } => serde_json::to_value(view).unwrap(),
+        blind => panic!("expected a Clear View, got {blind:?}"),
+    };
+    assert_eq!(
+        view["trade"],
+        json!({
+            "pools": [FORK_POOL, BROSEVELT_POOL], "assetIn": FORK, "amountIn": "50000", "via": [""], "assetOut": BROSEVELT, "minOut": "1230",
+            "result": 1, "payout": null, "warnings": [],
+        })
+    );
+    // The pools described in the other order don't follow from FORK: refused.
+    let swapped = json!({ "pools": [f["brosevelt"]["pool"], f["forkPool"]] });
+    assert_eq!(decode_with_evidence(&psbt.to_string(), STARTER, &swapped.to_string()).unwrap_err().code, RefusalCode::InvalidEvidence);
+}
+
+#[test]
+fn a_route_whose_pools_dont_lead_from_its_from_to_its_to_is_refused() {
+    let f = fixtures();
+    let swapped = |mut order: Value| {
+        order["pools"] = json!([f["brosevelt"]["pool"], f["forkPool"]]);
+        order
+    };
+    let one_pool = |mut order: Value| {
+        order["pools"] = json!([f["forkPool"]]);
+        order
+    };
+    let cases: Vec<(&str, Value)> = vec![
+        ("pools in the other order", swapped(route_order(&format!("{BROSEVELT_POOL}%2C{FORK_POOL}"), 12.34))),
+        ("a pool described that isn't the link's", swapped(route_order(&format!("{FORK_POOL}%2C{BROSEVELT_POOL}"), 12.34))),
+        ("fewer pools described than the link names", one_pool(route_order(&format!("{FORK_POOL}%2C{BROSEVELT_POOL}"), 12.34))),
+        ("a floor the route can't meet now", route_order(&format!("{FORK_POOL}%2C{BROSEVELT_POOL}"), 12.29)),
+        ("a floor more than 10% below the route's quote", route_order(&format!("{FORK_POOL}%2C{BROSEVELT_POOL}"), 14.0)),
+    ];
+    for (what, order) in cases {
+        let (code, message) = refused(&order);
+        assert_eq!(code, RefusalCode::InvalidAction, "{what}: {message}");
+    }
+    let mut ends_elsewhere = route_order(&format!("{FORK_POOL}%2C{BROSEVELT_POOL}"), 12.34);
+    ends_elsewhere["link"] = json!(link("route", &format!("pools={FORK_POOL}%2C{BROSEVELT_POOL}&from=FORK&to=SOON&amount=0.05&min_out=12.3")));
+    assert!(refused(&ends_elsewhere).1.contains("ends in"));
 }

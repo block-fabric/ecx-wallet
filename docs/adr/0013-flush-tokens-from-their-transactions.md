@@ -14,6 +14,7 @@ Over the `flush` Server API (ADR 0012), the Esplora client reads every value-0 c
 - An `asset` token counts towards that asset's balance, confirmed or unconfirmed like any coin.
 - Other token kinds (a control coin, LP shares, a position, an order, a receipt or a reservation) don't count: they aren't amounts of an asset. None is ever spent: coin selection takes only value>0 coins.
 - A **result** isn't in the balance the wallet read itself. For an address holding one, the client asks `/flush/market/addresses/:a/holdings` and reports what it says beyond the address's readable tokens as **`unverified`**. Screens show that part apart, marked "reported by its server".
+- **Amended 2026-10-28:** a result on an order's own transaction is named by the order's outcome (`trades/{txid}`, ADR 0018). Each token payout there (`via: "output"`) gives the outpoint it lands on. The wallet takes it only if it fits the order's marker: a fill pays another asset than went in, at least `min_out`; a miss refunds exactly the asset and amount that went in. Such a result counts in the balance, reported apart as **`indexed`** (the index's word, underlined dotted), and `holdings` is asked only if the address holds a result nothing named. It still can't be spent: the module would have to list its token from the index's word.
 
 History Entries read tokens the same way (#60): each value-0 coin a transaction pays or spends of the wallet's counts as the asset token its creating transaction lists, so a token Send or a trade shows the tokens that moved. `holdings` can't say what one result held, only an address's current total, so an entry that pays or spends a result says only that it does (`results`): "+ amounts only the node knows not shown".
 
@@ -45,5 +46,5 @@ The Decoder shows a transfer as a Clear View: each input and output in ECX or in
 
 - `flush.wasm` declares `tokens`. The wallet asks a module for tokens only when it declares them.
 - Reading a balance on Flush costs one transaction fetch per value-0 coin the session hasn't seen, and one `holdings` call per address holding a result.
-- A result can't be spent: the module can't list its token again without knowing it, and no server reports results per outpoint.
+- A result can't be spent: the module can't list its token again without knowing it. `trades/{txid}` now names an order's results per outpoint, so spending them is possible later, on the index's word.
 - A request with a `BAST` marker that doesn't parse is refused before unlock, where it used to be Blind: Flush would refuse the transaction.

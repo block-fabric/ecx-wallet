@@ -23,6 +23,7 @@
     if (s.unlocked) chains.load(id);
     else locked = true;
   });
+  $effect(() => chains.watch(id));
 
   const view = $derived(chains.get(id));
   const ecxAsset = $derived(view?.info.assets.find((a) => a.ecx));
@@ -155,23 +156,6 @@
   .pending {
     background: var(--pending-bg);
     color: var(--pending);
-  }
-  .tabs {
-    display: flex;
-    border-bottom: 1px solid var(--border);
-  }
-  .tabs button {
-    flex: 1;
-    min-height: 40px;
-    border: none;
-    border-bottom: 2px solid transparent;
-    border-radius: 0;
-    background: none;
-    color: var(--muted);
-  }
-  .tabs button[aria-selected="true"] {
-    border-bottom-color: var(--accent);
-    color: var(--accent-text);
   }
   .count {
     display: inline-flex;
