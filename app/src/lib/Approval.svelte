@@ -73,7 +73,7 @@
 
   /** The assets the request's chain names, and the main chain's coin (Deposits and Withdrawal payouts). */
   /** A trade's title, by its link's verb (docs/adr/0016). */
-  const TRADE_TITLES = { swap: "Swap", buy: "Buy", sell: "Sell" } as const;
+  const TRADE_TITLES = { swap: "Swap", route: "Swap", buy: "Buy", sell: "Sell" } as const;
 
   const assets = $derived(chains.find((c) => prompt && "chain" in prompt && c.chain === prompt.chain)?.assets ?? []);
   const coinAssets = $derived(chains.find((c) => c.id === "l1")?.assets ?? []);
@@ -306,7 +306,13 @@
   {@const contractAssets = issuances.flatMap((i) =>
     i.contract ? [{ id: i.asset.asset, ticker: i.contract.ticker, name: i.contract.name, decimals: i.contract.precision }] : [],
   )}
-  {@const shownAssets = [...assets, ...contractAssets]}
+  <!-- A trade's tokens the store doesn't name: the module checked each one's registration (ADR 0016). -->
+  {@const tradeAssets = prompt.trade
+    ? [prompt.trade.assetIn, ...prompt.trade.via, prompt.trade.assetOut]
+        .filter((side) => side.id !== "" && !assets.some((n) => n.id === side.id))
+        .map((side) => ({ id: side.id, ticker: side.ticker, name: side.ticker, decimals: side.decimals }))
+    : []}
+  {@const shownAssets = [...assets, ...contractAssets, ...tradeAssets]}
   {@const issuedLabels = issuedAssetLabels(view)}
   <main class="screen" data-approval-ready data-clear-view>
     {#if dangerous}
@@ -330,6 +336,8 @@
       {@const result = view.outputs.find((o) => o.index === t.result)}
       {@const side = (asset: string, amount: string, known?: { ticker: string; decimals: number }) =>
         known ? formatAllDecimals(amount, known.decimals, known.ticker) : amountText(amount, asset, shownAssets)}
+      {@const tickerOf = (asset: string, known?: { ticker: string }) =>
+        known?.ticker ?? (asset === "" ? "ECX" : (assets.find((n) => n.id === asset)?.ticker ?? shortAsset(asset)))}
       <section class="card stack" data-trade>
         <h2>{checked ? TRADE_TITLES[checked.verb] : "Trade"} on Flush</h2>
         {#if t.warnings.length > 0}
@@ -338,13 +346,19 @@
           </ul>
         {/if}
         <div data-trade-pay>
-          Pay <strong>{side(t.assetIn, t.amountIn, checked?.assetIn)}</strong><AssetBadge entry={assets.find((n) => n.id === t.assetIn)} size={14} />
+          Pay <span class="nowrap"><strong>{side(t.assetIn, t.amountIn, checked?.assetIn)}</strong><AssetBadge entry={assets.find((n) => n.id === t.assetIn)} size={12} /></span>
         </div>
         <div data-trade-receive>
-          Receive at least <strong>{side(t.assetOut, t.minOut, checked?.assetOut)}</strong><AssetBadge entry={assets.find((n) => n.id === t.assetOut)} size={14} />
+          Receive at least <span class="nowrap"><strong>{side(t.assetOut, t.minOut, checked?.assetOut)}</strong><AssetBadge entry={assets.find((n) => n.id === t.assetOut)} size={12} /></span>
         </div>
+        {#if t.pools.length > 1}
+          <div class="small" data-trade-route>
+            Through {[tickerOf(t.assetIn, checked?.assetIn), ...t.via.map((a, i) => tickerOf(a, checked?.via[i])), tickerOf(t.assetOut, checked?.assetOut)].join(" → ")},
+            {t.pools.length} pools in turn
+          </div>
+        {/if}
         {#if checked}
-          <div class="muted small" data-trade-quote>The pool gives {side(t.assetOut, checked.quote, checked.assetOut)} now, by the node's own quote.</div>
+          <div class="muted small" data-trade-quote>{t.pools.length > 1 ? "The route gives" : "The pool gives"} {side(t.assetOut, checked.quote, checked.assetOut)} now, by the node's own quote.</div>
         {/if}
         {#if result?.destination.kind === "address"}
           <div class="small">
@@ -352,6 +366,15 @@
             {#if result.destination.yours}<span class="badge ok" data-yours><Icon name="check" size={14} /> Yours</span>{:else}<span class="badge bad" data-not-yours>Not yours</span>{/if}
           </div>
         {/if}
+        <!-- What comes back besides the result: change of the token paid in, and ECX change. -->
+        {#each view.outputs.filter((o) => o.index !== t.result) as change (change.index)}
+          {#if change.destination.kind === "address"}
+            <div class="small" data-trade-change>
+              Change <strong>{amountText(change.amount, change.asset, shownAssets)}</strong> to <code>{change.destination.address}</code>
+              {#if change.destination.yours}<span class="badge ok" data-yours><Icon name="check" size={14} /> Yours</span>{:else}<span class="badge bad" data-not-yours>Not yours</span>{/if}
+            </div>
+          {/if}
+        {/each}
         {#if checked}
           <div class="small" data-trade-expires>Expires {new Date(checked.expires * 1000).toLocaleString()}</div>
         {/if}
@@ -411,9 +434,11 @@
               {:else}
                 {@const entry = assets.find((n) => n.id === output.asset)}
                 {@const named = entry !== undefined}
-                <span class="amount">{#if output.atLeast}<span data-at-least>at least </span>{/if}{amountText(output.amount, output.asset, shownAssets)}<AssetBadge {entry} size={14} /></span>
+                <span class="amount">{#if output.atLeast}<span data-at-least>at least&nbsp;</span>{/if}{amountText(output.amount, output.asset, shownAssets)}<AssetBadge {entry} size={12} /></span>
                 {#if assetSource(entry)}
                   <span class="muted small" data-asset-source>{assetSource(entry)} <code title={output.asset}>{shortAsset(output.asset)}</code></span>
+                {:else if tradeAssets.some((a) => a.id === output.asset)}
+                  <span class="muted small" data-asset-registered>Named by its registration <code title={output.asset}>{shortAsset(output.asset)}</code></span>
                 {:else if !named}
                   <span class="muted small">{issuedLabels.get(output.asset) ?? "Unknown asset"} <code title={output.asset}>{shortAsset(output.asset)}</code></span>
                 {/if}

@@ -47,6 +47,18 @@
   --glow: color-mix(in srgb, var(--accent) 38%, transparent);
   --halo: color-mix(in srgb, var(--accent) 16%, transparent);
   --grid: rgb(9 9 11 / 2.5%);
+  /* Glass: a surface the background shows through, frosted, with light along its top edge. */
+  --glass: color-mix(in srgb, var(--surface) 64%, transparent);
+  --glass-strong: color-mix(in srgb, var(--surface) 80%, transparent);
+  --glass-border: color-mix(in srgb, var(--border) 70%, transparent);
+  --glass-edge: rgb(255 255 255 / 85%);
+  --glass-blur: blur(18px) saturate(170%);
+  /* The slow light behind the glass: gold, eCash's cyan, the sidechain's purple. */
+  --aurora-1: color-mix(in srgb, var(--accent) 30%, transparent);
+  --aurora-2: color-mix(in srgb, #3fb6c6 18%, transparent);
+  --aurora-3: color-mix(in srgb, var(--sidechain) 12%, transparent);
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 }
@@ -83,6 +95,13 @@
     --glow: color-mix(in srgb, var(--accent) 32%, transparent);
     --halo: color-mix(in srgb, var(--accent) 15%, transparent);
     --grid: rgb(255 255 255 / 3%);
+    --glass: color-mix(in srgb, var(--surface) 58%, transparent);
+    --glass-strong: color-mix(in srgb, var(--surface) 78%, transparent);
+    --glass-border: rgb(255 255 255 / 8%);
+    --glass-edge: rgb(255 255 255 / 10%);
+    --aurora-1: color-mix(in srgb, var(--accent) 20%, transparent);
+    --aurora-2: color-mix(in srgb, #5ac8d6 11%, transparent);
+    --aurora-3: color-mix(in srgb, var(--sidechain) 14%, transparent);
   }
 }
 
@@ -121,6 +140,28 @@ body::before {
     linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 24px 24px;
   -webkit-mask-image: linear-gradient(#000 0, #000 30%, transparent 75%);
   mask-image: linear-gradient(#000 0, #000 30%, transparent 75%);
+}
+
+/* Under the halo, three soft lights drift slowly: what the glass surfaces frost. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: -20%;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(38% 30% at 18% 12%, var(--aurora-1), transparent 70%),
+    radial-gradient(34% 28% at 86% 30%, var(--aurora-2), transparent 70%),
+    radial-gradient(40% 32% at 40% 78%, var(--aurora-3), transparent 70%);
+  animation: drift 28s ease-in-out infinite alternate;
+}
+@keyframes drift {
+  50% {
+    transform: translate3d(4%, 3%, 0) rotate(6deg) scale(1.05);
+  }
+  to {
+    transform: translate3d(-3%, 5%, 0) rotate(-4deg) scale(1.02);
+  }
 }
 
 /* The toolbar popup is as tall as the browser lets it be (600px), not just its content. */
@@ -194,7 +235,7 @@ dd {
 
 /* Each screen's sections rise into place one after another. */
 .screen > * {
-  animation: rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation: rise 0.5s var(--ease-out) both;
 }
 .screen > :nth-child(2) { animation-delay: 40ms; }
 .screen > :nth-child(3) { animation-delay: 80ms; }
@@ -204,8 +245,13 @@ dd {
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(10px) scale(0.985);
   }
+}
+/* A list's rows, one after another (set --i on each row). */
+.stagger > * {
+  animation: rise 0.4s var(--ease-out) both;
+  animation-delay: calc(min(var(--i, 0), 10) * 30ms + 120ms);
 }
 
 /* A screen's header stays at the top, frosting what scrolls under it. */
@@ -215,9 +261,10 @@ dd {
   z-index: 5;
   margin: -16px -16px 0;
   padding: 12px 16px;
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
-  backdrop-filter: blur(16px);
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--glass-border);
 }
 
 .stack {
@@ -226,11 +273,18 @@ dd {
   gap: 12px;
 }
 
-.card {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--surface), var(--text) 2%), var(--surface) 40%);
-  border: 1px solid var(--border);
+.card,
+.glass {
+  background:
+    linear-gradient(160deg, color-mix(in srgb, var(--glass-edge) 40%, transparent), transparent 38%),
+    var(--glass);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius);
-  box-shadow: var(--highlight), var(--shadow);
+  box-shadow: inset 0 1px 0 var(--glass-edge), var(--shadow);
+}
+.card {
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -254,11 +308,35 @@ dd {
   font-weight: 700;
   overflow-wrap: anywhere;
 }
+.nowrap {
+  white-space: nowrap;
+}
 .small {
   font-size: 0.85rem;
 }
 .tiny {
   font-size: 0.75rem;
+}
+
+/* A card that's a link lifts a little toward the pointer. */
+a.card {
+  transition: transform 0.25s var(--ease-out), box-shadow 0.25s, border-color 0.25s;
+}
+a.card:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--glass-border));
+  box-shadow: inset 0 1px 0 var(--glass-edge), var(--shadow), 0 8px 24px -14px var(--glow);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .card,
+  .glass {
+    background: var(--surface);
+  }
+  .sticky-head,
+  .decision {
+    background: var(--bg);
+  }
 }
 
 /* ---------- Forms ---------- */
@@ -278,7 +356,7 @@ textarea {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--glass-strong);
   color: var(--text);
   font: 400 15px/1.4 var(--font);
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -316,16 +394,17 @@ button,
   padding: 0 18px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: var(--surface);
+  background: var(--glass-strong);
   color: var(--text);
   font: 600 15px/1 var(--font);
   text-decoration: none;
   cursor: pointer;
-  transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s, color 0.2s, transform 0.1s;
+  transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s, color 0.2s, transform 0.2s var(--ease-spring);
 }
 button:active:not(:disabled),
 .button:active {
-  transform: translateY(1px);
+  transform: translateY(1px) scale(0.98);
+  transition-duration: 0.08s;
 }
 button:hover,
 .button:hover {
@@ -337,13 +416,30 @@ button:disabled {
 }
 
 .primary {
-  background: var(--accent);
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent), #fff 16%), var(--accent));
   border-color: var(--accent);
   color: var(--on-accent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 40%), 0 6px 18px -10px var(--glow);
 }
 .primary:hover:not(:disabled) {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 40%), 0 8px 26px -8px var(--glow);
+}
+/* A band of light crosses a gold button under the pointer. */
+.primary::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 35%, rgb(255 255 255 / 45%) 50%, transparent 65%);
+  transform: translateX(-120%);
+}
+.primary:hover:not(:disabled)::after {
+  transform: translateX(120%);
+  transition: transform 0.7s var(--ease-out);
 }
 
 .danger-button {
@@ -375,8 +471,10 @@ button:disabled {
   gap: 10px;
   margin: 0 -16px -16px;
   padding: 12px 16px 16px;
-  background: var(--bg);
-  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 66%, transparent);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border-top: 1px solid var(--glass-border);
 }
 
 /* A button that reads as a link, inside a line of text. */
@@ -394,6 +492,54 @@ button:disabled {
 .link:hover {
   background: none;
   text-decoration: underline;
+}
+
+/* ---------- Tabs ---------- */
+
+/* Two tabs on a glass track; the selected one's thumb slides between them. */
+.tabs {
+  position: relative;
+  display: flex;
+  padding: 4px;
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: inset 0 1px 0 var(--glass-edge);
+}
+.tabs::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc(50% - 3px);
+  border-radius: 999px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 22%, var(--surface)), color-mix(in srgb, var(--accent) 10%, var(--surface)));
+  box-shadow: inset 0 1px 0 var(--glass-edge), 0 4px 14px -8px var(--glow);
+  transition: transform 0.35s var(--ease-spring);
+}
+.tabs:has(> :nth-child(2)[aria-selected="true"])::before {
+  transform: translateX(100%);
+}
+.tabs button {
+  position: relative;
+  flex: 1;
+  min-height: 34px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font-size: 0.9rem;
+  transition: color 0.2s;
+}
+.tabs button:hover {
+  background: none;
+  color: var(--text);
+}
+.tabs button[aria-selected="true"] {
+  color: var(--text);
 }
 
 /* ---------- Badges and chips ---------- */
@@ -459,7 +605,7 @@ button:disabled {
   gap: 10px;
   padding: 12px;
   border-radius: var(--radius-sm);
-  background: var(--surface-2);
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
   font-size: 0.875rem;
 }
 
@@ -520,6 +666,19 @@ button:disabled {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+/* A value that just changed settles in. */
+@keyframes pop {
+  from {
+    opacity: 0.4;
+    transform: scale(0.96);
+    filter: blur(2px);
   }
 }
 

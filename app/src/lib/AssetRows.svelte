@@ -31,17 +31,17 @@
       Last read at {readAt(report.readAt)}{view.shown.refreshing ? "; refreshing…" : "."}
     </p>
   {/if}
-  <ul>
-    {#each assetsOf(report) as { asset, amount, unconfirmed, unverified, preconfirmed } (asset)}
+  <ul class="stagger">
+    {#each assetsOf(report) as { asset, amount, unconfirmed, unverified, indexed }, i (asset)}
       {@const entry = view.info.assets.find((a) => a.id === asset)}
-      <li class="asset" data-asset={asset}>
+      <li class="asset" style:--i={i} data-asset={asset}>
         <span class="icon">
           <ChainMark {...assetMark(entry)} size={36} />
           <!-- On a sidechain, its mark on the asset's: which chain this ECX or token is on. -->
           {#if view.info.id !== "l1"}<span class="on-chain"><ChainMark {...chainMark(view.info)} size={16} /></span>{/if}
         </span>
         <span class="name">
-          <strong>{entry ? entry.ticker : "Unknown asset"}<AssetBadge {entry} /></strong>
+          <strong class="ticker"><span class="ticker-text">{entry ? entry.ticker : "Unknown asset"}</span><AssetBadge {entry} size={10} /></strong>
           <span class="muted tiny">
             {#if entry}{entry.name}{:else}
               <code title={asset}>{shortAsset(asset)}</code>
@@ -50,16 +50,16 @@
           </span>
         </span>
         <span class="amounts">
-          <strong class="amount" data-balance data-asset={asset}>{amountText(amount, asset, view.info.assets)}</strong>
-          {#if preconfirmed !== undefined}
-            <span
-              class="tiny muted"
-              data-preconfirmed
-              data-asset={asset}
-              title="In a {view.info.name} block that no eCash block anchors yet. It counts and can be spent; until an anchor covers it, {view.info.name} may still replace that block."
-              >{preconfirmed === amount ? "" : `${amountText(preconfirmed, asset, view.info.assets)} `}preconf</span
-            >
-          {/if}
+          <strong
+            class="amount"
+            class:indexed={indexed !== undefined}
+            title={indexed === undefined
+              ? undefined
+              : `${indexed === amount ? "All" : amountText(indexed, asset, view.info.assets)} of it from trades, as the market index reports their outcome. Each fits what the trade asked for; it can't be sent from this wallet yet.`}
+            data-balance
+            data-indexed={indexed}
+            data-asset={asset}>{amountText(amount, asset, view.info.assets)}</strong
+          >
           {#if unconfirmed !== undefined}
             <span class="tiny pending" data-unconfirmed data-asset={asset}>+{amountText(unconfirmed, asset, view.info.assets)} unconfirmed</span>
           {/if}
@@ -97,7 +97,7 @@
     transition: background-color 0.15s;
   }
   .asset:hover {
-    background: var(--surface-2);
+    background: color-mix(in srgb, var(--surface-2) 70%, transparent);
   }
   .icon {
     position: relative;
@@ -118,6 +118,18 @@
     display: flex;
     flex-direction: column;
   }
+  /* The ticker and its trust mark stay on one line: a long ticker is cut short, never the mark. */
+  .ticker {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+  .ticker-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .amounts {
     flex: none;
     display: flex;
@@ -130,6 +142,12 @@
   }
   .pending {
     color: var(--pending);
+  }
+  /* Some of it is the market index's word: underlined dotted, as a trade's outcome is. */
+  .indexed {
+    text-decoration: underline dotted color-mix(in srgb, var(--muted) 70%, transparent);
+    text-underline-offset: 3px;
+    cursor: help;
   }
   .empty {
     padding: 10px 12px;

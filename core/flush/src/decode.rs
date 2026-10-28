@@ -2,9 +2,9 @@
 //! or `Blind { reason, verifiableFacts }`; never a partial Clear View.
 //!
 //! It understands payments of ECX, transfers of asset tokens to addresses (a `BAST` marker of
-//! kind 0, docs/adr/0013), and trades through one pool (kind 21, `swap_pools`, docs/adr/0016) when
-//! the request's evidence describes the pool (`pool`: `getpool`'s answer), whose id it recomputes:
-//! a trade's marker never names what comes out. Every other Flush operation (the rest of the DEX,
+//! kind 0, docs/adr/0013), and trades (kind 21, `swap_pools`, docs/adr/0016) through one pool or a
+//! route of them when the request's evidence describes each pool (`pool`, or a route's `pools`:
+//! `getpool`'s answers), whose ids it recomputes: a trade's marker never names what comes out. Every other Flush operation (the rest of the DEX,
 //! staking, withdrawals) is an `OP_RETURN` marker, and a request carrying one is Blind, naming the
 //! operation when the tag is known. What a spent token output carries comes from the transaction holding it,
 //! and the transfer's marker is left out of the outputs: its whole meaning is the tokens it lists. Whether an input or output is "yours" is decided
@@ -19,6 +19,7 @@ use serde::Serialize;
 use serde::Deserialize;
 
 use crate::bast::{self, TokenKind};
+use crate::link::MAX_ROUTE_POOLS;
 use crate::trade::{pool_kind, PoolReport};
 use crate::psbt::{operation, refuse, spent, validated, AssetAmount, OwnedInput, Refusal, RefusalCode};
 use crate::tokens::{token_flow, TokenFlow};
@@ -64,17 +65,19 @@ pub struct ClearView {
     pub trade: Option<ClearTrade>,
 }
 
-/// A trade through one pool, as its marker and the pool it names say.
+/// A trade through its pools in turn, as its marker and the pools it names say.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClearTrade {
-    /// Display hex.
-    pub pool: String,
+    /// Display hex, in turn: one, or a route's.
+    pub pools: Vec<String>,
     /// "" for ECX, else an asset id.
     pub asset_in: String,
     /// Base units.
     pub amount_in: String,
-    /// The pool's other asset: "" for ECX, else an asset id.
+    /// A route's assets between its pools, in turn ("" for ECX); empty for one pool.
+    pub via: Vec<String>,
+    /// The last pool's other side: "" for ECX, else an asset id.
     pub asset_out: String,
     /// The least it gives, base units: the floor the node enforces.
     pub min_out: String,
@@ -117,6 +120,8 @@ pub struct ClearOutput {
 struct Evidence {
     /// The pool a trade names, as `getpool` describes it.
     pool: Option<PoolReport>,
+    /// A route's pools, in its order, as `getpool` describes each.
+    pools: Option<Vec<PoolReport>>,
 }
 
 /// Where an output's funds go.
@@ -196,8 +201,13 @@ pub fn decode_with_evidence(payload: &str, starter: &str, evidence: &str) -> Res
     let mut trade = None;
     if let Some((index, marker)) = flow.marker.as_ref().filter(|(_, m)| m.kind != 0) {
         let name = marker.name.replace('_', " ");
-        let reason = match (marker.kind, &evidence.pool) {
-            (21, Some(pool)) => match trade_terms(&psbt, &keys, &flow, *index, marker, pool)? {
+        let described = match (&evidence.pool, &evidence.pools) {
+            (Some(_), Some(_)) => return Err(refuse(RefusalCode::InvalidEvidence, "The request's evidence gives both a pool and pools.")),
+            (Some(pool), None) => Some(std::slice::from_ref(pool)),
+            (None, pools) => pools.as_deref(),
+        };
+        let reason = match (marker.kind, described) {
+            (21, Some(pools)) => match trade_terms(&psbt, &keys, &flow, *index, marker, pools)? {
                 Ok(terms) => {
                     trade = Some(terms);
                     None
@@ -357,28 +367,42 @@ struct Trade {
     view: ClearTrade,
 }
 
-/// The terms of the trade `marker` (kind 21, output `index`) through `pool`: refused if the pool
-/// described isn't the one it names (the evidence doesn't check out), `Err` with why it can't be
-/// Clear if it does more than trade, or than the Decoder can check.
-fn trade_terms(psbt: &Psbt, keys: &AccountKeys, flow: &TokenFlow, index: usize, marker: &bast::Marker, pool: &PoolReport) -> Result<Result<Trade, String>, Refusal> {
+/// The terms of the trade `marker` (kind 21, output `index`) through `described`, each pool it
+/// names in turn: refused if a pool described isn't the one it names or doesn't take what comes to
+/// it (the evidence doesn't check out), `Err` with why it can't be Clear if it does more than
+/// trade, or than the Decoder can check.
+fn trade_terms(psbt: &Psbt, keys: &AccountKeys, flow: &TokenFlow, index: usize, marker: &bast::Marker, described: &[PoolReport]) -> Result<Result<Trade, String>, Refusal> {
     let bad_evidence = |message: String| refuse(RefusalCode::InvalidEvidence, message);
     let f = &marker.fields;
     let text = |key: &str| f.get(key).and_then(|v| v.as_str()).unwrap_or_default().to_string();
     let number = |key: &str| f.get(key).and_then(|v| v.as_u64()).unwrap_or_default();
     let pools: Vec<&str> = f.get("pools").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|p| p.as_str()).collect()).unwrap_or_default();
-    let [named] = pools[..] else {
-        return Ok(Err(format!("it trades through {} pools; the Decoder shows a trade through one pool.", pools.len())));
-    };
-    let (a, b) = (pool.asset_a_id.to_ascii_lowercase(), pool.asset_b_id.to_ascii_lowercase());
-    let kind = pool_kind(pool)?;
-    let described = bast::pool_id(&a, &b, &kind).map_err(|e| bad_evidence(format!("The pool's description: {e}")))?;
-    if described != named {
-        return Err(bad_evidence(format!("The pool described is {described}, not the {named} the trade names.")));
+    if pools.is_empty() || pools.len() > MAX_ROUTE_POOLS {
+        return Ok(Err(format!("it trades through {} pools; a trade goes through 1 to {MAX_ROUTE_POOLS}.", pools.len())));
+    }
+    if described.len() != pools.len() {
+        return Err(bad_evidence(format!("The trade goes through {} pools, and the evidence describes {}.", pools.len(), described.len())));
     }
     let asset_in = text("asset_in");
-    let asset_out = if a == asset_in { b } else if b == asset_in { a } else {
-        return Err(bad_evidence(format!("Pool {named} doesn't hold asset {asset_in}, which the trade pays in.")));
-    };
+    // The path: from what it pays in through each pool to its other side.
+    let mut path = vec![asset_in.clone()];
+    for (pool, &named) in described.iter().zip(&pools) {
+        let (a, b) = (pool.asset_a_id.to_ascii_lowercase(), pool.asset_b_id.to_ascii_lowercase());
+        let kind = pool_kind(pool)?;
+        let id = bast::pool_id(&a, &b, &kind).map_err(|e| bad_evidence(format!("The pool's description: {e}")))?;
+        if id != named {
+            return Err(bad_evidence(format!("The pool described is {id}, not the {named} the trade names.")));
+        }
+        let at = path.last().expect("the path starts at asset_in");
+        let next = if a == *at { b } else if b == *at { a } else {
+            return Err(bad_evidence(format!("Pool {named} doesn't hold asset {at}, which comes to it.")));
+        };
+        if path.contains(&next) {
+            return Ok(Err(format!("its route comes back to asset {next}.")));
+        }
+        path.push(next);
+    }
+    let asset_out = path.last().expect("one pool at least").clone();
     let ecx = |id: &str| id.bytes().all(|c| c == b'0');
     let (amount_in, min_out) = (number("amount_in"), number("min_out"));
 
@@ -444,9 +468,10 @@ fn trade_terms(psbt: &Psbt, keys: &AccountKeys, flow: &TokenFlow, index: usize, 
     let id = |asset: &str| if ecx(asset) { String::new() } else { asset.to_string() };
     Ok(Ok(Trade {
         view: ClearTrade {
-            pool: named.to_string(),
+            pools: pools.iter().map(|p| p.to_string()).collect(),
             asset_in: id(&asset_in),
             amount_in: amount_in.to_string(),
+            via: path[1..path.len() - 1].iter().map(|a| id(a)).collect(),
             asset_out: id(&asset_out),
             min_out: min_out.to_string(),
             result,

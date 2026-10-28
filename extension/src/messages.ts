@@ -74,18 +74,22 @@ export type BackgroundMessage =
   // Display settings: wallet pages only.
   | { kind: "settings.unit" }
   | { kind: "settings.setUnit"; unit: string }
+  // How often a shown wallet reads its chains again, in seconds (15 to 300).
+  | { kind: "settings.rereadSeconds" }
+  | { kind: "settings.setRereadSeconds"; seconds: number }
   // Whether the toolbar button opens the wallet pinned to the side instead of in its popup: wallet pages only.
   | { kind: "view.pinned" }
   | { kind: "view.setPinned"; pinned: boolean }
   | { kind: "l1.account" }
-  | { kind: "l1.reported" }
+  // `unattended`: the page reads again by itself, which doesn't count as activity (the auto-lock).
+  | { kind: "l1.reported"; unattended?: boolean }
   // The last reports this session, to show while the above refresh them: wallet pages only.
   | { kind: "l1.cached" }
   | { kind: "accounts.cached"; slot: number }
   // Pull path (what the Slot's server reports for the addresses the wallet watches): wallet pages only.
-  | { kind: "accounts.reported"; slot: number }
+  | { kind: "accounts.reported"; slot: number; unattended?: boolean }
   // A chain's transactions (a Slot's, or eCash's when `slot` is absent), and this session's last: wallet pages only.
-  | { kind: "history.reported"; slot?: number }
+  | { kind: "history.reported"; slot?: number; unattended?: boolean }
   | { kind: "history.cached"; slot?: number }
   // The wallet's own Send (pull path): wallet pages only.
   | { kind: "send.start"; slot: number; outputs: { asset: string; amount: string; to: { address: string } }[]; host?: string }
@@ -94,7 +98,7 @@ export type BackgroundMessage =
   | { kind: "send.dismissRefused"; slot: number }
   // Deposit from the main chain to a Slot, and the Slot's pending Deposits: wallet pages only.
   | { kind: "deposit.start"; slot: number; amount: string; host?: string }
-  | { kind: "deposit.list"; slot: number }
+  | { kind: "deposit.list"; slot: number; unattended?: boolean }
   | { kind: "deposit.dismiss"; txid: string }
   | { kind: "deposit.refused"; slot: number }
   | { kind: "deposit.dismissRefused"; slot: number }

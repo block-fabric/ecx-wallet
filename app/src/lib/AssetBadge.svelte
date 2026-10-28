@@ -7,7 +7,7 @@
    * The mark after an asset's ticker (docs/adr/0015): a check if the wallet's own list names it, a
    * warning if only the asset (or an app) says what it is, nothing for the user's own label.
    */
-  let { entry, size = 12 }: { entry: { source?: AssetSource; ecx?: boolean } | undefined; size?: number } = $props();
+  let { entry, size = 10 }: { entry: { source?: AssetSource; ecx?: boolean } | undefined; size?: number } = $props();
   const trust = $derived(assetTrust(entry));
 </script>
 
@@ -33,6 +33,7 @@
     align-items: center;
     justify-content: center;
     vertical-align: -0.1em;
+    flex: none;
     margin-left: 4px;
     padding: 1px;
     border-radius: 50%;

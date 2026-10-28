@@ -236,12 +236,15 @@ export interface ClearView {
   trade?: ClearTrade;
 }
 
-/** A trade through one pool, as its marker and the pool's description say. Base units; "" is the native coin. */
+/** A trade through its pools in turn, as its marker and the pools' descriptions say. Base units; "" is the native coin. */
 export interface ClearTrade {
-  pool: string;
+  /** One pool, or a route's, in turn. */
+  pools: string[];
   assetIn: string;
   amountIn: string;
-  /** The pool's other asset. */
+  /** A route's assets between its pools, in turn; empty for one pool. */
+  via: string[];
+  /** The last pool's other asset. */
   assetOut: string;
   /** The floor the node enforces. */
   minOut: string;
@@ -378,6 +381,7 @@ export interface ChainModule<K extends ChainKey = Starter> {
 /** A trade a `flush:` link asks for. Amounts are the link's decimals; `expires` a Unix time. */
 export type FlushAction = { expires: number; slippageBps: number | null } & (
   | { verb: "swap"; pool: string; from: string; to: string; amount: string; minOut: string }
+  | { verb: "route"; pools: string[]; from: string; to: string; amount: string; minOut: string }
   | { verb: "buy"; launch: string; asset: string; ecx: string; minTokens: string }
   | { verb: "sell"; launch: string; asset: string; tokens: string; minEcx: string }
 );
@@ -386,11 +390,11 @@ export type FlushAction = { expires: number; slippageBps: number | null } & (
 export interface TradeOrder {
   link: string;
   now: number;
-  /** The explorer's `getpool` answer, as is. */
-  pool: unknown;
+  /** The explorer's `getpool` answers, as is: the link's pools in turn (one but for a route). */
+  pools: unknown[];
   /** The current registration (hex) of each token the trade involves. */
   registrations: string[];
-  /** The node's quote for this pool, in whole units of what comes out. */
+  /** The node's quote, in whole units of what comes out: a route's hop by hop, each pool alone. */
   quote: number;
   /** `getbitassetsinfo`'s `min_chn_payout`, in ECX. */
   minPayout: number;
@@ -405,10 +409,12 @@ export interface BuiltTrade extends BuiltTransfer {
   /** Sats: what broadcasting must allow as a burn (`maxburnamount`). */
   burn: string;
   trade: {
-    verb: "swap" | "buy" | "sell";
-    pool: string;
+    verb: "swap" | "route" | "buy" | "sell";
+    pools: string[];
     assetIn: TradeSide;
     assetOut: TradeSide;
+    /** A route's assets between its pools, in turn. */
+    via: TradeSide[];
     amountIn: string;
     minOut: string;
     quote: string;

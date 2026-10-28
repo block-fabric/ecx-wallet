@@ -396,6 +396,8 @@ export async function openWalletPage(session, route) {
   // the page loads; so wait for the screen itself rather than for goto.
   page.goto(session.extensionUrl(`index.html${route}`)).catch(() => {});
   await page.waitForSelector("[data-screen-ready]");
+  // The bottom bar comes in once the vault answers, and moves what's under it: click only after.
+  await page.waitForSelector("[data-bar-known]");
   return page;
 }
 

@@ -1,8 +1,8 @@
 //! flush.markets' `flush:` links (docs/adr/0016), read as strictly as Flush's own app reads them
 //! (backbone-flush `src/webui/links.cpp` on `flush-betanet`, `9cc49a8`): `flush:<verb>?v=1&network=<net>&exp=<time>&…`,
 //! each parameter once and no other, values of unreserved characters and `%XX` only. A link is an
-//! Action, not a transaction: the wallet builds it. Only the trades (`swap`, `buy`, `sell`) are
-//! read whole; every other action of Flush is unsupported.
+//! Action, not a transaction: the wallet builds it. Only the trades (`swap`, `route`, `buy`, `sell`)
+//! are read whole; every other action of Flush is unsupported.
 use serde::Serialize;
 
 use crate::psbt::{refuse, Refusal, RefusalCode};
@@ -13,6 +13,8 @@ pub const MAX_LINK_BYTES: usize = 4096;
 pub const CLOCK_SKEW: i64 = 120;
 /// How far ahead `exp` may be, in seconds (`MAX_LIFETIME`).
 pub const MAX_LIFETIME: i64 = 24 * 60 * 60;
+/// The most pools a route goes through (`MAX_ROUTE_POOLS`).
+pub const MAX_ROUTE_POOLS: usize = 4;
 /// The most a link's `slippage_bps` may be (`MAX_SLIPPAGE_BPS`). It is shown only: the floor binds.
 pub const MAX_SLIPPAGE_BPS: u16 = 5000;
 
@@ -22,8 +24,8 @@ const NETWORKS: [&str; 4] = ["ecash", "ecashbeta", "ecashtest", "regtest"];
 const COIN: &str = "ECX";
 
 /// Flush's app knows these actions; this wallet builds none of them yet.
-const UNSUPPORTED: [&str; 18] = [
-    "connect", "launch", "register", "curve", "pool", "auction", "order", "route", "deposit", "withdraw", "position", "reposition",
+const UNSUPPORTED: [&str; 17] = [
+    "connect", "launch", "register", "curve", "pool", "auction", "order", "deposit", "withdraw", "position", "reposition",
     "settle", "bid", "collect", "claim", "pegin", "pegout",
 ];
 
@@ -35,6 +37,9 @@ pub enum Action {
     /// `amount` of `from` into the pool `pool`, at least `min_out` of `to` out. `from` and `to`
     /// are tickers, `ECX` for the coin.
     Swap { expires: i64, pool: String, from: String, to: String, amount: String, min_out: String, slippage_bps: Option<u16> },
+    /// `amount` of `from` through `pools` in turn (2 to 4, none twice), each to its other side, at
+    /// least `min_out` of `to` out.
+    Route { expires: i64, pools: Vec<String>, from: String, to: String, amount: String, min_out: String, slippage_bps: Option<u16> },
     /// `ecx` into the launch curve of `asset` (named `launch`), at least `min_tokens` out.
     Buy { expires: i64, launch: String, asset: String, ecx: String, min_tokens: String, slippage_bps: Option<u16> },
     /// `tokens` of `asset` (named `launch`) into its launch curve, at least `min_ecx` out.
@@ -58,7 +63,7 @@ pub fn parse_action(uri: &str, now: i64) -> Result<Action, Refusal> {
         Some((verb, query)) if !verb.is_empty() && verb.bytes().all(|b| b.is_ascii_lowercase()) => (verb, query),
         _ => return Err(invalid("Not an action link of Flush (flush:<verb>?v=1&...)")),
     };
-    let trade = matches!(verb, "swap" | "buy" | "sell");
+    let trade = matches!(verb, "swap" | "route" | "buy" | "sell");
     if !trade && !UNSUPPORTED.contains(&verb) {
         return Err(invalid(format!("\"{}\" is not an action of Flush", truncate(verb, 20))));
     }
@@ -102,6 +107,30 @@ pub fn parse_action(uri: &str, now: i64) -> Result<Action, Refusal> {
             let amount = amount(params.need("amount")?, "amount")?;
             let min_out = amount_of(params.need("min_out")?, "min_out")?;
             Action::Swap { expires, pool, from, to, amount, min_out, slippage_bps: params.slippage()? }
+        }
+        "route" => {
+            let list = params.need("pools")?;
+            let mut pools = vec![];
+            for named in list.split(',') {
+                if pools.len() == MAX_ROUTE_POOLS {
+                    return Err(invalid(format!("pools: at most {MAX_ROUTE_POOLS}")));
+                }
+                pools.push(id(named.to_string(), "pools")?);
+            }
+            if pools.len() < 2 {
+                return Err(invalid("pools: a route goes through 2 pools at least (one pool: swap)"));
+            }
+            if pools.iter().enumerate().any(|(i, p)| pools[..i].contains(p)) {
+                return Err(invalid("pools: a pool twice in a route"));
+            }
+            let from = ticker(params.need("from")?, "from", true)?;
+            let to = ticker(params.need("to")?, "to", true)?;
+            if from == to {
+                return Err(invalid("from and to are the same"));
+            }
+            let amount = amount(params.need("amount")?, "amount")?;
+            let min_out = amount_of(params.need("min_out")?, "min_out")?;
+            Action::Route { expires, pools, from, to, amount, min_out, slippage_bps: params.slippage()? }
         }
         "buy" => {
             let launch = ticker(params.need("launch")?, "launch", false)?;

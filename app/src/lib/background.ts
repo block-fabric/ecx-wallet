@@ -126,6 +126,16 @@ export function onLockDeadline(onchange: (locksAt: number | null) => void): () =
   return () => chrome.runtime.onMessage.removeListener(listener);
 }
 
+/** Calls `onchange` with the chains the wallet just sent a transaction on (a Send, a trade, a Deposit); returns the unsubscribe. */
+export function onChainsChanged(onchange: (ids: ChainId[]) => void): () => void {
+  const listener = (message: unknown) => {
+    const m = message as { kind?: string; ids?: ChainId[] };
+    if (m?.kind === "chains.changed" && Array.isArray(m.ids)) onchange(m.ids);
+  };
+  chrome.runtime.onMessage.addListener(listener);
+  return () => chrome.runtime.onMessage.removeListener(listener);
+}
+
 /** Passwords shorter than this are refused (the background enforces it too). */
 export const MIN_PASSWORD_LENGTH = 8;
 
@@ -166,6 +176,11 @@ export const getUnit = () => send<Unit>({ kind: "settings.unit" });
 
 export const setUnit = (unit: Unit) => send<Unit>({ kind: "settings.setUnit", unit });
 
+/** How often a shown wallet reads its chains again, in seconds (`REREAD_SECONDS`: 15 to 300, a minute by default). */
+export const getRereadSeconds = () => send<number>({ kind: "settings.rereadSeconds" });
+
+export const setRereadSeconds = (seconds: number) => send<number>({ kind: "settings.setRereadSeconds", seconds });
+
 /** Whether the toolbar button opens the wallet pinned to the side (see `$lib/view`) instead of in its popup. */
 export const getPinned = () => send<boolean>({ kind: "view.pinned" });
 
@@ -174,8 +189,8 @@ export const setPinned = (pinned: boolean) => send<boolean>({ kind: "view.setPin
 /** eCash's own account: its receive address (needs the wallet unlocked). */
 export const l1Account = () => send<{ addresses: SlotAddress[] }>({ kind: "l1.account" });
 
-/** What eCash's server reports for the wallet's L1 addresses. */
-export const l1Reported = () => send<ChainReport>({ kind: "l1.reported" });
+/** What eCash's server reports for the wallet's L1 addresses. `unattended`: the page reads again by itself, which isn't activity (the auto-lock). */
+export const l1Reported = (unattended?: boolean) => send<ChainReport>({ kind: "l1.reported", unattended });
 
 /** eCash's last report this session (null if none), to show while `l1Reported` refreshes it. */
 export const l1Cached = () => send<ChainReport | null>({ kind: "l1.cached" });
@@ -211,10 +226,10 @@ export function showReport<R extends { readAt: number }>(cached: () => Promise<R
 }
 
 /** Registers the Slot's addresses with its Sidechain Server and returns what the server reports. */
-export const reportedState = (slot: number) => send<SlotReport>({ kind: "accounts.reported", slot });
+export const reportedState = (slot: number, unattended?: boolean) => send<SlotReport>({ kind: "accounts.reported", slot, unattended });
 
 /** The transactions the chain's server reports: a Slot's, or eCash's when `slot` is undefined. */
-export const reportedHistory = (slot?: number) => send<ChainHistory>({ kind: "history.reported", slot });
+export const reportedHistory = (slot?: number, unattended?: boolean) => send<ChainHistory>({ kind: "history.reported", slot, unattended });
 
 /** The chain's last history this session (null if none), to show while `reportedHistory` refreshes it. */
 export const cachedHistory = (slot?: number) => send<ChainHistory | null>({ kind: "history.cached", slot });
@@ -244,7 +259,7 @@ export const startDeposit = (order: { slot: number; amount: string }, host?: str
   send<{ txid: string; server: string }>({ kind: "deposit.start", ...order, host });
 
 /** The Slot's pending Deposits and where each stands. */
-export const listDeposits = (slot: number) => send<DepositStatus[]>({ kind: "deposit.list", slot });
+export const listDeposits = (slot: number, unattended?: boolean) => send<DepositStatus[]>({ kind: "deposit.list", slot, unattended });
 
 /** Stops watching a Deposit. */
 export const dismissDeposit = (txid: string) => send<null>({ kind: "deposit.dismiss", txid });

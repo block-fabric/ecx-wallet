@@ -84,6 +84,10 @@ export function createVault(deps: VaultDeps) {
     return run;
   }
 
+  // Reads the wallet runs by itself (a shown page reading its chains again) under way: while any
+  // is, a key derivation doesn't count as activity, so an open, unused wallet still locks on time.
+  let unattended = 0;
+
   async function autoLockMs(): Promise<number> {
     return clampAutoLock((await persistent.get<number>(SETTINGS_AUTO_LOCK)) ?? DEFAULT_AUTO_LOCK_MINUTES) * 60_000;
   }
@@ -123,11 +127,11 @@ export function createVault(deps: VaultDeps) {
     return { key: raw, secrets };
   }
 
-  /** The secrets a key derivation needs; counts as activity. Throws if the wallet is locked. */
+  /** The secrets a key derivation needs; counts as activity, unless unattended. Throws if the wallet is locked. */
   async function secretsInUse(): Promise<VaultSecrets> {
     const open = await exclusive(async () => {
       const open = await unlocked();
-      if (open !== undefined) await keepUnlocked(open.key);
+      if (open !== undefined && unattended === 0) await keepUnlocked(open.key);
       return open;
     });
     if (open === undefined) throw new VaultError("The wallet is locked.");
@@ -175,6 +179,19 @@ export function createVault(deps: VaultDeps) {
         const open = await unlocked();
         if (open !== undefined) await keepUnlocked(open.key);
       }),
+
+    /**
+     * Runs `run`, a read the wallet makes by itself, without its key derivations counting as
+     * activity. Someone using the wallet meanwhile still does: their pages report it (`touch`).
+     */
+    async unattended<T>(run: () => Promise<T>): Promise<T> {
+      unattended += 1;
+      try {
+        return await run();
+      } finally {
+        unattended -= 1;
+      }
+    },
 
     /** A fresh Master Mnemonic for the create flow. Not stored until `create`. */
     async generate(): Promise<string> {

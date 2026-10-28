@@ -47,7 +47,7 @@ const PAYOUT = encodeTx({
   inputs: [{ txid: "00".repeat(32), vout: 0xffffffff, script: "03e40c00" }],
   outputs: [{ value: 0, script: "" }, { value: 100_000, script: RECEIVE_0.scriptPubkey }],
 });
-/** Someone's 0.00005 ECX to the wallet, in a block not yet anchored: preconf. */
+/** Someone's 0.00005 ECX to the wallet, in a block not yet anchored but with blocks on top of it: confirmed. */
 const PAYMENT = encodeTx({ inputs: [{ txid: "e1".repeat(32), vout: 0 }], outputs: [{ value: 5_000, script: RECEIVE_0.scriptPubkey }] });
 /** A token's output at the wallet's address: value 0. */
 const TOKEN = encodeTx({ inputs: [{ txid: "e2".repeat(32), vout: 0 }], outputs: [{ value: 0, script: RECEIVE_0.scriptPubkey }] });
@@ -78,15 +78,19 @@ const CLAIM = encodeTx({
 const TRADE = JSON.parse(await readFile(path.join(ROOT, "core/flush/tests/trade-fixtures.json"), "utf8"));
 const FORK = "6bb2ae6e23e626cd2fba1f8845d8bbc047aeb9a8f4690ee9a21b5d04584dfb03";
 const FORK_POOL = "2b16f8c06c0f98034bacfe23cec9e36ce96b3d1282766dd957901435354b402a";
+/** BROSEVELT's concentrated pool with ECX: a route's first pool, before FORK's. */
+const BROSEVELT_POOL = TRADE.brosevelt.pool.pool;
 /** 0.0005 ECX to the wallet, for the trade alone. */
 const FOR_TRADE = encodeTx({ inputs: [{ txid: "e4".repeat(32), vout: 0 }], outputs: [{ value: 50_000, script: RECEIVE_0.scriptPubkey }] });
+/** 0.0002 ECX to the wallet, for the route's fee: the buy's coin may still be held back. */
+const FOR_ROUTE = encodeTx({ inputs: [{ txid: "e6".repeat(32), vout: 0 }], outputs: [{ value: 20_000, script: RECEIVE_0.scriptPubkey }] });
 
 const utxo = (hex, value, blockHash) => ({ txid: parseTx(hex).txid, vout: hex === PAYOUT ? 1 : 0, value, confirmed: true, blockHash });
 
 /** What the Flush stub holds (read on every request). */
 const FLUSH = {
   identityBlock: flush.chainEntry().networks.betanet.identityBlock,
-  tipHeight: 3300,
+  tipHeight: 10_000,
   feeEstimates: { 1: 1, 6: 0.1, 1008: 0.1 },
   finality: { [SOFT]: "soft" },
   txs: [
@@ -123,7 +127,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     await app?.close();
   });
 
-  test("home shows Flush's ECX, its soft block's payment counted and marked preconf", async () => {
+  test("home shows Flush's ECX, its soft block's payment counted as confirmed, with no preconf mark", async () => {
     const page = await openHome(session);
     const shown = await page.evaluate(() => {
       const text = (e) => e?.textContent.replace(/\s+/g, " ").trim();
@@ -131,12 +135,12 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       return {
         name: text(card.querySelector("[data-chain-link] strong")),
         balance: text(card.querySelector('[data-balance][data-asset=""]')),
-        preconf: text(card.querySelector('[data-preconfirmed][data-asset=""]')),
+        preconf: card.querySelector("[data-preconfirmed]") !== null,
         unconfirmed: card.querySelector('[data-unconfirmed][data-asset=""]') !== null,
         stalled: card.querySelector("[data-stalled]") !== null,
       };
     });
-    assert.deepEqual(shown, { name: "Flush", balance: "0.00105 ECX", preconf: "0.00005 ECX preconf", unconfirmed: false, stalled: false });
+    assert.deepEqual(shown, { name: "Flush", balance: "0.00105 ECX", preconf: false, unconfirmed: false, stalled: false });
     await page.close();
   });
 
@@ -151,7 +155,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     const page = await openWalletPage(session, "#/send/99");
     await page.waitForSelector('[data-send-asset] option[value=""]', { timeout: 20_000 });
     const option = await page.$eval('[data-send-row="0"] [data-send-asset] option[value=""]', (e) => e.textContent.trim());
-    assert.equal(option, "ECX (0.00105 ECX spendable)", "someone's payment in a soft block (preconf) included");
+    assert.equal(option, "ECX (0.00105 ECX spendable)", "someone's payment in a soft block with a block on top included");
 
     await page.type('[data-send-row="0"] [data-send-amount]', "0.0004");
     await page.type('[data-send-row="0"] [data-send-destination]', PAY_TO);
@@ -323,6 +327,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     try {
       const page = await openTestApp(session, app, "dex.localhost");
       assert.equal(await page.evaluate(() => window.flush?.isFlush), true);
+      assert.deepEqual(await page.evaluate(() => ({ name: window.flush.name, actions: window.flush.actions })), { name: "ECX Wallet", actions: ["swap", "route", "buy", "sell"] });
       const asking = page.evaluate(() => window.flush.request({ method: "flush_requestAddress" }));
       const grant = await session.waitForApprovalWindow();
       assert.deepEqual(await grant.$$eval("[data-method]", (e) => e.map((m) => m.textContent.trim())), ["getAddresses", "sendTransfer"]);
@@ -338,7 +343,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       const approval = await session.waitForApprovalWindow({ timeout: 20_000 });
       const shown = await approval.$eval("[data-trade]", (e) => {
         const text = (q) => e.querySelector(q)?.textContent.replace(/\s+/g, " ").trim();
-        return { title: text("h2"), pay: text("[data-trade-pay]"), receive: text("[data-trade-receive]"), quote: text("[data-trade-quote]"), to: text("[data-trade-to]"), warnings: e.querySelectorAll("[data-trade-warning]").length };
+        return { title: text("h2"), pay: text("[data-trade-pay]"), receive: text("[data-trade-receive]"), quote: text("[data-trade-quote]"), to: text("[data-trade-to]"), warnings: e.querySelectorAll("[data-trade-warning]").length, changes: [...e.querySelectorAll("[data-trade-change]")].map((c) => ({ to: c.querySelector("code").textContent, yours: c.querySelector("[data-yours]") !== null })) };
       });
       assert.deepEqual(shown, {
         title: "Buy on Flush",
@@ -347,7 +352,11 @@ for (const browserName of BROWSERS) describe(browserName, () => {
         quote: "The pool gives 0.044482 FORK now, by the node's own quote.",
         to: RECEIVE_0.address,
         warnings: 0,
+        changes: shown.changes,
       });
+      // A buy pays in ECX: its change comes back to one of the wallet's change addresses.
+      assert.equal(shown.changes.length, 1);
+      assert.ok(shown.changes[0].yours && shown.changes[0].to !== RECEIVE_0.address, "ECX change goes to a change address of the wallet's");
       await approval.click("[data-approve]");
       const answer = await submitting;
       assert.equal(stub.broadcasts().length, before + 1);
@@ -357,6 +366,78 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       // The same link again: refused, with the reason for the site to show.
       const again = await page.evaluate((uri) => window.flush.request({ method: "flush_submit", params: { uri } }).catch((e) => ({ code: e.code, message: e.message })), link);
       assert.deepEqual(again, { code: -32602, message: "This link has already run: ask the site for a fresh one." });
+      await page.close();
+    } finally {
+      FLUSH.txs = txs;
+      FLUSH.utxos[RECEIVE_0.address] = utxos;
+      FLUSH.flushAssets = FLUSH.flushRpc = undefined;
+    }
+  });
+
+  test("a route from flush.markets is built through each of its pools in turn and approved in a trade Clear View", async () => {
+    const { txs, utxos } = { txs: FLUSH.txs, utxos: FLUSH.utxos[RECEIVE_0.address] };
+    FLUSH.txs = [
+      ...txs,
+      { hex: BROSEVELT_IN, blockHeight: 3260, blockHash: FINAL },
+      { hex: FOR_ROUTE, blockHeight: 3260, blockHash: FINAL },
+      { hex: LIVE_TXS[REGISTRATION], blockHeight: 604, blockHash: FINAL },
+      { hex: TRADE.forkRegistration.hex, blockHeight: 7790, blockHash: FINAL },
+    ];
+    FLUSH.utxos[RECEIVE_0.address] = [utxo(BROSEVELT_IN, 0, FINAL), utxo(FOR_ROUTE, 20_000, FINAL)];
+    FLUSH.flushAssets = {
+      [FORK]: { asset: FORK, registered: 7790, registration: TRADE.forkRegistration.txid },
+      [BROSEVELT]: { asset: BROSEVELT, registered: 604, registration: REGISTRATION },
+    };
+    const quotes = [];
+    FLUSH.flushRpc = {
+      // Hop by hop, each pool alone: 5 BROSEVELT gives 0.00004 ECX, which gives 17.5 FORK.
+      getswapquote: (args) => {
+        quotes.push(args);
+        return args[0] === `0x${BROSEVELT}`
+          ? { pools: [{ pool: BROSEVELT_POOL, curve: "concentrated", amount_out: 0.00004 }], best_pool: BROSEVELT_POOL }
+          : { pools: [{ pool: FORK_POOL, curve: "launch", amount_out: 17.5 }], best_pool: FORK_POOL };
+      },
+      getpool: ([id]) => (id === FORK_POOL ? TRADE.forkPool : id === BROSEVELT_POOL ? TRADE.brosevelt.pool : undefined),
+      getbitassetsinfo: { min_chn_payout: 0.00005, small_payout_height: 9000 },
+    };
+    try {
+      const page = await openTestApp(session, app, "dex.localhost");
+      const link =
+        `flush:route?v=1&network=ecashbeta&exp=${Math.floor(Date.now() / 1000) + 600}` +
+        `&pools=${BROSEVELT_POOL}%2C${FORK_POOL}&from=BROSEVELT&to=FORK&amount=5&min_out=17.4`;
+      const before = stub.broadcasts().length;
+      const submitting = page.evaluate(
+        (uri) => window.flush.request({ method: "flush_submit", params: { uri } }).catch((e) => ({ code: e.code, message: e.message })),
+        link,
+      );
+      const approval = await session.waitForApprovalWindow({ timeout: 20_000 });
+      const shown = await approval.$eval("[data-trade]", (e) => {
+        const text = (q) => e.querySelector(q)?.textContent.replace(/\s+/g, " ").trim();
+        return { title: text("h2"), pay: text("[data-trade-pay]"), receive: text("[data-trade-receive]"), route: text("[data-trade-route]"), quote: text("[data-trade-quote]"), warnings: e.querySelectorAll("[data-trade-warning]").length };
+      });
+      assert.deepEqual(shown, {
+        title: "Swap on Flush",
+        pay: "Pay 5.00 BROSEVELT",
+        receive: "Receive at least 17.400000 FORK",
+        route: "Through BROSEVELT → ECX → FORK, 2 pools in turn",
+        quote: "The route gives 17.500000 FORK now, by the node's own quote.",
+        warnings: 0,
+      });
+      // Each token is named by the registration the module checked, never "Unknown asset".
+      const outputs = await approval.$$eval("[data-output] .output-head", (heads) => heads.map((h) => h.textContent.replace(/\s+/g, " ").trim()));
+      assert.ok(outputs.some((o) => o.startsWith("at least 17.4 FORK")), outputs.join(" | "));
+      assert.ok(outputs.every((o) => !o.includes("Unknown asset")), outputs.join(" | "));
+      // The second hop is quoted for what the first gives.
+      assert.deepEqual(quotes, [[`0x${BROSEVELT}`, "5", "ECX"], ["ECX", 0.00004, `0x${FORK}`]]);
+      await approval.click("[data-approve]");
+      const answer = await submitting;
+      assert.equal(stub.broadcasts().length, before + 1);
+      const tx = parseTx(stub.broadcasts().at(-1));
+      assert.deepEqual(answer, { txid: tx.txid });
+      // One marker naming both pools, in turn (internal byte order).
+      const internal = (id) => Buffer.from(id, "hex").reverse().toString("hex");
+      const marker = tx.outputs.map((o) => o.script).find((script) => script.startsWith("6a"));
+      assert.ok(marker.indexOf(internal(BROSEVELT_POOL)) < marker.indexOf(internal(FORK_POOL)) && marker.includes(internal(BROSEVELT_POOL)), marker);
       await page.close();
     } finally {
       FLUSH.txs = txs;

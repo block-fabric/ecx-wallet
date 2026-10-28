@@ -1,6 +1,7 @@
-//! `build_trade(order, starter)`: a trade a `flush:` link asks for (`swap`, `buy`, `sell`), built
-//! from the account's coins as Flush's own wallet builds it (docs/adr/0016; backbone-flush
-//! `src/wallet/rpc/bitassets.cpp` on `flush-betanet`, `9cc49a8`): one `swap_pools` marker (kind 21) through the pool.
+//! `build_trade(order, starter)`: a trade a `flush:` link asks for (`swap`, `route`, `buy`, `sell`),
+//! built from the account's coins as Flush's own wallet builds it (docs/adr/0016; backbone-flush
+//! `src/wallet/rpc/bitassets.cpp` on `flush-betanet`, `9cc49a8`): one `swap_pools` marker (kind 21)
+//! through the pool, or a route's pools in turn.
 //!
 //! - Outputs: the change of a token paid in (if any), then one result output, both to the
 //!   given-out address the site knows; then the marker, carrying the ECX paid in; then ECX change.
@@ -9,6 +10,9 @@
 //!   must be the link's (a swap) or the launch's curve of ECX and the token (a buy or a sale). Its
 //!   two assets must be the link's, each ticker the hash of its id. A buy's or sale's link names no
 //!   pool: a wrong fee reported there names a pool that doesn't exist, which the node refuses.
+//! - A route's path is the wallet's own walk, as Flush's app walks it (`src/webui/linkhost.cpp`):
+//!   from the link's `from` through each of its pools, proven the same way, to that pool's other
+//!   side, ending at its `to`, no asset twice.
 //! - A token's decimals come from its registration transaction, checked as `asset_registration`
 //!   checks a name; amounts paid fit them exactly, and the floor is rounded up to them.
 //! - The floor must be one the node's quote meets now, and not more than 10% below it.
@@ -43,11 +47,12 @@ pub struct TradeOrder {
     pub link: String,
     /// The Unix time, for the link's `exp`.
     pub now: i64,
-    /// The pool, as the explorer's `getpool` answers.
-    pub pool: PoolReport,
+    /// The pools, as the explorer's `getpool` answers: the link's, in its order (one but for a route).
+    pub pools: Vec<PoolReport>,
     /// The current registration transaction (hex) of each token the trade involves.
     pub registrations: Vec<String>,
-    /// What the node's `getswapquote` says this pool gives now for the amount in, in whole units.
+    /// What the node's `getswapquote` says the trade gives now, in whole units: a route's pools
+    /// quoted hop by hop, each alone, as Flush's app quotes it.
     pub quote: f64,
     /// `getbitassetsinfo`'s `min_chn_payout`, in ECX.
     pub min_payout: f64,
@@ -95,11 +100,14 @@ pub struct TradeBuilt {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckedTrade {
-    /// `swap`, `buy` or `sell`.
+    /// `swap`, `route`, `buy` or `sell`.
     pub verb: &'static str,
-    pub pool: String,
+    /// The pools it goes through, in turn.
+    pub pools: Vec<String>,
     pub asset_in: Side,
     pub asset_out: Side,
+    /// A route's assets between the pools, in turn (empty for one pool).
+    pub via: Vec<Side>,
     pub amount_in: String,
     pub min_out: String,
     /// The node's quote, in base units of what comes out.
@@ -130,13 +138,21 @@ pub fn build_trade(order_json: &str, starter: &str) -> Result<TradeBuilt, Refusa
     let keys = AccountKeys::new(starter).map_err(starter_refusal)?;
     let action = parse_action(&order.link, order.now)?;
 
-    let kind = pool_kind(&order.pool)?;
-    let (a, b) = (order.pool.asset_a_id.to_ascii_lowercase(), order.pool.asset_b_id.to_ascii_lowercase());
-    let pool = bast::pool_id(&a, &b, &kind).map_err(|e| invalid(format!("The pool's assets: {e}")))?;
-    if order.pool.abandoned {
-        return Err(invalid("Nobody provides liquidity to this pool any more: a trade would get almost nothing."));
+    // Each pool described, by the id its kind and assets make.
+    let mut described = vec![];
+    for report in &order.pools {
+        let kind = pool_kind(report)?;
+        let (a, b) = (report.asset_a_id.to_ascii_lowercase(), report.asset_b_id.to_ascii_lowercase());
+        let id = bast::pool_id(&a, &b, &kind).map_err(|e| invalid(format!("The pool's assets: {e}")))?;
+        if report.abandoned {
+            return Err(invalid(format!("Nobody provides liquidity to pool {id} any more: a trade would get almost nothing.")));
+        }
+        described.push((id, a, b, kind.curve));
     }
-    let pair = BTreeSet::from([a, b]);
+    let one = || match &described[..] {
+        [pool] => Ok(pool.clone()),
+        _ => Err(invalid(format!("A trade through one pool, and the explorer describes {}.", described.len()))),
+    };
     let registered = |id: &str| -> Result<Side, Refusal> {
         if id == ECX_ID {
             return Ok(Side { id: String::new(), ticker: "ECX".into(), decimals: ECX_DECIMALS });
@@ -151,29 +167,62 @@ pub fn build_trade(order_json: &str, starter: &str) -> Result<TradeBuilt, Refusa
     // Each side by its ticker: ECX's id is null, a token's is its ticker's hash.
     let id_of = |ticker: &str| if ticker == "ECX" { ECX_ID.to_string() } else { bast::asset_id(ticker) };
 
-    let (verb, expires, asset_in, asset_out, amount_in, floor) = match &action {
+    // The path: its assets, first to last, through each pool in turn.
+    let (verb, expires, path, amount_in, floor) = match &action {
         Action::Swap { expires, pool: named, from, to, amount, min_out, .. } => {
+            let (pool, a, b, _) = one()?;
             if *named != pool {
                 return Err(invalid(format!("The pool the explorer describes is {pool}, not the link's {named}.")));
             }
-            ("swap", *expires, id_of(from), id_of(to), amount, min_out)
+            let path = vec![id_of(from), id_of(to)];
+            if BTreeSet::from([a, b]) != BTreeSet::from([path[0].clone(), path[1].clone()]) {
+                return Err(invalid("The pool doesn't trade the link's two assets."));
+            }
+            ("swap", *expires, path, amount, min_out)
+        }
+        Action::Route { expires, pools: named, from, to, amount, min_out, .. } => {
+            if described.len() != named.len() {
+                return Err(invalid(format!("The route goes through {} pools, and the explorer describes {}.", named.len(), described.len())));
+            }
+            let mut path = vec![id_of(from)];
+            for ((pool, a, b, _), named) in described.iter().zip(named) {
+                if pool != named {
+                    return Err(invalid(format!("The pool the explorer describes is {pool}, not the link's {named}.")));
+                }
+                let at = path.last().expect("the path starts at from");
+                let next = if at == a { b } else if at == b { a } else {
+                    return Err(invalid(format!("Pool {pool} doesn't take asset {at}: the route's pools don't follow one another.")));
+                };
+                if path.contains(next) {
+                    return Err(invalid(format!("The route comes back to asset {next}: refused, as Flush refuses it.")));
+                }
+                path.push(next.clone());
+            }
+            if *path.last().expect("two pools at least") != id_of(to) {
+                return Err(invalid(format!("The route ends in asset {}, not the link's {to}.", path.last().expect("two pools at least"))));
+            }
+            ("route", *expires, path, amount, min_out)
         }
         Action::Buy { expires, launch, asset, ecx, min_tokens, .. } | Action::Sell { expires, launch, asset, tokens: ecx, min_ecx: min_tokens, .. } => {
             if bast::asset_id(launch) != *asset {
                 return Err(invalid(format!("The link names launch {launch}, which isn't asset {asset}.")));
             }
-            if kind.curve != LAUNCH_CURVE {
+            let (_, a, b, curve) = one()?;
+            if curve != LAUNCH_CURVE {
                 return Err(invalid("The pool isn't a launch's curve: the asset trades in a pool now (a swap)."));
             }
             let buy = matches!(action, Action::Buy { .. });
-            let (asset_in, asset_out) = if buy { (ECX_ID.to_string(), asset.clone()) } else { (asset.clone(), ECX_ID.to_string()) };
-            (if buy { "buy" } else { "sell" }, *expires, asset_in, asset_out, ecx, min_tokens)
+            let path = if buy { vec![ECX_ID.to_string(), asset.clone()] } else { vec![asset.clone(), ECX_ID.to_string()] };
+            if BTreeSet::from([a, b]) != BTreeSet::from([path[0].clone(), path[1].clone()]) {
+                return Err(invalid("The pool doesn't trade the link's two assets."));
+            }
+            (if buy { "buy" } else { "sell" }, *expires, path, ecx, min_tokens)
         }
     };
-    if pair != BTreeSet::from([asset_in.clone(), asset_out.clone()]) {
-        return Err(invalid("The pool doesn't trade the link's two assets."));
-    }
-    let (side_in, side_out) = (registered(&asset_in)?, registered(&asset_out)?);
+    let sides = path.iter().map(|id| registered(id)).collect::<Result<Vec<_>, _>>()?;
+    let (side_in, side_out) = (sides[0].clone(), sides[sides.len() - 1].clone());
+    let via = sides[1..sides.len() - 1].to_vec();
+    let pools: Vec<String> = described.into_iter().map(|(id, ..)| id).collect();
     let amount_in = units(amount_in, side_in.decimals, false).ok_or_else(|| invalid(format!("{amount_in} {} has more places than its {}.", side_in.ticker, side_in.decimals)))?;
     let min_out = units(floor, side_out.decimals, true).ok_or_else(|| invalid(format!("The floor {floor} {} is too large.", side_out.ticker)))?;
     let quote = whole_to_units(order.quote, side_out.decimals).ok_or_else(|| invalid("The node's quote isn't an amount."))?;
@@ -211,16 +260,18 @@ pub fn build_trade(order_json: &str, starter: &str) -> Result<TradeBuilt, Refusa
     let own: Vec<(usize, u32, u32)> = (0..fixed.len()).map(|n| (n, 0, 0)).collect();
     let chn_to = if side_in.id.is_empty() || side_out.id.is_empty() { given_out.to_bytes() } else { vec![] };
     let burn = if side_in.id.is_empty() { amount_in } else { 0 };
-    let marker = bast::swap_pools_marker(&side_in.id_or_ecx(), &[pool.as_str()], amount_in, min_out, &chn_to, &listed)
+    let named: Vec<&str> = pools.iter().map(String::as_str).collect();
+    let marker = bast::swap_pools_marker(&side_in.id_or_ecx(), &named, amount_in, min_out, &chn_to, &listed)
         .map_err(|e| refuse(RefusalCode::Malformed, format!("Can't write the trade's marker: {e}.")))?;
     fixed.push(TxOut { value: Amount::from_sat(burn), script_pubkey: ScriptBuf::from_bytes(marker) });
 
     let built = complete(Draft { fixed, own, token_inputs, coins, need: burn, fee_rate: order.fee_rate.max(crate::transfer::MIN_FEE_RATE), change_index: order.change_index }, &keys)?;
     let trade = CheckedTrade {
         verb,
-        pool,
+        pools,
         asset_in: side_in,
         asset_out: side_out,
+        via,
         amount_in: amount_in.to_string(),
         min_out: min_out.to_string(),
         quote: quote.to_string(),

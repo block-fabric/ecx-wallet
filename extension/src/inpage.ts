@@ -86,9 +86,14 @@ announce();
 // same relay, so the background decides everything. A page that already has one (another wallet's)
 // keeps it.
 const FLUSH_METHODS: readonly unknown[] = ["flush_requestAddress", "flush_submit"];
+// The Flush verbs `flush_submit` builds (core/flush/src/link.rs), so the site labels each action up
+// front; any other is refused with 4200 and the site hands it to the desktop app.
+const FLUSH_ACTIONS = Object.freeze(["swap", "route", "buy", "sell"]);
 if (!("flush" in window)) {
   const flush = Object.freeze({
     isFlush: true,
+    name: "ECX Wallet",
+    actions: FLUSH_ACTIONS,
     request: ({ method, params }: RequestArguments): Promise<unknown> =>
       FLUSH_METHODS.includes(method) ? provider.request({ method, params }) : Promise.reject(new ProviderRpcError(4200, `Unsupported method: ${String(method)}`)),
   });

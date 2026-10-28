@@ -79,7 +79,7 @@ function marker(kind, fields, listed) {
 }
 
 describe("Flush", () => {
-  const config = { flush: true, identityBlock, tipHeight: 500, feeEstimates: { 1: 1, 6: 0.1, 1008: 0.1 }, txs: [], utxos: {} };
+  const config = { flush: true, identityBlock, tipHeight: 10_000, feeEstimates: { 1: 1, 6: 0.1, 1008: 0.1 }, txs: [], utxos: {} };
   let stub;
   let url;
   before(async () => {
@@ -99,11 +99,11 @@ describe("Flush", () => {
   function fund(txs) {
     config.txs = txs;
     config.utxos = {};
-    for (const { hex, confirmed = true, blockHash } of txs) {
+    for (const { hex, confirmed = true, blockHeight, blockHash } of txs) {
       const tx = parseTx(hex);
       tx.outputs.forEach(({ script, value }, vout) => {
         const ours = [...account.receive, ...account.change].find((a) => a.scriptPubkey === script);
-        if (ours) (config.utxos[ours.address] ??= []).push({ txid: tx.txid, vout, value, confirmed, blockHash });
+        if (ours) (config.utxos[ours.address] ??= []).push({ txid: tx.txid, vout, value, confirmed, blockHeight, blockHash });
       });
     }
   }
@@ -157,29 +157,38 @@ describe("Flush", () => {
     }
   });
 
-  test("the balance counts Deposit payouts in coinbases, and a soft block's as preconf", async () => {
+  test("the balance counts Deposit payouts in coinbases, and a block confirms once a block of stake is on top of it", async () => {
     fund([
       { hex: coinbase(100, [["", 0], [RECEIVE_0.scriptPubkey, 100_000_000]]), blockHeight: 100, blockHash: FINAL },
       { hex: coinbase(490, [[RECEIVE_1.scriptPubkey, 2_000]]), blockHeight: 490, blockHash: ANCHORED },
-      { hex: paying("e1", [[RECEIVE_0.scriptPubkey, 5_000]]), blockHeight: 499, blockHash: SOFT },
+      // Soft, not anchored, but the tip (10,000) is on top of it: confirmed.
+      { hex: paying("e1", [[RECEIVE_0.scriptPubkey, 5_000]]), blockHeight: 9_999, blockHash: SOFT },
+      // In the tip itself: not confirmed yet.
+      { hex: paying("e3", [[RECEIVE_0.scriptPubkey, 300]]), blockHeight: 10_000, blockHash: SOFT },
       // A token's output: value 0, counted as nothing.
       { hex: paying("e2", [[RECEIVE_1.scriptPubkey, 0]]), blockHeight: 300, blockHash: FINAL },
     ]);
     config.finality = { [SOFT]: "soft", [ANCHORED]: "anchored" };
     const report = await pullPathWith().pullPath.reportedState(99);
-    assert.deepEqual(report.balances, [{ asset: "", amount: "100007000" }], "a soft block's payment counts");
-    assert.deepEqual(report.preconfirmed, [{ asset: "", amount: "5000" }], "and is marked preconf until anchored");
-    assert.deepEqual(report.unconfirmed, []);
+    assert.deepEqual(report.balances, [{ asset: "", amount: "100007000" }], "a soft block's payment counts at depth 2");
+    assert.deepEqual(report.unconfirmed, [{ asset: "", amount: "300" }], "the tip's, at depth 1, waits for the next block");
+    assert.equal(report.preconfirmed, undefined, "nothing is marked preconf");
     assert.equal(report.stalledSince, undefined);
     const history = await pullPathWith().pullPath.history(99);
     assert.deepEqual(
       history.entries.map((e) => [e.amounts[0]?.amount, e.confirmed, e.preconfirmed]),
-      [["5000", true, true], ["2000", true, undefined], [undefined, true, undefined], ["100000000", true, undefined]],
+      [["300", false, undefined], ["5000", true, undefined], ["2000", true, undefined], [undefined, true, undefined], ["100000000", true, undefined]],
     );
 
-    config.finality = {};
-    const anchored = await pullPathWith().pullPath.reportedState(99);
-    assert.deepEqual([anchored.balances, anchored.preconfirmed], [[{ asset: "", amount: "100007000" }], undefined]);
+    // `/flush/blocks` only says what's final: down, confirmation doesn't wait on it.
+    config.blocksDown = true;
+    try {
+      const down = await pullPathWith().pullPath.reportedState(99);
+      assert.deepEqual(down.balances, [{ asset: "", amount: "100007000" }]);
+    } finally {
+      config.finality = {};
+      config.blocksDown = undefined;
+    }
   });
 
   test("the history lists coinbase receipts and pages with after_txid past the first 25", async () => {
@@ -217,14 +226,17 @@ describe("Flush", () => {
     assert.equal(tx.locktime, 0, "no replay marker on Flush (docs/adr/0011)");
     assert.deepEqual(tx.inputs.map((i) => i.txid), [parseTx(coin).txid], "the value-0 output is never spent");
     assert.equal(tx.inputs[0].witness.length, 2, "signed by flush.wasm");
-    assert.deepEqual(held, [{ slot: 99, txid: tx.txid, spent: [{ txid: parseTx(coin).txid, vout: 0 }], tipHeight: 500 }]);
+    assert.deepEqual(held, [{ slot: 99, txid: tx.txid, spent: [{ txid: parseTx(coin).txid, vout: 0 }], tipHeight: 10_000 }]);
   });
 
-  test("a coin someone else paid in a soft block (preconf) can be spent", async () => {
-    fund([{ hex: paying("d1", [[RECEIVE_0.scriptPubkey, 70_000]]), blockHeight: 499, blockHash: SOFT }]);
+  test("a coin someone else paid in a soft block can be spent once a block is on top of it", async () => {
+    fund([
+      { hex: paying("d1", [[RECEIVE_0.scriptPubkey, 70_000]]), blockHeight: 9_999, blockHash: SOFT },
+      { hex: paying("d2", [[RECEIVE_0.scriptPubkey, 8_000]]), blockHeight: 10_000, blockHash: SOFT },
+    ]);
     config.finality = { [SOFT]: "soft" };
     try {
-      assert.deepEqual(await sendsWith().sends.spendable(99), [{ asset: "", amount: "70000" }]);
+      assert.deepEqual(await sendsWith().sends.spendable(99), [{ asset: "", amount: "70000" }], "the tip's coin isn't confirmed yet");
     } finally {
       config.finality = {};
     }
@@ -552,6 +564,37 @@ describe("Flush", () => {
       }
     });
 
+    test("a result its order's outcome names, within the order's terms, counts in the balance as the index's word", async () => {
+      const state = async () => pullPathWith({ tokens: async (tx) => flush.outputTokens(tx) }).pullPath.reportedState(99);
+      const brosevelt = (report) => report.balances.find((b) => b.asset === BROSEVELT)?.amount;
+      const saved = config.marketTrades;
+      const named = (units, outpoint = `${id(launchBuy)}:0`) => ({
+        ...saved,
+        [id(launchBuy)]: {
+          ...saved[id(launchBuy)],
+          swap: { payouts: [{ what: "out", asset_id: BROSEVELT.toUpperCase(), amount_units: String(units), via: "output", outpoint: outpoint.toUpperCase() }] },
+        },
+      });
+      try {
+        const without = await state();
+        assert.equal(without.indexed, undefined, "an outcome naming no outpoint names no result");
+
+        config.marketTrades = named(3_000);
+        const report = await state();
+        assert.deepEqual(report.indexed, [{ asset: BROSEVELT, amount: "3000" }]);
+        assert.equal(BigInt(brosevelt(report)) - BigInt(brosevelt(without) ?? 0), 3_000n, "counted with the tokens the wallet read itself");
+        assert.equal(report.unverified, undefined, "holdings adds nothing it already counts");
+
+        // Below the buy's min_out (50), or on another output: the index's word breaks the order's, and isn't taken.
+        for (const [units, outpoint] of [[49], [3_000, `${id(launchBuy)}:1`]]) {
+          config.marketTrades = named(units, outpoint);
+          assert.equal((await state()).indexed, undefined);
+        }
+      } finally {
+        config.marketTrades = saved;
+      }
+    });
+
     test("a trade's answer is kept for the session only while it stays in the same block", async () => {
       const store = new Map();
       const cache = { get: async (k) => store.get(k), set: async (k, v) => void store.set(k, v) };
@@ -808,7 +851,7 @@ describe("Flush", () => {
       let list = await deposits.list(99);
       const state = (d) => list.find((s) => s.txid === d.txid).state;
       assert.equal(state(fresh), "confirming");
-      assert.equal(memory.get(fresh.txid).slotHeight, 500, "Flush can't pay it before its confirmations, so its tip now is a bound");
+      assert.equal(memory.get(fresh.txid).slotHeight, 10_000, "Flush can't pay it before its confirmations, so its tip now is a bound");
       assert.equal(state(late), "awaitingCredit", "no bound: an old payout of its value isn't taken for its credit");
       assert.equal(memory.get(late.txid).credit, undefined);
 
@@ -816,14 +859,16 @@ describe("Flush", () => {
       l1Config.txStatuses[fresh.txid] = { confirmed: true, blockHeight: 1000, blockHash: "e0".repeat(32) };
       list = await deposits.list(99);
       assert.equal(state(fresh), "awaitingCredit", "the old payout is below its bound");
-      const paid = coinbase(505, [["", 0], [RECEIVE_0.scriptPubkey, 50_000]]);
+      const paid = coinbase(10_005, [["", 0], [RECEIVE_0.scriptPubkey, 50_000]]);
+      config.tipHeight = 10_010;
       fund([
         { hex: old, blockHeight: 90, blockHash: FINAL },
-        { hex: paid, blockHeight: 505, blockHash: FINAL },
+        { hex: paid, blockHeight: 10_005, blockHash: FINAL },
       ]);
       list = await deposits.list(99);
       assert.equal(state(fresh), "credited");
     } finally {
+      config.tipHeight = 10_000;
       await l1Stub.close();
     }
   });
@@ -897,7 +942,7 @@ describe("Flush", () => {
       assert.deepEqual(context, { origin: DEX, chain: CHAIN });
       assert.equal(prompt.decoded.kind, "clear");
       const { trade } = prompt.decoded.view;
-      assert.deepEqual([trade.pool, trade.assetIn, trade.amountIn, trade.assetOut, trade.minOut, trade.warnings], [FORK_POOL, "", "10000", FORK, "44000", []]);
+      assert.deepEqual([trade.pools, trade.assetIn, trade.amountIn, trade.via, trade.assetOut, trade.minOut, trade.warnings], [[FORK_POOL], "", "10000", [], FORK, "44000", []]);
       assert.deepEqual([prompt.trade.verb, prompt.trade.quote, prompt.trade.assetOut.ticker, prompt.trade.assetOut.decimals], ["buy", "44482", "FORK", 6]);
 
       assert.equal(stub.broadcasts().length, before + 1);
@@ -919,7 +964,8 @@ describe("Flush", () => {
         ["a floor far below the quote", () => market(0.06), buy(), -32602, /more than 10% below/],
         ["an expired link", () => market(), link("buy", `launch=FORK&asset=${FORK}&ecx=0.0001&min_tokens=0.044`, 1_700_000_000), -32602, /expired/],
         ["another network's link", () => market(), buy().replace("ecashbeta", "ecash"), -32602, /network ecash/],
-        ["an action the wallet doesn't build", () => market(), link("route", `pools=${FORK_POOL}`), 4200, /doesn't do Flush's "route"/],
+        ["an action the wallet doesn't build", () => market(), link("deposit", `pool=${FORK_POOL}`), 4200, /doesn't do Flush's "deposit"/],
+        ["a route through one pool", () => market(), link("route", `pools=${FORK_POOL}&from=ECX&to=FORK&amount=0.0001&min_out=0.044`), -32602, /2 pools at least/],
         ["a node that can't quote", () => { market(); config.flushRpcStatus = { getswapquote: 503 }; }, buy(), -32001, /Busy/],
       ];
       for (const [what, setUp, uri, code, message] of cases) {

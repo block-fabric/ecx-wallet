@@ -6,7 +6,7 @@
 //
 // Coins a broadcast Send spent are held back from later ones until it confirms, or until the server
 // has forgotten it for HOLD_BLOCKS blocks: the server may not list the spend in its mempool yet. On
-// On Flush any block confirms, a soft one (preconf) included (esplora.ts, `CONFIRMED_AT`).
+// On Flush a block confirms once a block of stake is on top of it (esplora.ts, `FLUSH_CONFIRMATIONS`).
 //
 // A Chain Module whose format is `psbt` (Flush) builds from whole transactions, as L1's Deposits do:
 // the wallet fetches each coin's, and the module reads its value from it, never from the server.
@@ -315,23 +315,57 @@ export function createSends(deps: SendDeps) {
   }
 
   /**
-   * What the module needs besides the coins, from the explorer: the pool (`getpool`), the node's
-   * quote for it (`getswapquote`), each token's registration, and the least ECX the node pays out.
-   * The module checks what it can; the rest can make a trade fail, never pay less than its floor.
+   * What the module needs besides the coins, from the explorer: the pools (`getpool`), the node's
+   * quote for them (`getswapquote`; a route's hop by hop, each pool alone, as Flush's app quotes it),
+   * each token's registration, and the least ECX the node pays out. The module checks what it can
+   * (a route's path is its own walk); the rest can make a trade fail, never pay less than its floor.
    */
   async function tradeFacts(server: EsploraClient, action: FlushAction) {
-    const [assetIn, amount, assetOut] =
-      action.verb === "swap" ? [action.from, action.amount, action.to] : action.verb === "buy" ? ["ECX", action.ecx, `0x${action.asset}`] : [`0x${action.asset}`, action.tokens, "ECX"];
-    const quoted = (await server.flushRpc("getswapquote", [assetIn, amount, assetOut])) as { pools?: { pool?: unknown; curve?: unknown; amount_out?: unknown }[] } | undefined;
-    const pools = Array.isArray(quoted?.pools) ? quoted.pools : [];
-    // A swap names its pool; a buy or a sale trades on the launch's curve.
-    const entry = pools.find((p) => (action.verb === "swap" ? p.pool === action.pool : p.curve === "launch"));
-    if (typeof entry?.pool !== "string" || typeof entry.amount_out !== "number") {
-      throw refusal("The pool doesn't quote this trade now: ask the site for a fresh link.");
+    const ECX = "0".repeat(64);
+    const label = (id: string) => (id === ECX ? "ECX" : `0x${id}`);
+    const described = async (id: string) => {
+      const pool = (await server.flushRpc("getpool", [id])) as { asset_a_id?: unknown; asset_b_id?: unknown } | undefined;
+      if (typeof pool?.asset_a_id !== "string" || typeof pool.asset_b_id !== "string") throw refusal(`The explorer doesn't describe pool ${id}.`);
+      return pool as { asset_a_id: string; asset_b_id: string };
+    };
+    /** What `pool` (or, unnamed, the launch's curve) gives now for `amount` of `assetIn`, in whole units of `assetOut`. */
+    const quoteOf = async (assetIn: string, amount: string | number, assetOut: string, pool?: string) => {
+      const quoted = (await server.flushRpc("getswapquote", [assetIn, amount, assetOut])) as { pools?: { pool?: unknown; curve?: unknown; amount_out?: unknown }[] } | undefined;
+      const pools = Array.isArray(quoted?.pools) ? quoted.pools : [];
+      const entry = pools.find((p) => (pool !== undefined ? p.pool === pool : p.curve === "launch"));
+      if (typeof entry?.pool !== "string" || typeof entry.amount_out !== "number") {
+        throw refusal("The pool doesn't quote this trade now: ask the site for a fresh link.");
+      }
+      return { pool: entry.pool, amountOut: entry.amount_out };
+    };
+
+    let pools: { asset_a_id: string; asset_b_id: string }[];
+    let quote: number;
+    if (action.verb === "route") {
+      // Each hop's assets, by the pools' own: the module walks it again, and refuses what doesn't follow.
+      pools = await Promise.all(action.pools.map(described));
+      const ids = (pool: { asset_a_id: string; asset_b_id: string }) => [pool.asset_a_id.toLowerCase(), pool.asset_b_id.toLowerCase()];
+      // It starts at the first pool's side the second doesn't hold (the module checks it is the link's from).
+      const first = ids(pools[0]);
+      let at = first.find((id) => !ids(pools[1]).includes(id)) ?? first[0];
+      let amount: string | number = action.amount;
+      for (const [i, pool] of pools.entries()) {
+        const [a, b] = ids(pool);
+        if (at !== a && at !== b) throw refusal(`Pool ${action.pools[i]} doesn't take what comes to it: the route's pools don't follow one another.`);
+        const next = at === a ? b : a;
+        amount = (await quoteOf(label(at), amount, label(next), action.pools[i])).amountOut;
+        at = next;
+      }
+      quote = amount as number;
+    } else {
+      const [assetIn, amount, assetOut] =
+        action.verb === "swap" ? [action.from, action.amount, action.to] : action.verb === "buy" ? ["ECX", action.ecx, `0x${action.asset}`] : [`0x${action.asset}`, action.tokens, "ECX"];
+      // A swap names its pool; a buy or a sale trades on the launch's curve.
+      const quoted = await quoteOf(assetIn, amount, assetOut, action.verb === "swap" ? action.pool : undefined);
+      pools = [await described(quoted.pool)];
+      quote = quoted.amountOut;
     }
-    const pool = (await server.flushRpc("getpool", [entry.pool])) as { asset_a_id?: unknown; asset_b_id?: unknown } | undefined;
-    if (typeof pool?.asset_a_id !== "string" || typeof pool.asset_b_id !== "string") throw refusal(`The explorer doesn't describe pool ${entry.pool}.`);
-    const tokens = [pool.asset_a_id, pool.asset_b_id].filter((id) => !/^0+$/.test(id));
+    const tokens = [...new Set(pools.flatMap((pool) => [pool.asset_a_id.toLowerCase(), pool.asset_b_id.toLowerCase()]))].filter((id) => id !== ECX);
     const registrations = await Promise.all(
       tokens.map(async (id) => {
         const registration = await server.assetRegistration(id);
@@ -341,7 +375,7 @@ export function createSends(deps: SendDeps) {
     );
     const info = (await server.flushRpc("getbitassetsinfo")) as { min_chn_payout?: unknown } | undefined;
     if (typeof info?.min_chn_payout !== "number") throw new SidechainServerError(server.url, `The Sidechain Server at ${server.url} sent a malformed getbitassetsinfo answer.`);
-    return { pool, registrations, quote: entry.amount_out, minPayout: info.min_chn_payout };
+    return { pools, registrations, quote, minPayout: info.min_chn_payout };
   }
 
   /** The built trade's Clear View is exactly the trade checked, every output back to the wallet: else a wallet bug. */
@@ -349,7 +383,10 @@ export function createSends(deps: SendDeps) {
     const t = view.trade;
     return (
       t !== undefined &&
-      t.pool === built.pool &&
+      t.pools.length === built.pools.length &&
+      t.pools.every((pool, i) => pool === built.pools[i]) &&
+      t.via.length === built.via.length &&
+      t.via.every((asset, i) => asset === built.via[i].id) &&
       t.assetIn === built.assetIn.id &&
       t.amountIn === built.amountIn &&
       t.assetOut === built.assetOut.id &&
@@ -400,7 +437,7 @@ export function createSends(deps: SendDeps) {
         throw new SidechainServerError(server.url, `The Sidechain Server at ${server.url} sent a transaction that isn't one it listed. Nothing was sent.`);
       }
       await refusing(async () => target.module.check(built.pset));
-      const decoded = await refusing(async () => target.module.decode(built.pset, key, { pool: facts.pool }));
+      const decoded = await refusing(async () => target.module.decode(built.pset, key, { pools: facts.pools }));
       if (decoded.kind !== "clear") throw new Error(`The wallet can't fully explain the trade it built: ${decoded.reason}`);
       if (!isTradeBuilt(decoded.view, built.trade)) throw new Error("The built trade isn't the one asked for.");
       const prompt: SignPrompt = { origin: from.origin, chain: target.chain, requestId: `trade-${slot}`, decoded, trade: built.trade };

@@ -142,7 +142,7 @@ export {
   type PendingDeposit,
 } from "./deposit";
 export { formatAllDecimals, formatAmount, parseAmount, totalAcrossChains, type TotalPart } from "./amounts";
-export { createSettings, UNITS, type Settings, type Unit } from "./settings";
+export { createSettings, REREAD_SECONDS, UNITS, type Settings, type Unit } from "./settings";
 export { qrMatrix } from "./qr";
 export { createAssets, type Assets, type AssetSource, type AssetSuggestion, type NamedAsset, type StoredAsset } from "./assets";
 export { activityDays, activityKind, localDay, type ActivityItem, type ActivityKind } from "./activity";

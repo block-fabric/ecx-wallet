@@ -43,7 +43,6 @@ async function readHome(session) {
     sections: [...document.querySelectorAll("[data-account]")].map((e) => e.getAttribute("data-account")),
     label: document.querySelector("[data-total]").previousElementSibling.textContent.trim(),
     total: document.querySelector("[data-total]").textContent.trim(),
-    manage: document.querySelector("[data-manage-chains]")?.textContent.replace(/\s+/g, " ").trim(),
   }));
   await page.close();
   return shown;
@@ -73,11 +72,10 @@ for (const browserName of BROWSERS) describe(browserName, () => {
   });
 
   test("on a fresh install only the main chain shows, and nothing asks the sidechain's server", async () => {
-    const { sections, label, total, manage } = await readHome(session);
+    const { sections, label, total } = await readHome(session);
     assert.deepEqual(sections, ["l1"]);
     assert.equal(label, "Balance", "one chain: no total across chains");
     assert.equal(total, "0.001 ECX");
-    assert.equal(manage, "Manage chains 1 of 3 on · turn chains on or off");
     const page = await openHome(session);
     await page.click("[data-deposit-action]");
     await page.waitForSelector("[data-deposit-sheet]");
@@ -122,6 +120,18 @@ for (const browserName of BROWSERS) describe(browserName, () => {
 
     const home = await readHome(session);
     assert.deepEqual(home.sections, ["l1"]);
+  });
+
+  test("the bottom bar is on every screen of an unlocked wallet: Chains opens the Chains screen, Activity home's panel", async () => {
+    const home = await openHome(session);
+    assert.equal(await home.$("[data-manage-chains]"), null, "no Manage chains card: the bar has Chains");
+    await home.click('[data-nav="chains"]');
+    await home.waitForSelector("[data-chains] [data-chain-switch]", { timeout: 10_000 });
+    assert.equal(await home.$eval('[data-nav="chains"]', (e) => e.getAttribute("aria-current")), "page");
+    await home.click('[data-nav="activity"]');
+    await home.waitForSelector('[data-tab="activity"][aria-selected="true"]', { timeout: 10_000 });
+    assert.equal(await home.$eval("[data-activity]", (e) => e.closest("[hidden]") === null), true, "home opened on Activity");
+    await home.close();
   });
 
   test("an app connecting for a chain that's off: its prompt says approving turns it on, and approving does", async () => {
