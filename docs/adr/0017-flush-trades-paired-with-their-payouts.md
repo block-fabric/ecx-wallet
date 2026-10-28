@@ -1,6 +1,6 @@
 # Flush trades in history: the market index for the outcome, and the payout paired by amount
 
-A Flush trade (kind 21, `swap_pools`) says what it pays in, never what comes out. Swaps clear at the end of their block, and what comes out is only in the node's state (backbone-flush `release-slot99-v5`, `bitassets/state.cpp`, researched on #60):
+A Flush trade (kind 21, `swap_pools`) says what it pays in, never what comes out. Swaps clear at the end of their block, and what comes out is only in the node's state (backbone-flush `flush-betanet`, `bitassets/state.cpp`, researched on #60):
 
 | | ECX by coinbase, to the order's `chn_to` | Token on the trade's result output |
 |---|---|---|
