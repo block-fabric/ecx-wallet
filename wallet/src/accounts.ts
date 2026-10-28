@@ -13,6 +13,7 @@ import {
   type Starter,
 } from "./chain-module";
 import type { NamedAsset } from "./assets";
+import { speaksEsplora } from "./server-api";
 
 /** Slots with a bundled Chain Module, and the .wasm each ships as. */
 export const CHAIN_MODULE_FILES: Readonly<Record<number, string>> = { 24: "elements.wasm", 46: "flush.wasm" };
@@ -93,7 +94,7 @@ export function describeChain(module: ChainModule<never>): ChainDescription {
 /** True if a sidechain can Send through this wallet: its server builds, or its module does over Esplora (Flush's included). */
 export function canSend(capabilities: string[], network: NetworkEntry): boolean {
   const { api } = network.sidechainServer;
-  return api === "ecx-v0" || ((api === "esplora" || api === "flush") && capabilities.includes("buildTransfer"));
+  return api === "ecx-v0" || (speaksEsplora(api) && capabilities.includes("buildTransfer"));
 }
 
 /** Throws unless the entry puts the chain at the root: no Slot and no parent. */

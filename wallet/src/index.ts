@@ -96,7 +96,7 @@ export {
 } from "./sidechain-server";
 export { esploraConfig, sidechainServer } from "./server-api";
 export { standardSidechainServer } from "./standard-sidechain-api";
-export { CONFIRMED_AT, esploraServer, FLUSH_STALL_SECONDS, HISTORY_PAGES, type EsploraServerConfig, type Finality } from "./esplora";
+export { esploraServer, FLUSH_STALL_SECONDS, HISTORY_PAGES, type EsploraServerConfig } from "./esplora";
 export {
   createPullPath,
   WATCHED_CHANGE_ADDRESSES,

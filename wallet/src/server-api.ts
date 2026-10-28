@@ -1,9 +1,12 @@
 // Which client speaks to a chain's Sidechain Server: the Server API its Chain Entry names.
 import type { SessionCache } from "./cache";
-import type { ChainEntry, NetworkEntry } from "./chain-module";
+import type { ChainEntry, NetworkEntry, ServerApi } from "./chain-module";
 import { esploraServer, FLUSH_STALL_SECONDS, type EsploraServerConfig } from "./esplora";
 import { SidechainServerError, type Fetch, type SidechainServer } from "./sidechain-server";
 import { standardSidechainServer } from "./standard-sidechain-api";
+
+/** True if the wallet reads a server of this API as Esplora: `esplora`, and Flush's (`flush`), which adds to it. */
+export const speaksEsplora = (api: ServerApi): boolean => api === "esplora" || api === "flush";
 
 /** How to reach `network`'s default server over Esplora: Flush's (`flush`) also reports finality and can stall (docs/adr/0012). */
 export function esploraConfig(entry: ChainEntry, network: NetworkEntry, cache?: SessionCache): EsploraServerConfig {

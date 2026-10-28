@@ -155,15 +155,17 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName, cache, f
     return answer.body;
   }
 
-  /** A GET's body as JSON; `what` names it in the error if it isn't. */
-  async function getJson(path: string, what: string): Promise<unknown> {
-    const body = await get(path);
+  /** `body` as JSON; `what` names it in the error if it isn't. */
+  function parsed(body: string, what: string): unknown {
     try {
       return JSON.parse(body);
     } catch {
       throw malformed(what);
     }
   }
+
+  /** A GET's body as JSON; `what` names it in the error if it isn't. */
+  const getJson = async (path: string, what: string): Promise<unknown> => parsed(await get(path), what);
 
   function status(raw: unknown): EsploraTxStatus {
     const { confirmed, block_height, block_hash, block_time } = (raw ?? {}) as Record<string, unknown>;
@@ -204,12 +206,7 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName, cache, f
       const answer = await response(`${base}/chain/${txid}`);
       if (answer.ok) {
         paging = "chain";
-        try {
-          return transactionList(JSON.parse(answer.body));
-        } catch (error) {
-          if (error instanceof SidechainServerError) throw error;
-          throw malformed("list of transactions");
-        }
+        return transactionList(parsed(answer.body, "list of transactions"));
       }
       if (answer.status !== 404 || paging === "chain") throw refused(answer);
       paging = "afterTxid";
@@ -428,14 +425,7 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName, cache, f
       const answer = await response(`/tx/${txid}/status`);
       if (answer.status === 404) return undefined;
       if (!answer.ok) throw refused(answer);
-      let parsed: EsploraTxStatus;
-      try {
-        parsed = status(JSON.parse(answer.body));
-      } catch (error) {
-        if (error instanceof SidechainServerError) throw error;
-        throw malformed("transaction status");
-      }
-      return (await settle([parsed]))[0];
+      return (await settle([status(parsed(answer.body, "transaction status"))]))[0];
     },
 
     /**
@@ -447,12 +437,7 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName, cache, f
       const answer = await response(`/asset/${asset}`);
       if (answer.status === 404) return undefined;
       if (!answer.ok) throw refused(answer);
-      let prevout: Record<string, unknown> | undefined | null;
-      try {
-        prevout = (JSON.parse(answer.body) as Record<string, unknown>)?.issuance_prevout as typeof prevout;
-      } catch {
-        throw malformed("asset");
-      }
+      const prevout = (parsed(answer.body, "asset") as Record<string, unknown> | null)?.issuance_prevout as Record<string, unknown> | undefined | null;
       if (prevout == null) return undefined;
       const { txid, vout } = prevout;
       if (typeof txid !== "string" || !HASH.test(txid) || !isCount(vout)) throw malformed("asset");
