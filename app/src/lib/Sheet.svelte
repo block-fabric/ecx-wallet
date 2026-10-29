@@ -4,12 +4,20 @@
 
   /** A panel that slides up over the screen, closed by its × or a tap outside it. */
   let { title, onclose, children, ...rest }: { title: string; onclose: () => void; children: Snippet; [data: `data-${string}`]: unknown } = $props();
+
+  // Shown from the page's body, not where it's declared: a glass card (backdrop-filter) or a rising
+  // section (transform) would otherwise hold it, and it would open at the card instead of over the
+  // screen in view.
+  function toBody(node: HTMLElement) {
+    document.body.append(node);
+    return { destroy: () => node.remove() };
+  }
 </script>
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && onclose()} />
 
-<div class="scrim" role="presentation" onclick={onclose}></div>
-<div class="sheet" role="dialog" aria-label={title} {...rest}>
+<div class="scrim" role="presentation" onclick={onclose} use:toBody></div>
+<div class="sheet" role="dialog" aria-label={title} {...rest} use:toBody>
   <div class="head">
     <strong>{title}</strong>
     <button class="close" aria-label="Close" onclick={onclose}><Icon name="close" /></button>

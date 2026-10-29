@@ -164,8 +164,10 @@ body::after {
   }
 }
 
-/* The toolbar popup is as tall as the browser lets it be (600px), not just its content. */
+/* The toolbar popup is as tall as the browser lets it be (600px), not just its content, and one
+   width whatever the screen shows: it sizes itself to the page, so it would change from tab to tab. */
 html[data-view="popup"] body {
+  width: 400px;
   min-height: 600px;
 }
 /* Pinned to the side, the page fills the panel's height. */

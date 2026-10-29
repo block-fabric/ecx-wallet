@@ -357,25 +357,27 @@
     <dl class="facts">
       <dt>Status</dt>
       <dd>
-        {#if entry.confirmed}Confirmed{:else if entry.trusted}Pending{:else}Unconfirmed: {unconfirmedWhy(entry)}{/if}
+        <span class="state" class:ok={entry.confirmed} class:wait={!entry.confirmed && entry.trusted}>
+          {#if entry.confirmed}Confirmed{:else if entry.trusted}Pending{:else}Unconfirmed: {unconfirmedWhy(entry)}{/if}
+        </span>
       </dd>
       {#if entry.time !== undefined}<dt>Mined</dt><dd data-details-mined>{minedAt(entry.time)}</dd>{/if}
       <dt>Chain</dt>
       <dd>{chain.info.name} <span class="mono muted tiny">{chain.info.chain}</span></dd>
       <dt>Transaction</dt>
       <dd class="txid">
-        <code data-details-txid>{entry.txid}</code>
+        <code title={entry.txid} data-details-txid>{entry.txid}</code>
         <button class="copy" aria-label="Copy transaction id" title="Copy transaction id" onclick={() => copy(entry.txid)}>
           <Icon name={copied ? "check" : "copy"} size={14} />
         </button>
       </dd>
       {#if entry.trade && "payout" in entry.trade.outcome && typeof entry.trade.outcome.payout === "object"}
         <dt>{entry.trade.outcome.state === "filled" ? "Paid by" : "Refunded by"}</dt>
-        <dd class="txid"><code title="The coinbase output that paid it: the wallet paired it by its address and amount" data-details-payout>{entry.trade.outcome.payout.txid}</code></dd>
+        <dd class="txid"><code title="{entry.trade.outcome.payout.txid}: the coinbase output that paid it, paired by its address and amount" data-details-payout>{entry.trade.outcome.payout.txid}</code></dd>
       {/if}
       {#if entry.trade}
         <dt>{entry.trade.pools.length > 1 ? "Pools" : "Pool"}</dt>
-        <dd class="txid pools">{#each entry.trade.pools as pool, i (i)}<code>{pool}</code>{/each}</dd>
+        <dd class="txid pools">{#each entry.trade.pools as pool, i (i)}<code title={pool}>{pool}</code>{/each}</dd>
       {/if}
       {#if entry.trade && "returned" in entry.trade.outcome && entry.trade.outcome.returned}
         {@const returned = entry.trade.outcome.returned}
@@ -387,7 +389,7 @@
       {/if}
       {#if entry.depositFrom !== undefined}
         <dt>Deposit</dt>
-        <dd class="txid"><code title="The Deposit's transaction on the main chain" data-details-deposit-from>{entry.depositFrom}</code></dd>
+        <dd class="txid"><code title="{entry.depositFrom}: the Deposit's transaction on the main chain" data-details-deposit-from>{entry.depositFrom}</code></dd>
       {/if}
     </dl>
     {#if entry.trade?.outcome.state === "unknown"}
@@ -533,6 +535,12 @@
     color: var(--muted);
     font-weight: 500;
   }
+  p.reported {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.72rem;
+    text-align: center;
+  }
   .amount.reported {
     text-decoration: underline dotted;
     text-underline-offset: 3px;
@@ -651,32 +659,97 @@
     font-style: italic;
     text-align: center;
   }
+  /* What moved, on a frosted tile of its own. */
   .sheet-amounts {
     display: flex;
     flex-direction: column;
     align-items: center;
+    gap: 2px;
+    padding: 14px 12px;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius);
+    background:
+      radial-gradient(80% 120% at 50% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%),
+      var(--glass);
+    box-shadow: inset 0 1px 0 var(--glass-edge);
     text-align: center;
   }
+  /* The facts as a list of rows, each under a hairline. */
   .facts {
     display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 6px 12px;
+    grid-template-columns: auto minmax(0, 1fr);
+    margin: 0;
+    padding: 0 12px;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius);
+    background: var(--glass);
     font-size: 0.85rem;
   }
+  .facts dt,
+  .facts dd {
+    margin: 0;
+    padding: 9px 0;
+    border-top: 1px solid var(--border);
+  }
+  .facts dt:first-of-type,
+  .facts dt:first-of-type + dd {
+    border-top: none;
+  }
   .facts dt {
+    display: flex;
+    align-items: center;
+    padding-right: 12px;
     color: var(--muted);
+  }
+  .facts dd {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0 6px;
+    min-width: 0;
+    text-align: right;
+  }
+  .state {
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--warn-bg);
+    color: var(--warn);
+    font-weight: 600;
+    font-size: 0.78rem;
+  }
+  .state.ok {
+    background: var(--ok-bg);
+    color: var(--ok);
+  }
+  .state.wait {
+    background: var(--pending-bg);
+    color: var(--pending);
   }
   .txid {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
+    justify-content: flex-end;
     gap: 4px;
   }
+  .facts dd.txid {
+    flex-wrap: nowrap;
+  }
+  /* An id on one line, cut short (its title and the copy button have it whole). */
   .txid code {
-    font-size: 0.72rem;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.74rem;
   }
   /* A route's pools, one per line, in the order traded through. */
   .txid.pools {
     flex-direction: column;
+    align-items: flex-end;
+  }
+  .txid.pools code {
+    max-width: 100%;
   }
   .copy {
     flex: none;
