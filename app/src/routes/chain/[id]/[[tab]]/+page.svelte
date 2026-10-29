@@ -7,6 +7,7 @@
   import { chainMark, Chains } from "$lib/chains.svelte";
   import ActivityFeed from "$lib/ActivityFeed.svelte";
   import Icon from "$lib/Icon.svelte";
+  import type { Tab } from "$lib/nav.svelte";
   import { amountText, unit } from "$lib/unit.svelte";
   import { stalledText } from "$lib/stall";
 
@@ -15,7 +16,7 @@
   const chains = new Chains();
   let locked = $state(false);
   /** `#/chain/<id>/activity` opens on the Activity tab (after a Send, say). */
-  let tab = $state<"assets" | "activity">(page.params.tab === "activity" ? "activity" : "assets");
+  let tab = $state<Tab>(page.params.tab === "activity" ? "activity" : "assets");
   let actions = $state<Actions | undefined>(undefined);
 
   // Nothing here works while locked: the home page asks for the password.

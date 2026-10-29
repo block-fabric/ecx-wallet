@@ -181,6 +181,7 @@ pub fn build_trade(order_json: &str, starter: &str) -> Result<TradeBuilt, Refusa
             ("swap", *expires, path, amount, min_out)
         }
         Action::Route { expires, pools: named, from, to, amount, min_out, .. } => {
+            // The Decoder (decode.rs) walks the built trade again on its own, on purpose: keep the two apart.
             if described.len() != named.len() {
                 return Err(invalid(format!("The route goes through {} pools, and the explorer describes {}.", named.len(), described.len())));
             }

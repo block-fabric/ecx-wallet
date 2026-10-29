@@ -1,7 +1,7 @@
 <script lang="ts">
   import "../app.css";
   import { reportActivity } from "$lib/activity";
-  import { vaultStatus } from "$lib/background";
+  import { onLockDeadline, vaultStatus } from "$lib/background";
   import BottomBar from "$lib/BottomBar.svelte";
   import { page } from "$app/state";
   import { nav, pathOf } from "$lib/nav.svelte";
@@ -15,12 +15,28 @@
   const barless = $derived(/^\/(approve|create|import)(\/|$)/.test(path));
   // Until the first answer the bar's place isn't known (`data-bar-known`, which the e2e tests wait for).
   let barKnown = $state(false);
-  $effect(() => {
-    void path;
+  // When the wallet locks itself without use (asked again then, as the deadline may have moved).
+  let locksAt = $state<number | undefined>(undefined);
+  const askVault = () =>
     vaultStatus().then(
-      (s) => ((nav.unlocked = s.unlocked), (barKnown = true)),
+      (s) => ((nav.unlocked = s.unlocked), (locksAt = s.locksAt), (barKnown = true)),
       () => (barKnown = true),
     );
+  $effect(() => {
+    void path;
+    askVault();
+  });
+  // A lock on any screen takes the bar away: one the background announces, or the deadline passing.
+  $effect(() =>
+    onLockDeadline((next) => {
+      nav.unlocked = next !== null;
+      locksAt = next ?? undefined;
+    }),
+  );
+  $effect(() => {
+    if (locksAt === undefined) return;
+    const timer = setTimeout(askVault, Math.max(0, locksAt - Date.now()) + 500);
+    return () => clearTimeout(timer);
   });
   // app.css sizes the page by where it shows.
   $effect(() => {

@@ -384,7 +384,8 @@ fn trade_terms(psbt: &Psbt, keys: &AccountKeys, flow: &TokenFlow, index: usize, 
         return Err(bad_evidence(format!("The trade goes through {} pools, and the evidence describes {}.", pools.len(), described.len())));
     }
     let asset_in = text("asset_in");
-    // The path: from what it pays in through each pool to its other side.
+    // The path: from what it pays in through each pool to its other side. Walked here apart from
+    // the builder's walk (trade.rs) on purpose: the Decoder checks what was built, so one bug can't pass both.
     let mut path = vec![asset_in.clone()];
     for (pool, &named) in described.iter().zip(&pools) {
         let (a, b) = (pool.asset_a_id.to_ascii_lowercase(), pool.asset_b_id.to_ascii_lowercase());

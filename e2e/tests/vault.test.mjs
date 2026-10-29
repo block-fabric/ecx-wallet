@@ -5,7 +5,7 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, test } from "node:test";
-import { BROWSERS, homeSettled, launchWallet } from "../harness.mjs";
+import { BROWSERS, homeSettled, launchWallet, openWalletPage } from "../harness.mjs";
 
 const PHRASE = "legal winner thank year wave sausage worth useful legal winner thank yellow";
 const PASSPHRASE = "ecx-e2e-passphrase-Q7";
@@ -198,6 +198,19 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       await page.evaluate(() => chrome.runtime.sendMessage({ kind: "vault.setAutoLock", minutes: 3 }));
       await page.click('[data-tab="activity"]'); // a use: the deadline moves to 3 minutes from now
       await page.waitForFunction(() => document.querySelector("[data-lock-countdown]").textContent.trim() === "Locks in 3 min", { timeout: 10_000 });
+      await page.close();
+    }));
+
+  test("the bottom bar leaves a screen other than home once the wallet locks", () =>
+    withWallet(async (session) => {
+      await setUpWallet(session);
+      const page = await openWalletPage(session, "#/chains");
+      await page.waitForSelector("nav.bottom-bar", { timeout: 10_000 });
+      // Locked from elsewhere (another window's Settings): this screen hears it, without navigating.
+      const other = await openWalletPage(session, "#/settings");
+      await other.evaluate(() => chrome.runtime.sendMessage({ kind: "vault.lock" }));
+      await page.waitForFunction(() => document.querySelector("nav.bottom-bar") === null, { timeout: 10_000 });
+      await other.close();
       await page.close();
     }));
 

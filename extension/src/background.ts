@@ -427,15 +427,15 @@ const signing = {
   rememberSigned: assets.rememberSigned,
 };
 
-/**
- * Tells open wallet pages that the wallet sent on these chains, once `run` settles (sent or not:
- * reading again is harmless), so they show it without a Retry. None may be open.
- */
 /** A read a shown page makes by itself (`unattended`, see `Chains.watch`) doesn't count as activity. */
 function byItself<T>(message: { unattended?: boolean }, read: () => Promise<T>): Promise<T> {
   return message.unattended === true ? vault.unattended(read) : read();
 }
 
+/**
+ * Tells open wallet pages that the wallet sent on these chains, once `run` settles (sent or not:
+ * reading again is harmless), so they show it without a Retry. None may be open.
+ */
 function announcing<T>(ids: ("l1" | number)[], run: Promise<T>): Promise<T> {
   return run.finally(() => chrome.runtime.sendMessage({ kind: "chains.changed", ids }).catch(() => {}));
 }

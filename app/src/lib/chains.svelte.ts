@@ -34,7 +34,7 @@ import { attention } from "$lib/attention";
 import { assetsOf } from "$lib/unit.svelte";
 
 /** A shown wallet nobody is at (not hovered or focused) reads its chains again this often, at most. */
-const UNATTENDED_MS = 300_000;
+const UNATTENDED_MS = REREAD_SECONDS.max * 1000;
 /** Coming back to a page read longer ago than this reads it at once. */
 const STALE_MS = 60_000;
 /** How often `watch` checks whether a read is due. */

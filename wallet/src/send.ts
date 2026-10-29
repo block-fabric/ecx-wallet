@@ -345,7 +345,8 @@ export function createSends(deps: SendDeps) {
       // Each hop's assets, by the pools' own: the module walks it again, and refuses what doesn't follow.
       pools = await Promise.all(action.pools.map(described));
       const ids = (pool: { asset_a_id: string; asset_b_id: string }) => [pool.asset_a_id.toLowerCase(), pool.asset_b_id.toLowerCase()];
-      // It starts at the first pool's side the second doesn't hold (the module checks it is the link's from).
+      // It starts at the first pool's side the second doesn't hold. The link names `from` by ticker,
+      // whose id only the module derives: it checks this start is the link's from.
       const first = ids(pools[0]);
       let at = first.find((id) => !ids(pools[1]).includes(id)) ?? first[0];
       let amount: string | number = action.amount;

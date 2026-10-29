@@ -1,14 +1,14 @@
 <script lang="ts">
   import { page } from "$app/state";
   import Icon from "$lib/Icon.svelte";
-  import { nav, pathOf } from "$lib/nav.svelte";
+  import { nav, pathOf, type Tab } from "$lib/nav.svelte";
 
   const route = $derived(pathOf(page.url.hash));
   const onHome = $derived(route === "/");
   const atSettings = $derived(route.startsWith("/settings") || route.startsWith("/grants") || route.startsWith("/assets"));
 
   /** On home, a panel switches in place, as a tab does; elsewhere the link opens home on it. */
-  function switchTo(event: MouseEvent, tab: "assets" | "activity") {
+  function switchTo(event: MouseEvent, tab: Tab) {
     if (!onHome) return;
     event.preventDefault();
     nav.tab = tab;
