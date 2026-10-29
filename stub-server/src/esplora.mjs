@@ -107,6 +107,17 @@ export function createEsploraStub(config) {
     return txs;
   }
 
+  /** The listed transactions paying or spending from `script`: the mempool's, newest first, then the confirmed ones, newest first. */
+  function touchingTxs(txs, script) {
+    const touching = [...txs.values()].filter(
+      (tx) => tx.outputs.some((o) => o.script === script) || tx.inputs.some((i) => txs.get(i.txid)?.outputs[i.vout]?.script === script),
+    );
+    const confirmed = (tx) => tx.fixture.confirmed !== false;
+    const mempool = touching.filter((tx) => !confirmed(tx)).reverse();
+    const chain = touching.filter(confirmed).sort((a, b) => (b.fixture.blockHeight ?? 1) - (a.fixture.blockHeight ?? 1));
+    return { mempool, chain };
+  }
+
   function txJson(tx, txs) {
     return {
       txid: tx.txid,
@@ -249,19 +260,29 @@ export function createEsploraStub(config) {
         return [400, "Invalid Bitcoin address"];
       }
       const txs = indexed();
-      const touching = [...txs.values()].filter(
-        (tx) => tx.outputs.some((o) => o.script === script) || tx.inputs.some((i) => txs.get(i.txid)?.outputs[i.vout]?.script === script),
-      );
-      const confirmed = (tx) => tx.fixture.confirmed !== false;
-      const mempool = touching.filter((tx) => !confirmed(tx)).reverse();
-      const chain = touching.filter(confirmed).sort((a, b) => (b.fixture.blockHeight ?? 1) - (a.fixture.blockHeight ?? 1));
+      const { mempool, chain } = touchingTxs(txs, script);
       return [200, page([...mempool, ...chain].map((tx) => txJson(tx, txs)), after)];
     }
     const address = /^\/address\/([^/]+)$/.exec(pathname);
     if (address) {
       const a = decodeURIComponent(address[1]);
-      const count = config.addressTxCounts?.[a] ?? config.utxos?.[a]?.length ?? 0;
-      return [200, { address: a, chain_stats: { tx_count: count }, mempool_stats: { tx_count: 0 } }];
+      if (config.addressTxCounts?.[a] !== undefined) return [200, { address: a, chain_stats: { tx_count: config.addressTxCounts[a] }, mempool_stats: { tx_count: 0 } }];
+      // As an indexer counts: the transactions its /txs lists, confirmed and not.
+      const listed = config.addressTxs?.[a];
+      if (Array.isArray(listed)) {
+        const inMempool = listed.filter((tx) => tx.status?.confirmed === false).length;
+        return [200, { address: a, chain_stats: { tx_count: listed.length - inMempool }, mempool_stats: { tx_count: inMempool } }];
+      }
+      let touching = { mempool: [], chain: [] };
+      try {
+        touching = touchingTxs(indexed(), addressScript(a));
+      } catch {
+        // Not an address the stub can parse: its outputs stand for its count, as before.
+      }
+      if (touching.mempool.length + touching.chain.length === 0) {
+        return [200, { address: a, chain_stats: { tx_count: config.utxos?.[a]?.length ?? 0 }, mempool_stats: { tx_count: 0 } }];
+      }
+      return [200, { address: a, chain_stats: { tx_count: touching.chain.length }, mempool_stats: { tx_count: touching.mempool.length } }];
     }
 
     const byScript = /^\/scripthash\/([0-9a-f]{64})\/utxo$/.exec(pathname);

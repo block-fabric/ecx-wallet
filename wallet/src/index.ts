@@ -127,6 +127,7 @@ export {
 export { createSends, HOLD_BLOCKS, sendRequester, type HeldSpend, type HeldStore, type RefusedSend, type SendDeps, type Sends } from "./send";
 export { LINK_NETWORKS, linkDigest, type UsedLinks } from "./flush-links";
 export type { TradeStore } from "./flush-trades";
+export { createHistoryStore, HISTORY_PREFIX, historyName, MAX_KEPT_HISTORY_BYTES, type HistoryStore } from "./history-store";
 export { CACHE_PREFIX, cacheKey, type SessionCache } from "./cache";
 export { esploraClient, feeRate, type EsploraClient, type EsploraTx, type EsploraTxStatus, type EsploraUtxo } from "./esplora";
 export { findTreasury, TreasuryError, type Treasury } from "./treasury";

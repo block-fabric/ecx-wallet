@@ -35,6 +35,35 @@ const MIN_FEE_RATE = 0.1;
 export const HISTORY_PAGES = 3;
 
 /**
+ * How deep a known transaction must be before a history read trusts it unchanged: one within this
+ * many blocks of the tip, or not yet in one, has its address read again every time.
+ */
+export const REORG_DEPTH = 6;
+
+/** One address's last read, as the server listed it (statuses unsettled): what the next starts from. */
+export interface AddressSync {
+  /** Its confirmed and mempool transaction counts then. */
+  chain: number;
+  mempool: number;
+  txs: EsploraTx[];
+  complete: boolean;
+}
+
+/** A chain's last history read (`ReportedHistory.sync`): each address's, and what the module read of each token transaction. */
+export interface EsploraHistorySync {
+  version: 1;
+  addresses: Record<string, AddressSync>;
+  /** By txid; null where it lists nothing. A transaction never changes, so neither does this. */
+  tokens: Record<string, OutputTokens | null>;
+}
+
+/** `known` as this client wrote it, else nothing to start from. */
+function historySync(known: unknown): EsploraHistorySync | undefined {
+  const k = known as Partial<EsploraHistorySync> | undefined;
+  return k?.version === 1 && typeof k.addresses === "object" && k.addresses !== null && typeof k.tokens === "object" && k.tokens !== null ? (k as EsploraHistorySync) : undefined;
+}
+
+/**
  * How settled a block is on Flush, as `/flush/blocks` reports it: `soft` until an eCash anchor
  * covers it, `anchored` by one, `final` by 3. The wallet uses only `final`: what it keeps for good
  * (a trade's outcome, docs/adr/0017) is kept once its block is final.
@@ -251,6 +280,65 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName, cache, f
     return { scriptpubkey, ...(value === undefined ? {} : { value }), ...(asset === undefined ? {} : { asset }) };
   }
 
+  /** The address's counts of confirmed and mempool transactions. */
+  async function addressCounts(address: string): Promise<{ chain: number; mempool: number }> {
+    const stats = (await getJson(`/address/${encodeURIComponent(address)}`, "address")) as Record<string, Record<string, unknown> | undefined>;
+    const [chain, mempool] = [stats?.chain_stats?.tx_count, stats?.mempool_stats?.tx_count];
+    if (!isCount(chain) || !isCount(mempool)) throw malformed("address");
+    return { chain, mempool };
+  }
+
+  /** `addressHistory`'s read, its statuses as the server reports them (unsettled): what `sync` keeps. */
+  async function addressSync(address: string, pages: number, known: AddressSync | undefined, tip: number | undefined): Promise<AddressSync> {
+    const base = `/address/${encodeURIComponent(address)}/txs`;
+    let counts: { chain: number; mempool: number } | undefined;
+    if (known !== undefined && tip !== undefined) {
+      const settledDeep = (tx: EsploraTx) => tx.status.confirmed && tip - tx.status.blockHeight! + 1 >= REORG_DEPTH;
+      // Counts only where they can spare the list: an address holding anything recent is read anyway.
+      if (known.txs.every(settledDeep)) {
+        counts = await addressCounts(address);
+        if (counts.chain === known.chain && counts.mempool === known.mempool) return known;
+      }
+      const first = transactionList(await getJson(base, "list of transactions"));
+      const mempool = first.filter((tx) => !tx.status.confirmed);
+      const confirmed = first.filter((tx) => tx.status.confirmed);
+      const mempoolComplete = mempool.length < LISTED_MEMPOOL_TXS;
+      if (confirmed.length < LISTED_CONFIRMED_TXS) {
+        return { chain: counts?.chain ?? confirmed.length, mempool: counts?.mempool ?? mempool.length, txs: [...mempool, ...confirmed], complete: mempoolComplete };
+      }
+      // The first page's oldest, if known and settled, has every known one after it: the counts check nothing is missing.
+      counts ??= await addressCounts(address);
+      const at = known.txs.findIndex((tx) => tx.txid === confirmed[confirmed.length - 1].txid && settledDeep(tx));
+      if (at >= 0) {
+        const merged = [...confirmed, ...known.txs.slice(at + 1).filter((tx) => tx.status.confirmed)];
+        if (new Set(merged.map((tx) => tx.txid)).size === merged.length && (merged.length === counts.chain || !known.complete)) {
+          return { ...counts, txs: [...mempool, ...merged], complete: known.complete && mempoolComplete && merged.length === counts.chain };
+        }
+      }
+    }
+    const first = transactionList(await getJson(base, "list of transactions"));
+    const mempool = first.filter((tx) => !tx.status.confirmed);
+    const confirmed = first.filter((tx) => tx.status.confirmed);
+    let complete = mempool.length < LISTED_MEMPOOL_TXS;
+    const seen = new Set(confirmed.map((tx) => tx.txid));
+    for (let page = confirmed, read = 0; page.length >= LISTED_CONFIRMED_TXS; read++) {
+      if (read === pages) {
+        complete = false;
+        break;
+      }
+      page = (await olderTxs(address, page[page.length - 1].txid)).filter((tx) => tx.status.confirmed);
+      const fresh = page.filter((tx) => !seen.has(tx.txid));
+      if (fresh.length < page.length) {
+        complete = false;
+        break;
+      }
+      for (const tx of fresh) seen.add(tx.txid);
+      confirmed.push(...fresh);
+    }
+    // Without counts, what was listed stands for them: a wrong guess only costs a re-read next time.
+    return { chain: counts?.chain ?? confirmed.length, mempool: counts?.mempool ?? mempool.length, txs: [...mempool, ...confirmed], complete };
+  }
+
   /** A list of transactions with their statuses as the server reports them. */
   function transactionList(body: unknown): EsploraTx[] {
     if (!Array.isArray(body)) throw malformed(`list of transactions (not a list: ${JSON.stringify(body)?.slice(0, 60)})`);
@@ -454,9 +542,7 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName, cache, f
 
     /** How many transactions, confirmed or not, involve the address. */
     async addressTxCount(address: string): Promise<number> {
-      const stats = (await getJson(`/address/${encodeURIComponent(address)}`, "address")) as Record<string, Record<string, unknown> | undefined>;
-      const [chain, mempool] = [stats?.chain_stats?.tx_count, stats?.mempool_stats?.tx_count];
-      if (!isCount(chain) || !isCount(mempool)) throw malformed("address");
+      const { chain, mempool } = await addressCounts(address);
       return chain + mempool;
     },
 
@@ -479,28 +565,15 @@ export function esploraClient({ url: baseUrl, identityBlock, chainName, cache, f
      * The address's transactions, newest first: its mempool's, then its confirmed ones, reading up
      * to `pages` older pages past the first. `complete` unless older ones may be missing: the
      * mempool's list was full, the pages ran out first, or the server repeated a page.
+     *
+     * With `known`, the last read's (`sync`, as the server listed them), only what changed is
+     * read: the address's counts first, and if they're the same and nothing in it is recent enough
+     * to be reorged (`REORG_DEPTH`), the known list again; else its first page, with the known
+     * older ones after it once the counts say nothing is missing between them.
      */
-    async addressHistory(address: string, pages = HISTORY_PAGES): Promise<{ txs: EsploraTx[]; complete: boolean }> {
-      const first = transactionList(await getJson(`/address/${encodeURIComponent(address)}/txs`, "list of transactions"));
-      const mempool = first.filter((tx) => !tx.status.confirmed);
-      const confirmed = first.filter((tx) => tx.status.confirmed);
-      let complete = mempool.length < LISTED_MEMPOOL_TXS;
-      const seen = new Set(confirmed.map((tx) => tx.txid));
-      for (let page = confirmed, read = 0; page.length >= LISTED_CONFIRMED_TXS; read++) {
-        if (read === pages) {
-          complete = false;
-          break;
-        }
-        page = (await olderTxs(address, page[page.length - 1].txid)).filter((tx) => tx.status.confirmed);
-        const fresh = page.filter((tx) => !seen.has(tx.txid));
-        if (fresh.length < page.length) {
-          complete = false;
-          break;
-        }
-        for (const tx of fresh) seen.add(tx.txid);
-        confirmed.push(...fresh);
-      }
-      return { txs: await settled([...mempool, ...confirmed]), complete };
+    async addressHistory(address: string, pages = HISTORY_PAGES, known?: AddressSync, tip?: number): Promise<{ txs: EsploraTx[]; complete: boolean; sync: AddressSync }> {
+      const sync = await addressSync(address, pages, known, tip);
+      return { txs: await settled(sync.txs), complete: sync.complete, sync };
     },
 
     /** The raw transaction, hex. Whoever uses it checks it hashes to `txid`. */
@@ -862,9 +935,14 @@ export function esploraServer(config: EsploraServerConfig, fetchFn: Fetch): Side
      * Each watched address's transactions, merged: a spend touches several of them. Unconfirmed
      * first, then confirmed by height, newest first.
      */
-    async history(watch, treasuries = []) {
+    async history(watch, treasuries = [], known) {
       await client.checkChain();
-      const lists = await eachAddress(watch, ({ address }) => client.addressHistory(address));
+      const kept = historySync(known);
+      // Without the tip nothing can be judged deep: every address is read whole, as without a kept read.
+      const tip = kept === undefined ? undefined : await client.tipHeight().catch(() => undefined);
+      const lists = await eachAddress(watch, ({ address }) => client.addressHistory(address, HISTORY_PAGES, kept?.addresses[address], tip));
+      const sync: EsploraHistorySync = { version: 1, addresses: {}, tokens: {} };
+      [...watch.receive, ...watch.change].forEach(({ address }, i) => (sync.addresses[address] = lists[i].sync));
       const txs = new Map<string, EsploraTx>();
       for (const tx of lists.flatMap((list) => list.txs)) txs.set(tx.txid, tx);
       const partial = lists.some((list) => !list.complete);
@@ -894,15 +972,17 @@ export function esploraServer(config: EsploraServerConfig, fetchFn: Fetch): Side
           for (const { txid, prevout } of tx.vin) if (zero(prevout)) txids.add(txid);
         }
         const read = new Map<string, Promise<OutputTokens | undefined>>();
+        for (const txid of txids) if (kept !== undefined && txid in kept.tokens) read.set(txid, Promise.resolve(kept.tokens[txid] ?? undefined));
         const all = [...txids];
         for (let i = 0; i < all.length; i += QUERIES_AT_ONCE) {
           const batch = all.slice(i, i + QUERIES_AT_ONCE);
           (await Promise.all(batch.map((txid) => outputTokens(txid, read)))).forEach((t, j) => markers.set(batch[j], t));
         }
+        for (const [txid, tokens] of markers) sync.tokens[txid] = tokens ?? null;
       }
       const entries = newestFirst.map((tx) => entry(tx, ours, treasuries, trusted, markers));
-      if (config.tokens === undefined) return { entries, partial };
-      return { entries: await withTrades(entries, txs, markers, ours, client, { session: config.cache, store: config.tradeStore }), partial };
+      if (config.tokens === undefined) return { entries, partial, sync };
+      return { entries: await withTrades(entries, txs, markers, ours, client, { session: config.cache, store: config.tradeStore }), partial, sync };
     },
     buildTransfer: async () => {
       throw notHere();

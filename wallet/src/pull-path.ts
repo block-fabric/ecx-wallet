@@ -6,6 +6,7 @@
 // review as any other.
 import { createKeyRouting, type ChainModules, type KeyedChain, type Keys } from "./accounts";
 import { cacheKey, type SessionCache } from "./cache";
+import { historyName, type HistoryStore } from "./history-store";
 import { NATIVE_COIN, type AssetAmount, type ChainEntry, type ChainKey, type ClearView, type NetworkEntry, type Starter } from "./chain-module";
 import { ErrorCode, ProviderRpcError } from "./errors";
 import { SidechainServerError, type HistoryEntry, type SidechainServer, type TransferOrder, type TreasuryScript, type WatchData } from "./sidechain-server";
@@ -22,6 +23,17 @@ export interface PullPathDeps extends SigningDeps, Keys, ChainModules {
   sidechainServer(entry: ChainEntry, network: NetworkEntry): SidechainServer;
   /** Where the last reported balances are kept for the session, to show while refreshing. */
   cache?: SessionCache;
+  /**
+   * Where each chain's last history is kept across sessions, encrypted (`history-store.ts`): shown
+   * at once after unlock, and what the next read starts from, so it reads only what changed.
+   */
+  historyStore?: HistoryStore;
+}
+
+/** A chain's last history and what its next read starts from, as `historyStore` keeps them. */
+interface KeptHistory {
+  reported: ChainHistory;
+  sync?: unknown;
 }
 
 /** A chain with its Chain Module, its key and the Sidechain Server it talks to. */
@@ -147,11 +159,43 @@ export function createPullPath(deps: PullPathDeps) {
     return report;
   }
 
-  async function history<K extends ChainKey>(target: ChainServer<K>, treasuries?: TreasuryScript[]): Promise<ChainHistory> {
+  /**
+   * Reads under way, per chain and server. One under way may have started before what a caller
+   * asks for (its own Send, say), so a caller meanwhile gets the next read, started once that one
+   * is done and shared by everyone asking until then: never more than one at a time, or one waiting.
+   */
+  const reading = new Map<string, { current: Promise<ChainHistory>; next?: Promise<ChainHistory> }>();
+
+  function history<K extends ChainKey>(target: ChainServer<K>, treasuries?: TreasuryScript[]): Promise<ChainHistory> {
+    const name = historyName(target.chain, target.server.url);
+    const read = () => readHistory(target, name, treasuries);
+    const under = reading.get(name);
+    if (under === undefined) return track(name, read());
+    under.next ??= under.current.then(
+      () => read(),
+      () => read(),
+    );
+    return under.next;
+  }
+
+  function track(name: string, current: Promise<ChainHistory>): Promise<ChainHistory> {
+    const entry: { current: Promise<ChainHistory>; next?: Promise<ChainHistory> } = { current };
+    reading.set(name, entry);
+    const done = () => {
+      if (entry.next !== undefined) track(name, entry.next);
+      else reading.delete(name);
+    };
+    current.then(done, done);
+    return current;
+  }
+
+  async function readHistory<K extends ChainKey>(target: ChainServer<K>, name: string, treasuries?: TreasuryScript[]): Promise<ChainHistory> {
     const { chain, server } = target;
-    const { entries, partial } = await server.history(await watch(target), treasuries);
+    const kept = await deps.historyStore?.get<KeptHistory>(name).catch(() => undefined);
+    const { entries, partial, sync } = await server.history(await watch(target), treasuries, kept?.sync);
     const reported = { chain, server: server.url, entries, partial, readAt: deps.now() };
     await deps.cache?.set(cacheKey.history(chain, server.url), reported);
+    await deps.historyStore?.set(name, { reported, ...(sync === undefined ? {} : { sync }) } satisfies KeptHistory).catch(() => {});
     return reported;
   }
 
@@ -160,9 +204,11 @@ export function createPullPath(deps: PullPathDeps) {
     return deps.cache?.get<ChainReport>(cacheKey.balance(chain, server.url));
   }
 
-  /** The last history from the chain's current server this session, if any. Derives no key. */
+  /** The last history from the chain's current server: this session's, else the one kept from before (`historyStore`). Derives no key. */
   async function cachedHistory<K extends ChainKey>({ chain, server }: ChainServer<K>): Promise<ChainHistory | undefined> {
-    return deps.cache?.get<ChainHistory>(cacheKey.history(chain, server.url));
+    const session = await deps.cache?.get<ChainHistory>(cacheKey.history(chain, server.url));
+    if (session !== undefined) return session;
+    return (await deps.historyStore?.get<KeptHistory>(historyName(chain, server.url)).catch(() => undefined))?.reported;
   }
 
   return {

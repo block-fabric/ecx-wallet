@@ -108,7 +108,7 @@ describe("Flush", () => {
     }
   }
 
-  function pullPathWith({ lock = lockState(), prompts = [], tokens, tradeStore, cache } = {}) {
+  function pullPathWith({ lock = lockState(), prompts = [], tokens, tradeStore, cache, historyStore } = {}) {
     const flushModule = module();
     const deps = {
       supportedSlots: [99],
@@ -127,6 +127,7 @@ describe("Flush", () => {
       l1AccountKey: async () => assert.fail("Flush asked for the L1 Account Key"),
       now: () => Date.now(),
       sidechainServer: (entry, network) => wallet.sidechainServer(entry, network, undefined, cache, tokens, tradeStore),
+      historyStore,
     };
     return { pullPath: wallet.createPullPath(deps), deps, prompts };
   }
@@ -274,6 +275,109 @@ describe("Flush", () => {
     } finally {
       config.marketTrades = config.flushRpc = undefined;
     }
+  });
+
+  describe("a history kept from the last read (wallet/src/history-store.ts)", () => {
+    const kept = () => {
+      const store = new Map();
+      return { store, historyStore: { get: async (n) => structuredClone(store.get(n)), set: async (n, v) => void store.set(n, structuredClone(v)) } };
+    };
+    const reads = (from) => stub.requests().slice(from);
+    const lists = (paths) => paths.filter((p) => /^\/address\/[^/]+\/txs/.test(p));
+    const counts = (paths) => paths.filter((p) => /^\/address\/[^/]+$/.test(p));
+
+    test("is read again only where an address's counts changed, or holds a transaction recent enough to be reorged", async () => {
+      const older = paying("b1", [[RECEIVE_0.scriptPubkey, 5_000]]);
+      const other = paying("b2", [[RECEIVE_1.scriptPubkey, 7_000]]);
+      fund([
+        { hex: older, blockHeight: 9_000, blockHash: FINAL },
+        { hex: other, blockHeight: 9_001, blockHash: FINAL },
+      ]);
+      const { historyStore, store } = kept();
+      const { pullPath } = pullPathWith({ tokens: async (tx) => flush.outputTokens(tx), historyStore });
+      const first = await pullPath.history(99);
+      assert.equal(store.size, 1, "kept, under the chain and its server");
+      const watched = account.receive.length + account.change.length;
+
+      let from = stub.requests().length;
+      const again = await pullPath.history(99);
+      assert.deepEqual(lists(reads(from)), [], "no address changed: none of their lists is read");
+      assert.equal(counts(reads(from)).length, watched, "each address's counts, once");
+      assert.deepEqual(again.entries, first.entries);
+
+      // A payment to RECEIVE_0: only that address's list is read, and the new one shows first.
+      const newer = paying("b3", [[RECEIVE_0.scriptPubkey, 1_000]]);
+      config.txs.push({ hex: newer, blockHeight: 9_002, blockHash: FINAL });
+      from = stub.requests().length;
+      const changed = await pullPath.history(99);
+      assert.deepEqual(lists(reads(from)), [`/address/${RECEIVE_0.address}/txs`]);
+      assert.deepEqual(changed.entries.map((e) => e.txid), [parseTx(newer).txid, parseTx(other).txid, parseTx(older).txid]);
+
+      // In the tip's block: within REORG_DEPTH, so its address is read every time until it's deep.
+      config.txs.push({ hex: paying("b4", [[RECEIVE_1.scriptPubkey, 2_000]]), blockHeight: 9_999, blockHash: SOFT });
+      await pullPath.history(99);
+      from = stub.requests().length;
+      await pullPath.history(99);
+      assert.deepEqual(lists(reads(from)), [`/address/${RECEIVE_1.address}/txs`]);
+    });
+
+    test("one read at a time: asked again meanwhile (after a Send, say), it reads once more after the one under way", async () => {
+      fund([{ hex: paying("b7", [[RECEIVE_0.scriptPubkey, 3_000]]), blockHeight: 9_000, blockHash: FINAL }]);
+      const { pullPath } = pullPathWith({ historyStore: kept().historyStore });
+      config.delayMs = 200;
+      const from = stub.requests().length;
+      try {
+        const under = pullPath.history(99);
+        await new Promise((r) => setTimeout(r, 50));
+        const sent = paying("b8", [[RECEIVE_0.scriptPubkey, 1_000]]);
+        config.txs.push({ hex: sent, confirmed: false });
+        const [asked, also] = [pullPath.history(99), pullPath.history(99)];
+        await under;
+        assert.ok((await asked).entries.some((e) => e.txid === parseTx(sent).txid), "the next read has it");
+        await also;
+        const listed = reads(from).filter((p) => p === `/address/${RECEIVE_0.address}/txs`);
+        assert.equal(listed.length, 2, "the one under way, then one more shared by both asking meanwhile");
+      } finally {
+        config.delayMs = undefined;
+      }
+    });
+
+    test("is shown before any read, as the last one; a store that can't read it (locked, another key) shows none", async () => {
+      fund([{ hex: paying("b5", [[RECEIVE_0.scriptPubkey, 3_000]]), blockHeight: 9_000, blockHash: FINAL }]);
+      const { historyStore } = kept();
+      const read = await pullPathWith({ historyStore }).pullPath.history(99);
+      // A new session: nothing in its cache, the kept history at once, before any read.
+      const from = stub.requests().length;
+      assert.deepEqual(await pullPathWith({ historyStore }).pullPath.cachedHistory(99), read);
+      assert.deepEqual(reads(from).filter((p) => p.startsWith("/address/")), [], "shown from what was kept, nothing asked");
+      const locked = { get: async () => undefined, set: async () => {} };
+      assert.equal(await pullPathWith({ historyStore: locked }).pullPath.cachedHistory(99), undefined);
+    });
+
+    test("is sealed: the store holds no address or txid, only the vault's key opens it, and only under its own name", async () => {
+      const values = new Map();
+      const local = { get: async (k) => values.get(k), set: async (k, v) => void values.set(k, v), remove: async (k) => void values.delete(k) };
+      const newKey = () => crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+      let key = await newKey();
+      const sealed = wallet.createHistoryStore({ store: local, key: async () => key });
+      const tx = paying("b6", [[RECEIVE_0.scriptPubkey, 4_000]]);
+      fund([{ hex: tx, blockHeight: 9_000, blockHash: FINAL }]);
+      const read = await pullPathWith({ historyStore: sealed }).pullPath.history(99);
+      const [[name, value]] = [...values];
+      assert.ok(name.startsWith(wallet.HISTORY_PREFIX));
+      const raw = JSON.stringify(value);
+      assert.ok(!raw.includes(RECEIVE_0.address) && !raw.includes(parseTx(tx).txid), "nothing readable at rest");
+      assert.deepEqual((await sealed.get(name)).reported, read);
+
+      values.set(`${wallet.HISTORY_PREFIX}another`, value);
+      assert.equal(await sealed.get(`${wallet.HISTORY_PREFIX}another`), undefined, "not under another name");
+      key = await newKey();
+      assert.equal(await sealed.get(name), undefined, "not under another key (another wallet, or password)");
+      key = undefined;
+      assert.equal(await sealed.get(name), undefined, "not while locked");
+      await sealed.set(name, { reported: read });
+      assert.deepEqual(values.get(name), value, "and nothing written while locked");
+    });
   });
 
   test("a server that sends another transaction than the coin it listed sends nothing", async () => {

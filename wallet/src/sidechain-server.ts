@@ -122,6 +122,8 @@ export interface ReportedHistory {
   entries: HistoryEntry[];
   /** The server has older transactions it didn't list. */
   partial: boolean;
+  /** What the next read can start from (`history`'s `known`): only the client that made it reads it. */
+  sync?: unknown;
 }
 
 /** A Send: one or more payments, in order. Addresses are in the chain's own encoding. */
@@ -150,7 +152,7 @@ export interface SidechainServer {
    * The transactions touching the watch, newest first: the latest ones only, never paged. On eCash,
    * `treasuries` are the Slots' Treasury scripts, to label Deposits.
    */
-  history(watch: WatchData, treasuries?: TreasuryScript[]): Promise<ReportedHistory>;
+  history(watch: WatchData, treasuries?: TreasuryScript[], known?: unknown): Promise<ReportedHistory>;
   /** Asks the server to build a transfer; returns its Signing Request (unvalidated). */
   buildTransfer(watch: WatchData, order: TransferOrder): Promise<unknown>;
   /** Hands the signed payload back for the server to finalize and broadcast. */

@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, test } from "node:test";
 import { addressScript, encodeTx, parseTx } from "@ecx/stub-server/bitcoin-tx";
-import { BROWSERS, homeSettled, importWallet, launchWallet, openWalletPage, serveEsplora, serveL1Esplora, setUpWallet } from "../harness.mjs";
+import { BROWSERS, homeSettled, importWallet, launchWallet, openWalletPage, relock, serveEsplora, serveL1Esplora, setUpWallet } from "../harness.mjs";
 
 const { HISTORY_PAGES } = await importWallet();
 
@@ -338,6 +338,29 @@ for (const browserName of BROWSERS) describe(browserName, () => {
     } finally {
       L1.delayMs = 0;
       delete L1.addressTxs;
+    }
+  });
+
+  test("after a lock, Activity shows the history kept from before at once, encrypted at rest, and refreshes it", async () => {
+    const received = tx("c9", [{ value: 41000, script: addressScript(L1_RECEIVE_0) }]);
+    L1.txs = [received];
+    await readHistory(session, "l1"); // kept, under the vault's key
+    await relock(session); // forgets the session's cache
+    const stored = await (await session.openPage("index.html#/settings")).evaluate(async () => {
+      const all = await chrome.storage.local.get(null);
+      return Object.entries(all).filter(([k]) => k.startsWith("history:"));
+    });
+    assert.ok(stored.length > 0, "kept in storage.local");
+    assert.ok(stored.every(([, v]) => !JSON.stringify(v).includes(received.txid) && !JSON.stringify(v).includes(L1_RECEIVE_0)), "nothing readable at rest");
+    // Slow enough to see the kept entries while it refreshes.
+    L1.delayMs = 500;
+    try {
+      const page = await openActivity(session, "l1");
+      await page.waitForSelector("[data-activity][data-refreshing] [data-history-entry]", { timeout: 10_000 });
+      assert.deepEqual(await page.$$eval("[data-history-entry]", (rows) => rows.map((r) => r.getAttribute("data-history-entry"))), [received.txid]);
+      await closeSettled(page);
+    } finally {
+      L1.delayMs = 0;
     }
   });
 

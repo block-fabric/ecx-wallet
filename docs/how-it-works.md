@@ -111,7 +111,8 @@ The API this project defines, for a sidechain with no indexer. Its protocol draf
 
 **How:**
 
-- History is read only when a tab is first opened: `history.reported` per chain, in parallel. This session's last one (`history.cached`) shows while it refreshes. A chain that fails says so with Retry; the others still show.
+- History is read only when a tab is first opened: `history.reported` per chain, in parallel. This session's last one, else the one kept from before (`history.cached`), shows while it refreshes. A chain that fails says so with Retry; the others still show.
+- **Kept, and read only where it changed** (ADR 0019): each chain's last history is kept in `storage.local`, AES-GCM under a key the vault derives while unlocked (`vault.historyKey`, `history-store.ts`). The next read asks each address's counts first and reads only the lists that changed, or that hold anything within 6 blocks of the tip; a full first page is spliced onto the kept older ones once the counts say nothing is missing. After an unlock the background reads every chain that's on (`syncHistories`), so Activity has it at once. A caller arriving while a chain's read is under way gets one more read after it, shared.
 - **Over Esplora** (`SidechainServer.history`), the wallet reads `/address/:a/txs` for its 40 watched addresses, merges them by txid and works the rest out itself:
   - "Asset issuance" (or "Asset reissuance") when an input of the wallet's issues an asset (Esplora's `issuance` on Elements), ahead of "Fee, to yourself";
   - "Fee, to yourself" when every output is the wallet's;

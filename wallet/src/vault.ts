@@ -243,6 +243,24 @@ export function createVault(deps: VaultDeps) {
       return (await deps.module()).starter(masterMnemonic, passphrase, slot);
     },
 
+    /**
+     * The key each chain's kept history is sealed with (`history-store.ts`): HKDF-SHA-256 of the
+     * vault key, so it exists only while unlocked and changes with the wallet or its password.
+     * Undefined while locked. Doesn't count as activity: it reads no secret.
+     */
+    async historyKey(): Promise<CryptoKey | undefined> {
+      const open = await exclusive(unlocked);
+      if (open === undefined) return undefined;
+      const base = await crypto.subtle.importKey("raw", open.key as BufferSource, "HKDF", false, ["deriveKey"]);
+      return crypto.subtle.deriveKey(
+        { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(0), info: new TextEncoder().encode("ecx-wallet history v1") },
+        base,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["encrypt", "decrypt"],
+      );
+    },
+
     /** The L1 Account Key, derived on demand and never stored; as `starter`, it counts as activity. */
     async l1AccountKey(): Promise<L1AccountKey> {
       const { masterMnemonic, passphrase } = await secretsInUse();

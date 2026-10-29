@@ -14,6 +14,7 @@ import {
   esploraConfig,
   createL1Module,
   createProviderHandler,
+  createHistoryStore,
   providerPending,
   createPullPath,
   createSends,
@@ -527,7 +528,22 @@ const pullPath = createPullPath({
   l1Module,
   sidechainServer: (entry, network) => sidechainServer(entry, network, undefined, sessionCache, tokensOn(entry), tradeStore),
   cache: sessionCache,
+  // Each chain's last history, encrypted under the vault's key: shown at once after unlock, and read again only where it changed.
+  historyStore: createHistoryStore({ store: keyValueStore(chrome.storage.local), key: () => vault.historyKey() }),
 });
+
+/**
+ * Reads every chain's history that's on, by itself (not activity, for the auto-lock), so Activity
+ * has it when opened: after an unlock. Failures are left for Activity to show when it reads.
+ */
+function syncHistories() {
+  void vault.unattended(() =>
+    Promise.all([
+      pullPath.l1History().catch(() => {}),
+      ...SUPPORTED_SLOTS.map(async (slot) => ((await chainsOn.isOn(slot)) ? pullPath.history(slot).catch(() => {}) : undefined)),
+    ]),
+  );
+}
 
 /** A client for a network's default server, which speaks Esplora (Flush's included). */
 const esplora = (entry: ChainEntry, network: NetworkEntry) => esploraClient(esploraConfig(entry, network, sessionCache), (...args) => fetch(...args));
@@ -604,6 +620,7 @@ async function route(message: BackgroundMessage, sender: chrome.runtime.MessageS
       if (approval === undefined) return null;
       await vault.unlock(String(message.password ?? ""));
       approval.settle({ approved: true });
+      syncHistories();
       return null;
     }
     case "grants.list":
@@ -806,6 +823,7 @@ async function routeVault(message: Extract<BackgroundMessage, { kind: `vault.${s
       return vault.status();
     case "vault.unlock":
       await vault.unlock(String(message.password ?? ""));
+      syncHistories();
       return vault.status();
     case "vault.lock":
       await vault.lock();
