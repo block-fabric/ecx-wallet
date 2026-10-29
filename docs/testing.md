@@ -16,6 +16,7 @@
 
 Useful switches:
 
+- `pnpm test:quick vault chains`: build, then run only the named files (`e2e/tests/<name>.test.mjs`) in Brave. Use it while working; run the full `pnpm test` before a push or merge.
 - `E2E_BROWSERS=brave pnpm test`: one browser only (the default is `brave,firefox`).
 - `HEADFUL=1`: watch the browser.
 - `node e2e/screenshots.mjs <out dir> [light|dark]`: screenshot every screen in Brave, after `pnpm build && pnpm build:e2e`.
