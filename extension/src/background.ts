@@ -14,6 +14,7 @@ import {
   esploraConfig,
   createL1Module,
   createProviderHandler,
+  providerPending,
   createPullPath,
   createSends,
   createSettings,
@@ -363,8 +364,9 @@ function openSigningApproval(context: ApprovalContext): SigningApproval {
   };
 }
 
-// Closing the approval window counts as rejecting.
+// Closing the approval window counts as rejecting. A browser window's Provider handler goes with it.
 chrome.windows.onRemoved.addListener((windowId) => {
+  providerHandlers.delete(panelHost(windowId)!);
   for (const approval of approvals.values()) if (approval.windowId === windowId) approval.close();
 });
 
@@ -454,9 +456,11 @@ function announcing<T>(ids: ("l1" | number)[], run: Promise<T>): Promise<T> {
 /**
  * The Provider's handler for a site's requests from one browser window: their approvals show in
  * the wallet's side panel (or Firefox's sidebar) when it's open in that window (`panelHost`),
- * else in a window of their own. One handler per window, so its requests share one unlock.
+ * else in a window of their own. What waits on the user per origin (one unlock window, one asset
+ * suggestion) is shared by every window's handler, so a site can't open one per window.
  */
 const providerHandlers = new Map<string, ReturnType<typeof createProviderHandler>>();
+const pendingPerOrigin = providerPending();
 function providerHandler(host: string | undefined) {
   const key = host ?? "";
   let handler = providerHandlers.get(key);
@@ -478,6 +482,7 @@ const providerDeps = (host: string | undefined): Parameters<typeof createProvide
   send: (slot, order, from) => announcing([slot], sends.send(slot, order, from, host)),
   sendAction: (slot, action, from) => announcing([slot], sends.trade(slot, action, from, host)),
   askToNameAsset: (prompt) => askToNameAsset(prompt, host),
+  pending: pendingPerOrigin,
   async assetSuggestion(slot, origin, suggestion) {
     const module = await chainModule(slot)!;
     const { entry, network } = servedNetwork(module);
