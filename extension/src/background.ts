@@ -552,7 +552,7 @@ const usedLinks: UsedLinks = {
   add: (digest) => chrome.storage.session.set({ [`usedLink:${digest}`]: true }),
 };
 
-const sends = createSends({ ...keys, chainModule, l1Module, pullPath, esplora, openSigningApproval, isUnlocked: signing.isUnlocked, held: heldStore, usedLinks, cache: sessionCache, now: () => Date.now() });
+const sends = createSends({ ...keys, chainModule, l1Module, pullPath, esplora, openSigningApproval, isUnlocked: signing.isUnlocked, held: heldStore, usedLinks, cache: sessionCache, tradeStore, now: () => Date.now() });
 
 /** The requester's web origin as the browser reports it for a content-script message. */
 function requesterOrigin(sender: chrome.runtime.MessageSender): string | undefined {
