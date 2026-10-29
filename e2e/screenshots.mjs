@@ -57,8 +57,8 @@ const SLOT_24_HISTORY = [
   historyTx("e1", [[FOREIGN_SCRIPT, 20]], [[SLOT_24_SCRIPT, 7, OTHER_ASSET], [FOREIGN_SCRIPT, 13, OTHER_ASSET]], block(2001, 1792040000)),
   historyTx("e0", [[FOREIGN_SCRIPT, 200000]], [[SLOT_24_SCRIPT, 150000], [FOREIGN_SCRIPT, 49700], ["", 300]], block(2000, 1792000000)),
 ];
-// Popup width; the approval window is 420 wide (extension/src/background.ts).
-const POPUP = { width: 360, height: 600 };
+// The popup as it opens (app.css fixes its width); the approval window is 420 wide (extension/src/background.ts).
+const POPUP = { width: 400, height: 600 };
 const APPROVAL = { width: 420, height: 640 };
 
 const signingRequest = (payload, overrides = {}) => ({
