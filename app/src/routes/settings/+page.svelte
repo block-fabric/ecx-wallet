@@ -13,6 +13,23 @@
   let reread = $state<number | undefined>(undefined);
   const rereadChoices = $derived(reread === undefined || REREAD_CHOICES.includes(reread) ? REREAD_CHOICES : [...REREAD_CHOICES, reread].sort((a, b) => a - b));
 
+  /**
+   * The networks this web wallet is served for, each at its own address and so with its own wallet:
+   * `/networks.json`, which a host may serve beside the build. Without it there is no switch.
+   */
+  let served = $state<{ network: string; networks: { name: string; url: string }[] } | undefined>(undefined);
+  if (location.protocol === "https:" || location.protocol === "http:") {
+    fetch("/networks.json")
+      .then((r) => (r.ok ? r.json() : undefined))
+      .then(
+        (n) => {
+          const ok = Array.isArray(n?.networks) && n.networks.length > 1 && n.networks.every((x: { name: unknown; url: unknown }) => typeof x.name === "string" && typeof x.url === "string" && x.url.startsWith("https://"));
+          if (ok) served = n;
+        },
+        () => undefined,
+      );
+  }
+
   vaultStatus().then((s) => (status = s));
   getRereadSeconds().then((s) => (reread = s), () => (reread = REREAD_SECONDS.default));
 
@@ -70,6 +87,17 @@
         {/each}
       </span>
     </li>
+    {#if served}
+      <li class="setting" data-network-switch>
+        <Icon name="plus" />
+        <span class="grow"><strong class="small">Network</strong><span class="muted tiny">Each network keeps its own wallet</span></span>
+        <span class="segmented" role="group" aria-label="Network">
+          {#each served.networks as { name, url } (name)}
+            <a href={url} aria-current={name === served.network ? "true" : undefined} data-network-option={name}>{name}</a>
+          {/each}
+        </span>
+      </li>
+    {/if}
     <li class="setting">
       <Icon name="refresh" />
       <span class="grow"><strong class="small">Refresh balances</strong><span class="muted tiny">How often an open wallet reads its chains again</span></span>
@@ -166,6 +194,17 @@
     background: none;
     font-size: 0.8rem;
   }
+  .segmented a {
+    display: flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 0 10px;
+    border-radius: 999px;
+    color: var(--text);
+    font-size: 0.8rem;
+    text-decoration: none;
+  }
+  .segmented a[aria-current="true"],
   .segmented button[aria-pressed="true"] {
     background: var(--surface);
     box-shadow: var(--shadow);
