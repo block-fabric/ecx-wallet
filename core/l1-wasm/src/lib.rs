@@ -70,6 +70,16 @@ pub unsafe extern "C" fn build_transfer(order: *const u8, order_len: usize, key:
     }))
 }
 
+/// Data order (JSON) + L1 Account Key → `{ pset, spent }` (an unsigned PSBT carrying the data in one
+/// `OP_RETURN` output, and the coins it spends) as JSON, or a refusal.
+#[no_mangle]
+pub unsafe extern "C" fn build_data(order: *const u8, order_len: usize, key: *const u8, key_len: usize) -> i32 {
+    ret_text(text(order, order_len).and_then(|o| {
+        let k = text(key, key_len)?;
+        ecx_l1::build_data(o, k).map_err(refusal).and_then(|b| json(&b))
+    }))
+}
+
 /// Base64 PSBT → `null` if it passes the refusals that need no key, or a refusal.
 #[no_mangle]
 pub unsafe extern "C" fn check(payload: *const u8, payload_len: usize) -> i32 {

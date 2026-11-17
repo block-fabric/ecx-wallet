@@ -95,7 +95,7 @@ A server, by default run by a sidechain's maintainers, from which the Wallet Bas
 _Avoid_: Adapter, backend, sidechain plugin
 
 **Server API**:
-The protocol the Wallet Base speaks to a Sidechain Server, named next to its URL in the Chain Entry: the Standard Sidechain API, or an existing indexer API the Wallet Base supports (Esplora).
+The protocol the Wallet Base speaks to a Sidechain Server, named next to its URL in the Chain Entry: the Standard Sidechain API, an existing indexer API the Wallet Base supports (Esplora), or a chain's own (Sidepot's game API).
 _Avoid_: Backend type, server kind
 
 **History Entry**:
@@ -123,8 +123,12 @@ A user's stored approval letting one Sidechain App, identified by its web origin
 _Avoid_: Permission, connection, session
 
 **Action**:
-A Sidechain App's request that the Wallet Base build and send a transaction doing something its chain defines, such as a swap on Flush (a `flush:` URI), rather than paying a list of outputs (docs/adr/0016).
+A Sidechain App's request that the Wallet Base build and send a transaction doing something its chain defines, such as a swap on Flush (a `flush:` URI) or a Sidepot entry (a `sidepot:` link, carried in a Main chain transaction), rather than paying a list of outputs (docs/adr/0016, 0021).
 _Avoid_: Intent, flush link, order (a Flush order is one kind of Action)
+
+**Entry**:
+A signed instruction of a Sidepot game account (a buy, a cashout), carried as the one data output of a Main chain transaction that pays nothing but its fee (docs/adr/0021).
+_Avoid_: Move, bet, ticket; History Entry and Chain Entry are other things
 
 ### Signing
 

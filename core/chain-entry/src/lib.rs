@@ -103,6 +103,10 @@ pub enum ServerApi {
     /// which says how final a block is (docs/adr/0012).
     #[serde(rename = "flush")]
     Flush,
+    /// Sidepot's JSON API: `/state` and `/account/<player>` (docs/adr/0021). It reports a game
+    /// account's balance; the game's moves are L1 transactions, sent over eCash's own server.
+    #[serde(rename = "sidepot")]
+    Sidepot,
 }
 
 impl<P> ChainEntry<P> {

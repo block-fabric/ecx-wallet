@@ -33,6 +33,7 @@ export const MODULES = [
   { crate: "ecx-elements-wasm", file: "elements.wasm" },
   { crate: "ecx-l1-wasm", file: "l1.wasm" },
   { crate: "ecx-flush-wasm", file: "flush.wasm" },
+  { crate: "ecx-sidepot-wasm", file: "sidepot.wasm" },
 ].filter(({ file }) => file === "vault.wasm" || bundled.has(file));
 
 const run = (cmd, args, env = {}) =>

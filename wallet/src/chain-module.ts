@@ -2,6 +2,8 @@
 // The shape follows the spec's Chain Module interface. A module returns data only and holds
 // nothing: it gets its key per call, a Slot's Starter or, for eCash, the L1 Account Key. Beyond
 // the interface, a Slot's module may declare `depositDestination`, and the L1 module builds Deposits.
+// Sidepot's (Slot 88, sidepot.wasm) signs no transactions: it makes entries, which the L1 module
+// carries in data transactions (docs/adr/0021).
 import { CoreModule, CoreModuleError } from "./wasm";
 
 declare const keyKind: unique symbol;
@@ -24,13 +26,13 @@ export interface Declaration {
   binding: Binding;
   /**
    * Optional capabilities: `depositDestination` and `assetContract` (a Slot's), `buildTransfer` (a Slot's or L1's), `buildDeposit` (L1's),
-   * `tokens` and `trades` (Flush's).
+   * `tokens` and `trades` (Flush's), `entries` (Sidepot's), `buildData` (L1's).
    */
   capabilities: string[];
 }
 
-/** The protocol the wallet speaks to a Sidechain Server (docs/adr/0002; `flush`: docs/adr/0012). */
-export type ServerApi = "ecx-v0" | "esplora" | "flush";
+/** The protocol the wallet speaks to a Sidechain Server (docs/adr/0002; `flush`: docs/adr/0012; `sidepot`: docs/adr/0021). */
+export type ServerApi = "ecx-v0" | "esplora" | "flush" | "sidepot";
 
 /** A network's default Sidechain Server: where it is and which Server API it speaks. */
 export interface SidechainServerEntry {
@@ -110,7 +112,7 @@ export interface DerivedAddress {
   /** In the chain's own encoding (`elements1…` for Slot 24). */
   address: string;
   scriptPubkey: string;
-  /** The key the script pays: 33-byte compressed, hex. */
+  /** The key the script pays: 33-byte compressed, hex. On Sidepot, the game account's 32-byte x-only key. */
   publicKey: string;
 }
 
@@ -174,7 +176,13 @@ export type Destination =
    * A withdrawal burn (how a Withdrawal starts): `payout` (the burn minus `parentFee`) may be paid
    * on L1 to `l1ScriptPubkey` (hex), which `l1Address` gives as an L1 address if it is standard.
    */
-  | { kind: "withdrawal"; l1Address?: string; l1ScriptPubkey: string; payout: string; parentFee: string };
+  | { kind: "withdrawal"; l1Address?: string; l1ScriptPubkey: string; payout: string; parentFee: string }
+  /**
+   * Data the transaction carries and pays nothing to (L1, docs/adr/0021): the one zero-value
+   * `OP_RETURN` of the transaction, `data` its pushed bytes, hex. The L1 Decoder doesn't read them;
+   * the wallet checks they are the entry it made (`SignPrompt.entry`).
+   */
+  | { kind: "data"; data: string };
 
 /** What a Deposit is credited to on its Slot, as that Slot's own Chain Module derives it. */
 export interface DepositCredit {
@@ -187,8 +195,11 @@ export interface DepositCredit {
   yours: boolean;
   /** L1 confirmations before the Slot may credit it. */
   confirmations: number;
-  /** Who pays it: someone running the Slot's node imports it (Elements), or the Slot itself in a block of its own (Flush). */
-  paidBy: "operator" | "chain";
+  /**
+   * Who pays it: someone running the Slot's node imports it (Elements), the Slot itself in a block
+   * of its own (Flush), or its game as it reads the Deposit's main-chain block (Sidepot).
+   */
+  paidBy: "operator" | "chain" | "game";
 }
 
 /** A risky mode of a request, shown above everything else. */
@@ -284,7 +295,7 @@ export type RefusalCode =
   | "tooLarge"
   /** `buildTransfer`: an amount, or change that can't go to the fee, is below what the chain relays. */
   | "dust"
-  /** `parseAction`, `buildTrade`: a link its chain's own app would refuse, or a trade the wallet won't build (docs/adr/0016). */
+  /** `parseAction`, `buildTrade`, `parseEntry`: a link its chain's own app would refuse, or a trade the wallet won't build (docs/adr/0016). */
   | "invalidAction"
   /** `parseAction`: an action of the chain the wallet doesn't build yet. */
   | "unsupportedAction";
@@ -379,6 +390,49 @@ export interface ChainModule<K extends ChainKey = Starter> {
    * ADR 0016. Throws ChainModuleRefusal (`invalidAction`, `insufficientFunds`, …).
    */
   buildTrade(order: TradeOrder, key: K): BuiltTrade;
+  /**
+   * Only if `declare()` lists `entries` (Sidepot, docs/adr/0021): what a `sidepot:` link asks for.
+   * Needs no key. Throws ChainModuleRefusal (`invalidAction`, `unsupportedAction`).
+   */
+  parseEntry(link: string): SidepotEntry;
+  /**
+   * Only if `declare()` lists `entries`: the link's entry, signed by the key's game account for this
+   * network's Sidepot, and what its bytes say. Throws ChainModuleRefusal (`invalidAction`, …).
+   */
+  signEntry(link: string, key: K): SignedEntry;
+}
+
+/**
+ * A Sidepot entry as the user reads it (docs/adr/0021). Sats are decimal strings. `expires` is the
+ * last tick of the game clock at which it counts; `slot` and `anchor` (a block hash, as a node
+ * prints it) are the Sidepot its signature is for.
+ */
+export type SidepotEntry = {
+  /** The game account that makes it, `spot:<x-only key>`; absent before it is signed. */
+  player?: string;
+  nonce: string;
+  expires: number;
+  slot: number;
+  anchor: string;
+} & (
+  | { kind: "buy"; round: number; keys: number; /** Sats per key, at most. */ maxPrice: string; /** `maxPrice` times `keys`. */ maxTotal: string }
+  | { kind: "cashout"; /** Sats; "0" is the whole balance. */ amount: string; /** A Sidepot sidechain address: 40 hex digits. */ dest: string }
+);
+
+/** An entry `signEntry` made: its bytes (hex; the data of one `OP_RETURN` output) and what they say. */
+export interface SignedEntry {
+  entry: string;
+  view: SidepotEntry;
+}
+
+/** The data to carry, and what to pay its fee from (the L1 module's `DataOrder`). */
+export interface DataOrder {
+  coins: WholeTxCoin[];
+  /** Hex: 1 to 255 bytes. */
+  data: string;
+  /** Sats per 1000 vbytes. */
+  feeRate: number;
+  changeIndex: number;
 }
 
 /** A trade a `flush:` link asks for. Amounts are the link's decimals; `expires` a Unix time. */
@@ -578,6 +632,11 @@ export interface L1Module extends ChainModule<L1AccountKey> {
   txid(tx: string): string;
   /** An unsigned M5 (base64 PSBT) and the account's coins it spends. Throws ChainModuleRefusal (e.g. `insufficientFunds`). */
   buildDeposit(order: DepositOrder, key: L1AccountKey): { psbt: string; spent: { txid: string; vout: number }[] };
+  /**
+   * An unsigned transaction (base64 PSBT) carrying `order.data` in one zero-value `OP_RETURN`
+   * output, funded as a Send, and the coins it spends (docs/adr/0021). Throws ChainModuleRefusal.
+   */
+  buildData(order: DataOrder, key: L1AccountKey): BuiltTransfer;
 }
 
 /** Turns a module's JSON error result into a ChainModuleRefusal. */
@@ -620,6 +679,8 @@ function chainModuleOf<K extends ChainKey>(m: CoreModule): ChainModule<K> {
     assetLogo: (asset, tx) => refusals(() => json<CheckedLogo>("asset_logo", asset, tx)),
     parseAction: (link, now) => refusals(() => json<FlushAction>("parse_action", link, String(now))),
     buildTrade: (order, key) => refusals(() => json<BuiltTrade>("build_trade", JSON.stringify(order), key)),
+    parseEntry: (link) => refusals(() => json<SidepotEntry>("parse_entry", link)),
+    signEntry: (link, key) => refusals(() => json<SignedEntry>("sign_entry", link, key)),
   };
 }
 
@@ -632,5 +693,6 @@ export async function loadL1Module(bytes: BufferSource): Promise<L1Module> {
     treasuryScript: (slot) => m.callText("treasury_script", slot),
     txid: (tx) => m.callText("txid", tx),
     buildDeposit: (order, key) => refusals(() => json<{ psbt: string; spent: { txid: string; vout: number }[] }>("build_deposit", JSON.stringify(order), key)),
+    buildData: (order, key) => refusals(() => json<BuiltTransfer>("build_data", JSON.stringify(order), key)),
   };
 }

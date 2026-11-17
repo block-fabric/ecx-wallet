@@ -64,9 +64,9 @@ function splitManifest(manifest) {
 }
 
 for (const target of Object.keys(DIST)) {
-  test(`${target}: the shipped build reaches eCash's and Flush's mainnet servers, and nothing else`, async () => {
+  test(`${target}: the shipped build reaches eCash's, Flush's and Sidepot's mainnet servers, and nothing else`, async () => {
     const { hostPermissions, connectSrc } = splitManifest(JSON.parse(await readFile(path.join(DIST[target], "manifest.json"), "utf8")));
-    const servers = ["https://explorer.blockfab.org", "https://explorer.ecash.ninja"];
+    const servers = ["https://explorer.blockfab.org", "https://explorer.ecash.ninja", "https://sidepot.cash"];
     assert.deepEqual(hostPermissions, servers.map((s) => `${s}/*`));
     assert.equal(connectSrc, `connect-src 'self' ${servers.join(" ")}`);
   });
@@ -74,11 +74,12 @@ for (const target of Object.keys(DIST)) {
   test(`${target}: the e2e build differs from the shipped build only in its network and Sidechain Servers`, async () => {
     const modules = Object.values(E2E_SERVERS);
     const shipped = await files(DIST[target]);
-    // Elements+ has no mainnet network, so only the betanet build carries it.
-    assert.deepEqual(await files(DIST_E2E[target]), [...shipped, "elements.wasm"].sort());
+    // Elements+ has no mainnet network, so only the betanet build carries it; Sidepot has no
+    // betanet one, so only the shipped build carries sidepot.wasm (docs/adr/0021).
+    assert.deepEqual(await files(DIST_E2E[target]), [...shipped.filter((f) => f !== "sidepot.wasm"), "elements.wasm"].sort());
     // The background names each build's Chain Modules (wallet/src/module-files.ts).
     const moduleFiles = (js) => js.replace(/CHAIN_MODULE_FILES = \{[^}]*\}/, "CHAIN_MODULE_FILES = {}");
-    for (const f of shipped.filter((f) => f !== "manifest.json" && !modules.some((m) => m.wasm === f))) {
+    for (const f of shipped.filter((f) => f !== "manifest.json" && f !== "sidepot.wasm" && !modules.some((m) => m.wasm === f))) {
       const [a, b] = await Promise.all([readFile(path.join(DIST[target], f)), readFile(path.join(DIST_E2E[target], f))]);
       const same = a.equals(b) || (f === "background.js" && moduleFiles(a.toString()) === moduleFiles(b.toString()));
       assert.ok(same, `${f} differs between the shipped and e2e builds`);

@@ -2,7 +2,7 @@
 // it came by (a Sidechain App through the Provider, or the wallet's own Send through a Sidechain
 // Server): its Slot's Chain Module, one approval window, then signing.
 import { ErrorCode, ProviderRpcError } from "./errors";
-import { ChainModuleRefusal, type BuiltTrade, type ChainModule, type ClearView, type Decoded, type Starter } from "./chain-module";
+import { ChainModuleRefusal, type BuiltTrade, type ChainModule, type ClearView, type Decoded, type SidepotEntry, type Starter } from "./chain-module";
 import type { SigningRequest } from "./signing-request";
 
 /** What the approval window shows for a Signing Request. */
@@ -17,6 +17,11 @@ export interface SignPrompt {
   hints?: SigningRequest["hints"];
   /** A trade the wallet built (docs/adr/0016): its checked sides, the node's quote and the link's expiry. */
   trade?: BuiltTrade["trade"];
+  /**
+   * A Sidepot entry the wallet made (docs/adr/0021), as its Slot's module reads its signed bytes:
+   * `decoded` is the main-chain transaction that carries it, whose one data output is those bytes.
+   */
+  entry?: SidepotEntry & { /** The Slot's chain, by name. */ chainName: string };
 }
 
 /**

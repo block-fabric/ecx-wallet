@@ -115,7 +115,6 @@ pub fn build_transfer(order_json: &str, account_key: &str) -> Result<BuiltTransf
     }
 
     let mut payments = vec![];
-    let mut need = 0u64;
     for (i, payment) in order.outputs.iter().enumerate() {
         if !payment.asset.is_empty() {
             return Err(malformed(format!("Output {i}: eCash has no asset {}, only its own coin.", payment.asset)));
@@ -131,17 +130,27 @@ pub fn build_transfer(order_json: &str, account_key: &str) -> Result<BuiltTransf
         if amount < dust {
             return Err(refuse(RefusalCode::Dust, format!("{} is below the smallest amount eCash relays to {address} ({}).", ecx(amount), ecx(dust))));
         }
-        need = need.checked_add(amount).ok_or_else(|| malformed("The amounts are too large."))?;
         payments.push(txout);
     }
 
-    let coins = read_coins(&order.coins, &keys)?;
-    let change_script = keys.script(1, order.change_index).map_err(|e| refuse(RefusalCode::InvalidAccountKey, e))?;
+    funded(payments, &order.coins, order.fee_rate, order.change_index, &keys)
+}
+
+/// `outputs` paid from `coins`: the account's coins largest first, only as many as the outputs and
+/// the fee need, then change to the account's change address unless it would be dust, which goes
+/// to the fee. Replay-marked, as every L1 spend. What a Send and a data transaction share.
+pub(crate) fn funded(outputs: Vec<TxOut>, coins: &[Coin], fee_rate: u64, change_index: u32, keys: &AccountKeys) -> Result<BuiltTransfer, Refusal> {
+    let mut need = 0u64;
+    for output in &outputs {
+        need = need.checked_add(output.value.to_sat()).ok_or_else(|| malformed("The amounts are too large."))?;
+    }
+    let coins = read_coins(coins, keys)?;
+    let change_script = keys.script(1, change_index).map_err(|e| refuse(RefusalCode::InvalidAccountKey, e))?;
     let change_output = |value: u64| TxOut { value: Amount::from_sat(value), script_pubkey: change_script.clone() };
     let change_dust = dust_threshold(&change_output(0));
     let unsigned = |chosen: &[Spendable], change: Option<u64>| {
         let input = chosen.iter().map(|coin| TxIn { previous_output: coin.outpoint, script_sig: ScriptBuf::new(), sequence: SEQUENCE, witness: Witness::new() }).collect();
-        let mut output = payments.clone();
+        let mut output = outputs.clone();
         output.extend(change.map(change_output));
         Transaction { version: Version::TWO, lock_time: LockTime::from_consensus(network().params.replay_lock_time), input, output }
     };
@@ -151,7 +160,7 @@ pub fn build_transfer(order_json: &str, account_key: &str) -> Result<BuiltTransf
         for input in &mut signed.input {
             input.witness = Witness::from_slice(&[vec![0u8; 72], vec![0u8; 33]]);
         }
-        (signed.weight().to_wu().div_ceil(4) * order.fee_rate).div_ceil(1000)
+        (signed.weight().to_wu().div_ceil(4) * fee_rate).div_ceil(1000)
     };
 
     let mut total = 0u64;
@@ -160,11 +169,11 @@ pub fn build_transfer(order_json: &str, account_key: &str) -> Result<BuiltTransf
         let chosen = &coins[..count];
         let with_change = fee(&unsigned(chosen, Some(0)));
         if let Some(change) = total.checked_sub(need + with_change).filter(|change| *change >= change_dust) {
-            return psbt(unsigned(chosen, Some(change)), chosen, Some(order.change_index), &keys);
+            return psbt(unsigned(chosen, Some(change)), chosen, Some(change_index), keys);
         }
         if total >= need + fee(&unsigned(chosen, None)) {
             // Change too small to relay goes to the fee.
-            return psbt(unsigned(chosen, None), chosen, None, &keys);
+            return psbt(unsigned(chosen, None), chosen, None, keys);
         }
     }
     let needed = need + fee(&unsigned(&coins, None));

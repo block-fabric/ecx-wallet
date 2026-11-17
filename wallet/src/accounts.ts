@@ -58,7 +58,10 @@ export interface SlotAddress {
   chain: string;
   /** In the chain's own encoding. */
   address: string;
-  /** The key the address pays: 33-byte compressed, hex. */
+  /**
+   * The key the address pays: 33-byte compressed, hex. On Sidepot (Slot 88), whose address is the
+   * game account `spot:<key>`, the account's 32-byte x-only (BIP340) key, as the game names a player.
+   */
   publicKey: string;
 }
 

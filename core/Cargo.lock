@@ -339,6 +339,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "ecx-sidepot"
+version = "0.0.0"
+dependencies = [
+ "bip39",
+ "bitcoin",
+ "ecx-chain-entry",
+ "secp256k1",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ecx-sidepot-wasm"
+version = "0.0.0"
+dependencies = [
+ "ecx-sidepot",
+ "ecx-wasm-abi",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ecx-vault"
 version = "0.0.0"
 dependencies = [

@@ -11,6 +11,10 @@
 // later Deposits too. On Flush a block confirms once a block of stake is on top of it (esplora.ts,
 // `FLUSH_CONFIRMATIONS`).
 //
+// A Sidepot entry (docs/adr/0021) is a main-chain spend made for a Slot: the Slot's module signs
+// the entry, the main chain's module carries it in a data transaction paid from the main chain's
+// coins, in the main chain's queue.
+//
 // A Chain Module whose format is `psbt` (Flush, eCash) builds from whole transactions, as L1's
 // Deposits do: the wallet fetches each coin's, and the module reads its value from it, never from
 // the server.
@@ -26,11 +30,15 @@ import {
   type ChainKey,
   type ClearView,
   type FlushAction,
+  type L1AccountKey,
+  type L1Module,
   type ModuleTransferOrder,
   type NetworkEntry,
   type OutputTokens,
   type ReportedCoin,
   type ResultClaim,
+  type SidepotEntry,
+  type SignedEntry,
   type Starter,
   type TransferOutput,
   type WholeTxCoin,
@@ -479,6 +487,95 @@ export function createSends(deps: SendDeps) {
     return { server: server.url, accepted: true, txid };
   }
 
+  /** The link's entry, as the Slot's module reads it without its key: one it doesn't make is unsupported (4200), a bad one invalid. */
+  function parsedEntry(target: KeyedChain<Starter>, link: string): SidepotEntry {
+    try {
+      return target.module.parseEntry(link);
+    } catch (error) {
+      if (error instanceof ChainModuleRefusal && error.code === "unsupportedAction") throw new ProviderRpcError(ErrorCode.UnsupportedMethod, error.message);
+      if (error instanceof ChainModuleRefusal) throw refusal(error.message);
+      throw error;
+    }
+  }
+
+  /** The built transaction's Clear View carries exactly `entry` as its one data output, and pays only the wallet besides: else a wallet bug. */
+  function isEntryCarried(view: ClearView, entry: string): boolean {
+    const data = view.outputs.filter((o) => o.destination.kind === "data");
+    return (
+      data.length === 1 &&
+      data[0].destination.kind === "data" &&
+      data[0].destination.data === entry &&
+      data[0].amount === "0" &&
+      view.dangerousModes.length === 0 &&
+      view.inputs.every((i) => i.yours) &&
+      view.outputs.every((o) => o.destination.kind === "data" || (o.destination.kind === "address" && o.destination.yours))
+    );
+  }
+
+  /**
+   * One Sidepot entry an app's link asks for (`sendAction`, docs/adr/0021), once the main chain's
+   * previous spend is done: the Slot's module signs the entry with its game account, the main
+   * chain's module carries it in a data transaction paying only its fee from the main chain's
+   * coins, and the approval shows what the entry says with that transaction's Clear View.
+   */
+  async function entryNow(slot: number, link: string, from: { origin: string }, host: string | undefined): Promise<SendResult> {
+    const target = await routing.slot(slot);
+    const l1: KeyedChain<L1AccountKey, L1Module> = await routing.l1();
+    if (!target.module.declare().capabilities.includes("entries") || !l1.module.declare().capabilities.includes("buildData")) {
+      throw new ProviderRpcError(ErrorCode.UnsupportedMethod, `This wallet makes no entries on ${target.entry.name}.`);
+    }
+    const server = deps.esplora(l1.entry, l1.network);
+    // A link the module won't sign is refused before any window opens.
+    parsedEntry(target, link);
+
+    const approval = deps.openSigningApproval({ origin: from.origin, chain: l1.chain, ...(host === undefined ? {} : { host }) });
+    let built: BuiltTransfer;
+    let tipHeight: number;
+    let finalized: { tx: string; txid: string };
+    try {
+      if (!(await deps.isUnlocked()) && !(await approval.unlock())) throw rejected();
+      await server.checkChain();
+      // Signed before it is shown, so the approval shows the bytes that go out; they stay here unless approved.
+      const signed: SignedEntry = await refusing(async () => target.module.signEntry(link, await target.key()));
+      const key = await l1.key();
+      const [{ coins, account }, estimates, tip] = await Promise.all([
+        spendableCoins("l1", l1, server, key),
+        server.feeEstimates().catch(() => undefined),
+        server.tipHeight(),
+      ]);
+      tipHeight = tip;
+      const order = { coins: await wholeTxCoins(server, coins), data: signed.entry, feeRate: feeRate(estimates), changeIndex: await changeIndex(server, account.change) };
+      built = await refusing(async () => l1.module.buildData(order, key));
+      const offered = new Set(coins.map((c) => `${c.txid}:${c.vout}`));
+      if (!built.spent.every((s) => offered.has(`${s.txid}:${s.vout}`))) {
+        throw new SidechainServerError(server.url, `The Sidechain Server at ${server.url} sent a transaction that isn't one it listed. Nothing was sent.`);
+      }
+      await refusing(async () => l1.module.check(built.pset));
+      const decoded = await refusing(async () => l1.module.decode(built.pset, key));
+      if (decoded.kind !== "clear") throw new Error(`The wallet can't fully explain the entry's transaction it built: ${decoded.reason}`);
+      // Anything else is a wallet bug: refused, never shown.
+      if (!isEntryCarried(decoded.view, signed.entry)) throw new Error("The built transaction isn't the entry asked for.");
+      const prompt: SignPrompt = { origin: from.origin, chain: l1.chain, requestId: `entry-${slot}`, decoded, entry: { ...signed.view, chainName: target.entry.name } };
+      if (!(await approval.confirm(prompt))) throw rejected();
+      const signedTx = await refusing(async () => l1.module.sign(built.pset, key));
+      finalized = await refusing(async () => l1.module.finalize(signedTx));
+    } finally {
+      approval.close();
+    }
+
+    let txid: string;
+    try {
+      txid = await server.broadcast(finalized.tx);
+    } catch (error) {
+      if (!(error instanceof SidechainServerError)) throw error;
+      throw new SidechainServerError(error.server, `${error.message} Nothing was sent.`);
+    }
+    // It went out, whatever the server answers: its coins are the main chain's, held from its Sends and Deposits.
+    await deps.held.put({ slot: "l1", txid: finalized.txid, spent: built.spent, tipHeight });
+    if (txid !== finalized.txid) throw new SidechainServerError(server.url, `${server.url} reported txid ${txid} for transaction ${finalized.txid}.`);
+    return { server: server.url, accepted: true, txid };
+  }
+
   /** Per asset, what a Send on the chain can spend now: over Esplora confirmed plus trusted, less held; else the reported balance. */
   async function spendableWith<K extends ChainKey>(chain: ChainId, target: KeyedChain<K>): Promise<AssetAmount[]> {
     const server = esplora(target);
@@ -516,6 +613,23 @@ export function createSends(deps: SendDeps) {
      */
     trade(slot: number, link: string, from: { origin: string }, host?: string): Promise<SendResult> {
       return queue(slot, () => tradeNow(slot, link, from, host));
+    },
+
+    /**
+     * The Slot's action `action` for the app `from` (`sendAction`): what the Slot's module makes of
+     * it. Flush's trades from a `flush:` link (`trade`, docs/adr/0016), in the Slot's queue; Sidepot's
+     * entries from a `sidepot:` link (docs/adr/0021), which spend the main chain's coins, in the
+     * main chain's queue with its Sends and Deposits. `host` as for `send`.
+     */
+    async action(slot: number, action: string, from: { origin: string }, host?: string): Promise<SendResult> {
+      const { capabilities } = (await routing.slot(slot)).module.declare();
+      if (capabilities.includes("entries")) return queue("l1", () => entryNow(slot, action, from, host));
+      return queue(slot, () => tradeNow(slot, action, from, host));
+    },
+
+    /** The chain an action on `slot` spends on: the main chain for a Slot whose moves are main-chain transactions (Sidepot), else the Slot. */
+    async actionChain(slot: number): Promise<ChainId> {
+      return (await routing.slot(slot)).module.declare().capabilities.includes("entries") ? "l1" : slot;
     },
 
     /** The chain's last Send refused after approval this session, if not closed since. */

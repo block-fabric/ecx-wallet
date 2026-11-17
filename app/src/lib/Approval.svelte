@@ -153,9 +153,14 @@
           "the main chain refuses this one, or drops it once the other confirms, and its coins come back."
         );
       }
+      // Flush and Sidepot credit a Deposit themselves (`paidBy`); elsewhere someone running the Slot's node imports it.
+      const credited =
+        d?.credit !== undefined && d.credit.paidBy !== "operator"
+          ? `${d.credit.chainName} credits it itself, once it has read the Deposit's block.`
+          : "Crediting it on the sidechain isn't automatic: it waits for the chain's operator to import it.";
       return (
         `This is a Deposit to ${slot}: the funds leave the main chain, and only come back through a Withdrawal, a BIP300 miner vote ` +
-        "of about 3 to 6 months. Crediting it on the sidechain isn't automatic: it waits for the chain's operator to import it."
+        `of about 3 to 6 months. ${credited}`
       );
     }
     if (mode.kind === "nonDefaultSighash") {
@@ -413,6 +418,37 @@
       </section>
     {/if}
 
+    {#if prompt.entry}
+      {@const e = prompt.entry}
+      <!-- A Sidepot entry (docs/adr/0021): what its signed bytes say, as its Slot's module read them back. -->
+      <section class="card stack" data-sidepot-entry>
+        {#if e.kind === "buy"}
+          <h2>Buy keys in {e.chainName}</h2>
+          <div data-entry-buy>Buy <strong>{e.keys} {e.keys === 1 ? "key" : "keys"}</strong> in round <strong data-entry-round>{e.round}</strong></div>
+          <div data-entry-price>
+            At most <strong>{coin(e.maxPrice)}</strong> per key, <strong data-entry-total>{coin(e.maxTotal)}</strong> in all, paid from your game balance.
+          </div>
+          <p class="muted small">The game takes the buy only if a key costs no more than that when the entry is in a block, and only in that round.</p>
+        {:else}
+          <h2>Cash out of {e.chainName}</h2>
+          <div data-entry-cashout>
+            Pay <strong data-entry-amount>{e.amount === "0" ? "your whole game balance" : coin(e.amount)}</strong>{e.amount === "0" ? "" : " of your game balance"} to the
+            {e.chainName} sidechain address <code data-entry-dest>{e.dest}</code>
+          </div>
+          <span class="badge" data-not-yours>Not checked as yours: this wallet holds no {e.chainName} sidechain addresses</span>
+          <p class="muted small">It arrives as an ordinary coin on the {e.chainName} sidechain, which this wallet doesn't show.</p>
+        {/if}
+        <div class="small" data-entry-expires>
+          Lapses after game clock tick <strong>{e.expires}</strong>: if it isn't in a block by then, it does nothing. The fee below is paid either way.
+        </div>
+        <div class="small" data-entry-player>From your game account <code>{e.player}</code></div>
+        <div class="muted small" data-entry-domain>
+          Entry number {e.nonce} of that account, signed for Slot {e.slot}, anchored at main-chain block <code title={e.anchor}>{shortAsset(e.anchor)}</code>.
+        </div>
+        <p class="muted small">It is carried by the main-chain transaction below, which pays nothing but its fee.</p>
+      </section>
+    {/if}
+
     {#each issuances as issuance (issuance.asset.asset)}
       <section class="card stack" data-issuance>
         <h2>Creates a new asset</h2>
@@ -460,6 +496,8 @@
             <div class="output-head">
               {#if output.destination.kind === "deposit"}
                 <span class="amount" data-deposit-amount>{coin(output.destination.deposit)}</span>
+              {:else if output.destination.kind === "data"}
+                <span class="amount" data-data-output>Data, {output.destination.data.length / 2} bytes</span>
               {:else}
                 {@const entry = assets.find((n) => n.id === output.asset)}
                 {@const named = entry !== undefined}
@@ -486,8 +524,12 @@
               <div class="small" data-deposit>
                 Deposit {coin(d.deposit)} to Slot {d.slot}{d.credit ? ` (${d.credit.chainName})` : ""}.
                 {#if d.credit}
-                  {coin(d.deposit)} credited to <code data-destination>{d.credit.address}</code> after {d.credit.confirmations} blocks,
-                  {d.credit.paidBy === "chain" ? `in a block of ${d.credit.chainName}'s own.` : "once the operator imports it."}
+                  {coin(d.deposit)} credited to <code data-destination>{d.credit.address}</code> after {d.credit.confirmations} {d.credit.confirmations === 1 ? "block" : "blocks"},
+                  {d.credit.paidBy === "chain"
+                    ? `in a block of ${d.credit.chainName}'s own.`
+                    : d.credit.paidBy === "game"
+                      ? `as ${d.credit.chainName} reads the Deposit's block.`
+                      : "once the operator imports it."}
                 {:else}
                   Credited to <code data-destination>{d.text ?? d.data}</code>.
                 {/if}
@@ -500,6 +542,11 @@
               {:else}
                 <span class="badge bad" data-not-yours>Not credited to you</span>
               {/if}
+            {:else if output.destination.kind === "data"}
+              <div class="small">
+                {prompt.entry ? `The ${prompt.entry.chainName} entry above, as signed.` : "Carried by the transaction."} It holds no coins and pays no one.
+              </div>
+              <code class="tiny full-id" data-data>{output.destination.data}</code>
             {:else}
               <div class="small">
                 {#if output.destination.l1Address !== undefined}

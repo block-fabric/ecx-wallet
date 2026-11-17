@@ -1,0 +1,16 @@
+[package]
+name = "ecx-sidepot-wasm"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "Thin C-ABI bindings: the Sidepot Chain Module as sidepot.wasm."
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ecx-sidepot = { path = "../sidepot" }
+ecx-wasm-abi = { path = "../abi" }
+serde = { version = "=1.0.229" }
+serde_json = { version = "=1.0.154" }

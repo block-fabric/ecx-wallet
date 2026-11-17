@@ -18,15 +18,15 @@ test("web chains exclude Elements from the registry and server origins", async (
   assert.deepEqual(sidechainServerOrigins(chains), ["https://esplora.beta.ecash.ninja", "https://explorer.blockfab.org"]);
 });
 
-test("the mainnet web build bundles Flush as Slot 46 and reaches only mainnet's servers", () => {
+test("the mainnet web build bundles Flush as Slot 46 and Sidepot as Slot 88, and reaches only mainnet's servers", () => {
   const script = `const { chains } = await import(${JSON.stringify(`${root}app/scripts/web-config.mjs`)});
     const { moduleFilesSource, sidechainServerOrigins } = await import(${JSON.stringify(`${root}core/scripts/chains.mjs`)});
     console.log(JSON.stringify([moduleFilesSource(chains), sidechainServerOrigins(chains)]));`;
   const env = { ...process.env, ECX_NETWORK: "mainnet" };
   delete env.ECX_CHAIN_ENTRIES;
   const [source, origins] = JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", script], { env }).toString());
-  assert.equal(source, 'export const CHAIN_MODULE_FILES = {"46":"flush.wasm"};');
-  assert.deepEqual(origins, ["https://explorer.blockfab.org", "https://explorer.ecash.ninja"]);
+  assert.equal(source, 'export const CHAIN_MODULE_FILES = {"46":"flush.wasm","88":"sidepot.wasm"};');
+  assert.deepEqual(origins, ["https://explorer.blockfab.org", "https://explorer.ecash.ninja", "https://sidepot.cash"]);
 });
 
 test("the web Worker refuses claimed dApp origins, takes an app's only from appRequest, and excludes Slot 24 at the router", async () => {

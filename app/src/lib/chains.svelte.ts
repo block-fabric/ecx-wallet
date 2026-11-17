@@ -258,6 +258,7 @@ export function depositState(d: DepositStatus): string {
     case "confirming":
       return `${d.confirmations} / ${d.depositConfirmations} confirmations on the main chain`;
     case "awaitingCredit":
+      if (d.paidBy === "game") return `Waiting for ${d.chainName} to read its block`;
       return d.paidBy === "chain" ? `Waiting for ${d.chainName} to pay it out in one of its blocks` : `Waiting for the ${d.chainName} operator to credit it (not automatic)`;
     case "credited":
       return `Credited, as reported by ${d.creditServer}`;

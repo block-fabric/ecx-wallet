@@ -2,7 +2,7 @@
 
 A browser wallet for eCash (ECX) and its drivechains (sidechains). One extension holds your keys for eCash, the main chain, and for each sidechain you turn on. It shows your balances and history, sends, deposits coins from eCash into a sidechain, and signs for sidechain websites after you approve.
 
-**Status:** pre-release. The shipped build is for eCash **mainnet**, with one sidechain: Slot 46, Flush (ECX and its tokens; its Slot is active from block 978,331, ADR 0019). A **betanet** build (`ECX_NETWORK=betanet pnpm build`) adds Slot 24, Elements+ (an Elements chain, explicit amounts only), and has Flush as Slot 99 (ADR 0014). The e2e suite runs on betanet.
+**Status:** pre-release. The shipped build is for eCash **mainnet**, with two sidechains: Slot 46, Flush (ECX and its tokens; its Slot is active from block 978,331, ADR 0019), and Slot 88, Sidepot (a key game played from the main chain; active from block 984,540, ADR 0021). A **betanet** build (`ECX_NETWORK=betanet pnpm build`) adds Slot 24, Elements+ (an Elements chain, explicit amounts only), and has Flush as Slot 99 (ADR 0014). The e2e suite runs on betanet.
 
 Design work happens in GitHub issues; the [wayfinder map](https://github.com/marcusmmmz/ecx-wallet/issues/1) indexes every decision. The words used here (Slot, Starter, Chain Module, Grant, Clear Signing…) are defined in [GLOSSARY.md](GLOSSARY.md).
 
@@ -65,7 +65,7 @@ A pnpm workspace:
 
 | Directory | What's in it |
 |---|---|
-| `core/` | The signing core, in Rust: one `.wasm` per module (`vault.wasm` for keys, `l1.wasm` for eCash, `elements.wasm` for Slot 24, `flush.wasm` for Flush). See [core/README.md](core/README.md). |
+| `core/` | The signing core, in Rust: one `.wasm` per module (`vault.wasm` for keys, `l1.wasm` for eCash, `elements.wasm` for Slot 24, `flush.wasm` for Flush, `sidepot.wasm` for Slot 88). See [core/README.md](core/README.md). |
 | `wallet/` | The wallet's logic, in TypeScript, independent of any browser: the Provider, Grants, the Vault, accounts, Sidechain Servers, Send, Deposit, history. |
 | `app/` | The UI: one SvelteKit static app. Every screen is a hash route (`index.html#/send/24`, `#/approve/<id>`…). |
 | `extension/` | The MV3 shells for Chromium and Firefox: the background script, the content script and the injected Provider. |

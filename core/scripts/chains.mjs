@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 export const NETWORK = process.env.ECX_NETWORK ?? "mainnet";
 
 /** Every Chain Module, by its directory in core/ and its .wasm's name. */
-export const CHAIN_MODULES = ["l1", "elements", "flush"];
+export const CHAIN_MODULES = ["l1", "elements", "flush", "sidepot"];
 
 /** The Chain Entry file the build reads for `name`. */
 export function chainEntryFile(name) {

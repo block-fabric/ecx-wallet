@@ -1,7 +1,8 @@
 //! `decode(payload, account_key)`: the L1 Decoder. A Clear View of a request it fully understands,
 //! or `Blind { reason, verifiableFacts }`; never a partial Clear View.
 //!
-//! It understands payments to addresses and Deposits (M5s): a Treasury output
+//! It understands payments to addresses, one data output (a zero-value `OP_RETURN` with a single
+//! push, as `build_data` makes; docs/adr/0021) and Deposits (M5s): a Treasury output
 //! `OP_DRIVECHAIN <slot> OP_TRUE`, directly followed by a single-push `OP_RETURN` naming where the
 //! Slot credits it, spending the Slot's previous Treasury if the request has one. Whether an input
 //! or output is "yours" is decided only by re-deriving it from the L1 Account Key, never by the
@@ -104,6 +105,13 @@ pub enum Destination {
         /// The destination bytes as text, if they are printable UTF-8 (an Elements address is).
         #[serde(skip_serializing_if = "Option::is_none")]
         text: Option<String>,
+    },
+    /// Data the transaction carries and pays nothing to: a zero-value `OP_RETURN` with one push, the
+    /// only one of the transaction (docs/adr/0021). The Decoder doesn't read it: whoever asked says
+    /// what it means, and the wallet checks it is the bytes it made.
+    Data {
+        /// The pushed bytes, hex.
+        data: String,
     },
 }
 
@@ -253,6 +261,7 @@ fn clear_view(psbt: &Psbt, keys: &AccountKeys, kinds: &[InputKind], fee: u64) ->
     let mut dangerous_modes = vec![];
     let mut outputs = vec![];
     let mut deposited = BTreeSet::<u8>::new();
+    let mut data_outputs = 0;
     let txouts = &psbt.unsigned_tx.output;
     let mut index = 0;
     while index < txouts.len() {
@@ -292,7 +301,17 @@ fn clear_view(psbt: &Psbt, keys: &AccountKeys, kinds: &[InputKind], fee: u64) ->
             index += 2;
             continue;
         } else if txout.script_pubkey.is_op_return() {
-            return Err(format!("output {index} is an OP_RETURN that isn't a deposit address."));
+            let data = op_return_data(&txout.script_pubkey)
+                .filter(|data| !data.is_empty() && data.len() <= crate::MAX_DATA_BYTES)
+                .ok_or_else(|| format!("output {index} is an OP_RETURN that isn't a single push of 1 to {} bytes.", crate::MAX_DATA_BYTES))?;
+            if value != 0 {
+                return Err(format!("output {index} is an OP_RETURN holding {value} sats, which would be burned."));
+            }
+            data_outputs += 1;
+            if data_outputs > 1 {
+                return Err(format!("output {index} is a second OP_RETURN: a transaction carries one data output."));
+            }
+            Destination::Data { data: hex(&data) }
         } else {
             let address = address(&txout.script_pubkey).ok_or_else(|| format!("output {index} pays a script that isn't an address."))?;
             Destination::Address { address, yours: output_yours(keys, output, txout) }
@@ -302,6 +321,9 @@ fn clear_view(psbt: &Psbt, keys: &AccountKeys, kinds: &[InputKind], fee: u64) ->
     }
     if let Some(slot) = treasuries.keys().find(|slot| !deposited.contains(slot)) {
         return Err(format!("it spends Slot {slot}'s Treasury without recreating it."));
+    }
+    if data_outputs > 0 && !deposited.is_empty() {
+        return Err("it makes a Deposit and carries a data output besides the Deposit's address.".into());
     }
     Ok(ClearView { dangerous_modes, inputs, outputs, fee: AssetAmount::sats(fee) })
 }

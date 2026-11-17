@@ -10,7 +10,9 @@
 // Afterwards the Deposit waits: the Slot's L1 confirmations (6 on betanet), then for someone
 // running the Slot's node to import it (crediting isn't automatic on Elements), then it shows on
 // the Slot's server. Flush pays it itself: a coinbase output to the address, once a Flush block
-// acknowledges the M5's eCash block, matched to the Deposit by address and value (#57).
+// acknowledges the M5's eCash block, matched to the Deposit by address and value (#57). Sidepot
+// credits a game account as its game reads the M5's eCash block: credited once the game's server
+// says it has read that far (docs/adr/0021).
 import { createKeyRouting, type ChainModules, type Keys } from "./accounts";
 import { cacheKey, type SessionCache } from "./cache";
 import { ChainModuleRefusal, type ChainEntry, type ClearView, type DepositCredit, type L1AccountKey, type L1Module, type NetworkEntry } from "./chain-module";
@@ -21,6 +23,7 @@ import { accountUtxos, changeIndex, createSpendQueue, heldOutpoints, type HeldSt
 import { rejected, type ApprovalContext, type SignPrompt, type SigningApproval } from "./signing";
 import { speaksEsplora } from "./server-api";
 import { SidechainServerError } from "./sidechain-server";
+import type { SidepotClient } from "./sidepot";
 import { findTreasury, TreasuryError } from "./treasury";
 
 /** L1 confirmations before a Slot credits a Deposit, when its Chain Entry doesn't say: BIP300's. */
@@ -164,12 +167,13 @@ export type DepositStatus = PendingDeposit &
     /**
      * `paidBy: "operator"`: someone running the Slot's node imports it with `claim` (Elements).
      * `"chain"`: the Slot pays it itself in a block of its own (Flush), and there is nothing to claim.
+     * `"game"`: the Slot's game credits it as it reads the Deposit's main-chain block (Sidepot).
      */
     | {
         state: "awaitingCredit";
         confirmations: number;
         depositConfirmations: number;
-        paidBy: "operator" | "chain";
+        paidBy: "operator" | "chain" | "game";
         claim?: DepositClaim;
         creditServer?: string;
       }
@@ -199,6 +203,8 @@ export interface DepositStore {
 export interface DepositDeps extends Keys, ChainModules {
   /** A client for `network`'s default server, which must speak Esplora. */
   esplora(entry: ChainEntry, network: NetworkEntry): EsploraClient;
+  /** A client for `network`'s default server, when it speaks Sidepot's API: where a Deposit to it shows as credited. */
+  sidepot?(entry: ChainEntry, network: NetworkEntry): SidepotClient;
   /** A window for the approval of one request from `origin` for `chain`, or the page `host`. */
   openSigningApproval(context: ApprovalContext): SigningApproval;
   isUnlocked(): Promise<boolean>;
@@ -249,6 +255,12 @@ export function createDeposits(deps: DepositDeps) {
     const { api } = target.network.sidechainServer;
     return speaksEsplora(api) ? deps.esplora(target.entry, target.network) : undefined;
   }
+
+  /** Who pays a Deposit's credit: the Slot itself in a block of its own (Flush), its game as it reads eCash's blocks (Sidepot), else whoever runs its node. */
+  const paidByOf = ({ network }: { network: NetworkEntry }): DepositCredit["paidBy"] => {
+    const { api } = network.sidechainServer;
+    return api === "flush" ? "chain" : api === "sidepot" ? "game" : "operator";
+  };
 
   /** A raw transaction, from the session's cache or else the server; kept only once it hashes to `txid`. */
   async function txHex(server: EsploraClient, module: L1Module, txid: string): Promise<string> {
@@ -469,7 +481,7 @@ export function createDeposits(deps: DepositDeps) {
           address: destination.address,
           yours: true,
           confirmations: depositConfirmationsOf(target.network),
-          paidBy: target.network.sidechainServer.api === "flush" ? "chain" : "operator",
+          paidBy: paidByOf(target),
         };
         const view = depositView(decoded.view, slot, amount, destination.destination, credit);
         vout = view.outputs.find((o) => o.destination.kind === "deposit")!.index;
@@ -554,6 +566,8 @@ export function createDeposits(deps: DepositDeps) {
      * Deposit is reported once, then forgotten. On Flush, which pays Deposits itself, the wait is
      * for its coinbase payout (`flushCredit`), matched oldest Deposit first; a credited one is kept
      * while another Deposit of the same value to the same address waits, so that one can't claim it.
+     * On Sidepot, whose game credits an account as it reads the M5's eCash block, a Deposit is
+     * credited once the game's server has read that block (docs/adr/0021).
      */
     async list(slot: number): Promise<DepositStatus[]> {
       const pending = (await deps.store.list()).filter((d) => d.slot === slot).sort((a, b) => b.createdAt - a.createdAt);
@@ -562,10 +576,13 @@ export function createDeposits(deps: DepositDeps) {
       const target = await routing.slot(slot);
       const credits = creditServer(target);
       const depositConfirmations = depositConfirmationsOf(target.network);
-      const paidBy = target.network.sidechainServer.api === "flush" ? ("chain" as const) : ("operator" as const);
+      const paidBy = paidByOf(target);
       let tip: Promise<number> | undefined;
 
-      if (paidBy === "chain") return flushStatuses(pending, l1, credits!, depositConfirmations, () => (tip ??= l1.tipHeight()));
+      if (target.network.sidechainServer.api === "flush") return flushStatuses(pending, l1, credits!, depositConfirmations, () => (tip ??= l1.tipHeight()));
+      // Sidepot's game credits a Deposit as it reads the Deposit's eCash block: its server says how far it has read.
+      const game = target.network.sidechainServer.api === "sidepot" ? deps.sidepot?.(target.entry, target.network) : undefined;
+      let gameHeight: Promise<number> | undefined;
 
       return Promise.all(
         pending.map(async (deposit): Promise<DepositStatus> => {
@@ -575,6 +592,13 @@ export function createDeposits(deps: DepositDeps) {
             if (!status.confirmed) return { ...deposit, state: "confirming", confirmations: 0, depositConfirmations };
             const confirmations = (await (tip ??= l1.tipHeight())) - status.blockHeight! + 1;
             if (confirmations < depositConfirmations) return { ...deposit, state: "confirming", confirmations, depositConfirmations };
+            if (paidBy === "game") {
+              if (game === undefined || (await (gameHeight ??= game.state().then((s) => s.l1Height))) < status.blockHeight!) {
+                return { ...deposit, state: "awaitingCredit", confirmations, depositConfirmations, paidBy, ...(game === undefined ? {} : { creditServer: game.url }) };
+              }
+              await deps.store.remove(deposit.txid);
+              return { ...deposit, state: "credited", creditServer: game.url };
+            }
             const claim = { txid: deposit.txid, vout: deposit.vout, blockHash: status.blockHash!, address: deposit.address, value: deposit.value };
             if (credits === undefined) return { ...deposit, state: "awaitingCredit", confirmations, depositConfirmations, paidBy, claim };
             if (!(await isCredited(credits, deposit))) return { ...deposit, state: "awaitingCredit", confirmations, depositConfirmations, paidBy, claim, creditServer: credits.url };

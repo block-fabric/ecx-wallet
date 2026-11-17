@@ -89,6 +89,23 @@ A request the user turns down fails with `code` 4001; show it as a choice, not a
 
 **Flush DEX sites** that use the extension's `window.flush` (`flush_requestAddress`, `flush_submit({ uri })`) get no `window.flush` inside a web wallet. There, call `getAddresses({ slot: 46 })` and `sendAction({ slot: 46, action: uri })`, with a Grant for `getAddresses` and `sendTransfer`: `connect({ slots: [46], methods: ["getAddresses", "sendTransfer"] })`. A `sendTransfer` Grant also covers `sendAction`, which has no Grant of its own; asking for one fails with 4200 (see [ADR 0016](adr/0016-flush-actions-through-window-flush.md)).
 
+**Sidepot sites** (Slot 88; [ADR 0021](adr/0021-sidepot-entries-in-main-chain-data-transactions.md)) use the same three calls. The account is the wallet's; the site reads the game from Sidepot's server and hands the wallet each move as a `sidepot:` link:
+
+```js
+await wallet.provider.request({ method: "connect", params: { slots: [88], methods: ["getAddresses", "sendTransfer"] } });
+
+// The game account: `address` is "spot:<64 hex>", `publicKey` the same 32-byte x-only key (not a 33-byte compressed key).
+const [{ address, publicKey }] = await wallet.provider.request({ method: "getAddresses", params: { slot: 88 } });
+const account = await (await fetch(`https://sidepot.cash/api/account/${publicKey}`)).json(); // { balance_sats, keys, nonce } or null
+const state = await (await fetch("https://sidepot.cash/api/state")).json();
+
+// A buy: the wallet signs the entry, sends it in a main-chain transaction and answers that transaction's txid.
+const action = `sidepot:buy?round=${state.round}&keys=3&max_price=${state.price_sats}&nonce=${(account?.nonce ?? 0) + 1}&expires=${state.tip_clock + 3}`;
+const { txid } = await wallet.provider.request({ method: "sendAction", params: { slot: 88, action } });
+```
+
+`sidepot:cashout?amount=<sats, 0 = all>&dest=<40 hex>&nonce=<u64>&expires=<u32>` cashes out the same way. The user funds the account in the wallet, with a Deposit to Slot 88; a site can show `address` as where it goes. The wallet shows every field of the link before it signs, and refuses a link with a missing, repeated or unknown parameter (-32602). The link's grammar and what the approval shows are in [sendAction on Sidepot](how-it-works.md#sendaction-on-sidepot).
+
 ## Trying it
 
 `pnpm demo` serves a demo app at `http://localhost:5180/` that does all of the above. To try framing against a wallet built from this repo, serve the web build (`pnpm build:web`, then `app/build-web` with its `_headers`) on another origin, such as `http://127.0.0.1:5300`. Open its Apps view, and enter `localhost:5180/?wallet=http://127.0.0.1:5300/`. The web wallet frames pages on `localhost` too, so you can try your own site from your machine.

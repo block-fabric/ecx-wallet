@@ -45,11 +45,17 @@ const host: RouterHost<Sender> = {
 };
 const router = createRouter(host);
 
-/** The spend locks an app's Provider request takes, as the wallet's own Send does (see `request`). */
-function appSpendLocks(method: unknown, params: unknown): string[] {
+/**
+ * The spend locks an app's Provider request takes, as the wallet's own Send does (see `request`).
+ * An action that spends the main chain's coins for its Slot (a Sidepot entry, docs/adr/0021) takes
+ * the main chain's lock, as a Deposit does.
+ */
+async function appSpendLocks(method: unknown, params: unknown): Promise<string[]> {
   // `slot` is the app's, unchecked: a value Number() can't convert must not throw here, outside `respond`.
   const { slot } = (params ?? {}) as { slot?: unknown };
-  if (method === "sendTransfer" || method === "sendAction") return typeof slot === "number" && SUPPORTED_SLOTS.includes(slot) ? [`ecx-wallet:spend:${slot}`] : [];
+  const supported = typeof slot === "number" && SUPPORTED_SLOTS.includes(slot) ? slot : undefined;
+  if (method === "sendAction") return supported === undefined ? [] : [`ecx-wallet:spend:${await router.actionChain(supported)}`];
+  if (method === "sendTransfer") return supported === undefined ? [] : [`ecx-wallet:spend:${supported}`];
   // A `flush:` link trades on whichever Slot is Flush here; lock them all, in one order.
   if (method === "flush_submit") return [...SUPPORTED_SLOTS].sort((a, b) => a - b).map((s) => `ecx-wallet:spend:${s}`);
   return [];
@@ -96,7 +102,7 @@ self.addEventListener("message", (event: MessageEvent<ToWorker>) => {
     }
     case "appRequest": {
       const message: BackgroundMessage = { kind: "provider.request", method: m.method, params: m.params };
-      respond(m.id, Promise.resolve().then(() => withLocks(appSpendLocks(m.method, m.params), () => router.route(message, { origin: m.origin }))));
+      respond(m.id, appSpendLocks(m.method, m.params).then((locks) => withLocks(locks, () => router.route(message, { origin: m.origin }))));
       break;
     }
     case "checkAutoLock":

@@ -55,6 +55,9 @@ export {
   type ClearTrade,
   type ClearView,
   type FlushAction,
+  type SidepotEntry,
+  type SignedEntry,
+  type DataOrder,
   type TradeOrder,
   type TradeSide,
   type DangerousMode,
@@ -111,6 +114,7 @@ export {
   type WatchData,
 } from "./sidechain-server";
 export { esploraConfig, sidechainServer } from "./server-api";
+export { sidepotClient, sidepotServer, type SidepotAccount, type SidepotClient, type SidepotState } from "./sidepot";
 export { standardSidechainServer } from "./standard-sidechain-api";
 export { esploraServer, FLUSH_STALL_SECONDS, HISTORY_PAGES, type EsploraServerConfig, type HistoryStore, type KeptHistory } from "./esplora";
 export {

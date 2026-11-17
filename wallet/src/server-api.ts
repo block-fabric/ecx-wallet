@@ -4,6 +4,7 @@ import type { ChainEntry, NetworkEntry, OutputTokens, ServerApi } from "./chain-
 import { esploraServer, FLUSH_STALL_SECONDS, type EsploraServerConfig, type HistoryStore } from "./esplora";
 import type { TradeStore } from "./flush-trades";
 import { SidechainServerError, type Fetch, type SidechainServer } from "./sidechain-server";
+import { sidepotServer } from "./sidepot";
 import { standardSidechainServer } from "./standard-sidechain-api";
 
 /** True if the wallet reads a server of this API as Esplora: `esplora`, and Flush's (`flush`), which adds to it. */
@@ -46,6 +47,8 @@ export function sidechainServer(
     case "esplora":
     case "flush":
       return esploraServer(esploraConfig(entry, network, cache, tokens, tradeStore, historyStore), fetchFn);
+    case "sidepot":
+      return sidepotServer(url, fetchFn);
     default:
       throw new SidechainServerError(url, `${entry.name}'s Chain Entry names a Server API this wallet doesn't speak: ${String(api)}.`);
   }

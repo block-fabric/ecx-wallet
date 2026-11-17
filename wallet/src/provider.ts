@@ -67,7 +67,7 @@ export interface ProviderDeps extends SigningDeps {
   askToTurnOn(prompt: TurnOnPrompt): Promise<boolean>;
   /** The wallet's Send, asked for by `from` (only called for a supported Slot). */
   send(slot: number, order: TransferOrder, from: { origin: string }): Promise<SendResult>;
-  /** The chain's action `action` (on Flush, a `flush:` link), built by the wallet, asked for by `from` (docs/adr/0016). */
+  /** The chain's action `action` (on Flush, a `flush:` link; on Sidepot, a `sidepot:` link), built by the wallet, asked for by `from` (docs/adr/0016, 0021). */
   sendAction(slot: number, action: string, from: { origin: string }): Promise<SendResult>;
   /** What `origin` suggests naming an asset on `slot`, checked before the user is asked; throws to refuse it (docs/adr/0010). */
   assetSuggestion(slot: number, origin: string, suggestion: AssetSuggestion): Promise<Omit<AssetPrompt, "origin" | "balance">>;
@@ -202,14 +202,14 @@ export function createProviderHandler(deps: ProviderDeps) {
 
   /**
    * A chain's action, built by the wallet (docs/adr/0016): on Flush, the trade a `flush:` link asks
-   * for. Under `sendTransfer`'s Grant: both have the wallet build and send a transaction the user
+   * for; on Sidepot, the entry a `sidepot:` link asks for, in a main-chain transaction (docs/adr/0021). Under `sendTransfer`'s Grant: both have the wallet build and send a transaction the user
    * approves Clear. Works while locked, as `sendTransfer` does.
    */
   async function sendAction(origin: string, params: unknown): Promise<{ txid?: string }> {
     const slot = parseSlot("sendAction", params);
     await authorize(origin, "sendTransfer", slot);
     const { action } = params as { action?: unknown };
-    if (typeof action !== "string") throw new ProviderRpcError(ErrorCode.InvalidParams, "sendAction needs `action`: the chain's action, as text (on Flush, a flush: link).");
+    if (typeof action !== "string") throw new ProviderRpcError(ErrorCode.InvalidParams, "sendAction needs `action`: the chain's action, as text (on Flush, a flush: link; on Sidepot, a sidepot: link).");
     await turnOn(origin, [slot]);
     const result = await deps.sendAction(slot, action, { origin });
     if (!result.accepted) throw new SidechainServerError(result.server, `The Sidechain Server at ${result.server} didn't accept the transaction.`);

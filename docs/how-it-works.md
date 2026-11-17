@@ -73,6 +73,7 @@ Every chain has a Chain Entry, and its keys follow its place in the chain tree (
 
 - **eCash**, the root (`core/l1/chain-entry.json`, no Slot or parent), gets the L1 Account Key. `l1.wasm` derives BIP84 P2WPKH addresses (`bc1q…`).
 - **A Slot** under eCash gets its Starter, and only that Slot's Chain Module ever sees it.
+- **Sidepot** (Slot 88, on mainnet; ADR 0021) has one key and no addresses of a chain: `sidepot.wasm` derives its game account at `m/300'/88'/0'` of the Slot's Starter and shows it as `spot:<x-only key>`.
 - **Deeper chains** are refused. `createKeyRouting` in `wallet/src/accounts.ts` checks the Chain Entry before handing any key out.
 
 `accounts.receiveAddresses(slot)` and `accounts.l1ReceiveAddresses()` do the deriving. Each module runs in its own WASM instance, created on first use.
@@ -81,17 +82,18 @@ Every chain has a Chain Entry, and its keys follow its place in the chain tree (
 
 ## Sidechain Servers
 
-Each chain is read from the Sidechain Server its Chain Entry names for the module's network, in the Server API named next to the URL: `sidechainServer: { api, url }` (ADR 0002). All three speak Esplora; Flush's explorer adds finality (`"flush"`, ADR 0012):
+Each chain is read from the Sidechain Server its Chain Entry names for the module's network, in the Server API named next to the URL: `sidechainServer: { api, url }` (ADR 0002). eCash, Elements+ and Flush speak Esplora; Flush's explorer adds finality (`"flush"`, ADR 0012). Sidepot's server speaks its own small API (`"sidepot"`, below):
 
 | Chain | Server (mainnet) | Server (betanet) | Chain Entry |
 |---|---|---|---|
 | eCash | `https://explorer.ecash.ninja/api` | `https://esplora.beta.ecash.ninja` | `core/l1/chain-entry.json` |
 | Elements+ | none (no mainnet chain) | Slot 24, `https://explorer.bitnames.info/api` | `core/elements/chain-entry.json` |
 | Flush | Slot 46, `https://explorer.blockfab.org/flush/api` | Slot 99 (ADR 0014), `https://explorer.blockfab.org/betanet/flush/api` | `core/flush/chain-entry.json` |
+| Sidepot | Slot 88, `https://sidepot.cash/api` | none | `core/sidepot/chain-entry.json` |
 
 ## Networks
 
-Each build serves one network, `$ECX_NETWORK` (ADR 0019): **mainnet** for `pnpm build` and `pnpm build:web`, **betanet** for the e2e build and `cargo test`. A Chain Entry describes a chain on each of its networks, with its Slot there (`networks.<name>.slot`). `core/scripts/chains.mjs` bundles only the modules whose Chain Entry names the build's network, and writes `wallet/src/module-files.ts` (Slot to `.wasm`) for it. Each module's `build.rs` reads the same variable into `NETWORK`, the network whose entry the module serves. Flush's link network follows it (`ecash` on mainnet, `ecashbeta` on betanet).
+Each build serves one network, `$ECX_NETWORK` (ADR 0019): **mainnet** for `pnpm build` and `pnpm build:web`, **betanet** for the e2e build and `cargo test` (which builds `ecx-sidepot` for mainnet, the one network its Chain Entry names; ADR 0021). A Chain Entry describes a chain on each of its networks, with its Slot there (`networks.<name>.slot`). `core/scripts/chains.mjs` bundles only the modules whose Chain Entry names the build's network, and writes `wallet/src/module-files.ts` (Slot to `.wasm`) for it. Each module's `build.rs` reads the same variable into `NETWORK`, the network whose entry the module serves. Flush's link network follows it (`ecash` on mainnet, `ecashbeta` on betanet).
 
 The extension build turns the build network's server URLs into `host_permissions` and the CSP's `connect-src`. `wallet/src/server-api.ts` picks the client for the Server API.
 
@@ -104,6 +106,16 @@ The extension build turns the build network's server URLs into `host_permissions
 - **Flush** (`"flush"`, ADR 0012): a transaction is confirmed once a block of stake is on top of its block (depth 2, `FLUSH_CONFIRMATIONS`, from the tip's height): from then it counts and can be spent, with no mark. `/flush/blocks` is asked only which blocks are `final`, for what the wallet keeps for good; if it doesn't answer, nothing waits on it. Five minutes without a block (`FLUSH_STALL_SECONDS`) shows "Stalled" on home and a notice on Flush's screen. Its explorer lists no unconfirmed incoming outputs.
 - **Flush tokens** (ADR 0013): a coin of value 0 is read from the transaction that made it (`/tx/:txid/hex`, cached for the session). `flush.wasm`'s `output_tokens` says which token its `BAST` marker lists on it, and the txid it computes must be the coin's. The token counts only if that output pays the address's own script, as the transaction says: a server could list someone else's output under the address. An asset token counts towards that asset's balance; other token kinds (control coins, LP shares, positions, orders) don't. A **result** output (a swap's, a pool withdrawal's) carries a token no transaction states. One on an order's own transaction (kind 21) is named by the order's outcome (`/flush/market/trades/:txid`, ADR 0018), whose token payout gives its outpoint; the wallet takes it only if it fits the order's marker (a fill: another asset than went in, at least `min_out`; a miss: exactly what went in) and counts it in the balance as the index's word (`indexed`), its amount underlined dotted on Home. Send spends it too: the coin carries that word and the order's pools as `getpool` describes each (`result`), `flush.wasm` checks it fits the order before building, and the Decoder checks it again from the evidence (`results`), so the Send is Clear. For an address holding any other result, or one no outcome names yet, `/flush/market/addresses/:a/holdings` gives what it holds beyond what the wallet counted, and Home shows that apart, as "+N reported by its server". A launch registers its token, as a Register does: kinds 22, 36, 37 and 38 (a launch with a fee split, `launch_fee_split`), each parsed as betanet's node does (backbone-flush `flush-betanet`).
 - Over Esplora the wallet builds its own transactions: Send (below) on a Slot or eCash, Deposit (below) on eCash.
+
+### Sidepot's API (`wallet/src/sidepot.ts`)
+
+Sidepot's state is read from eCash's blocks, so its server only reports the game (ADR 0021):
+
+- `GET /state`: the round, the price of a key, the pot, the game clock, and the eCash height the game has read (`l1_height`).
+- `GET /account/<x-only key>`: `{ balance_sats, keys, nonce }`, or `null` for a key the game has no account for.
+- **Balance:** the account's `balance_sats`, as the chain's ECX; `null` shows as 0, not as an error.
+- **History** is empty: the account's Deposits and entries are main-chain transactions, in the main chain's Activity.
+- **No identity check:** the API has no block to ask for. The entries the wallet signs are bound to one Sidepot by their signature, and the main chain's server passes its own check.
 
 ### The Standard Sidechain API, `ecx-v0` (`wallet/src/standard-sidechain-api.ts`)
 
@@ -205,6 +217,8 @@ A ticker of the Chain Entry's, in any case, is refused, with the reason shown. A
 2. waiting for the operator's `importdrivechaindeposit` (the claim arguments are shown), or on Flush, which pays Deposits itself, for its payout;
 3. "credited", once the Slot's server lists a transaction to the address (`/address/:a/txs`) with an input claiming the Deposit's txid (`is_pegin`), confirmed or not. Past the first page it pages back (`/txs/chain/:last`), 25 confirmed at a time, until a page ends in a transaction mined below the Slot's tip when the Deposit was sent, less 10 blocks for a reorg (`isCredited`). That height is read just after the broadcast, waiting at most 5 seconds, and kept with the Deposit (`slotHeight`); without it, the tracker pages to the end. Heights, not block times: after a gap in a BMM chain's blocks, a block's time may legally be hours in the past. On Flush, nothing names the M5: its credit is a coinbase output after the first paying the address exactly the Deposit's value, in a block above `slotHeight`, that no other Deposit has claimed (`flushCredit`). A Deposit sent without `slotHeight` takes Flush's tip on a later check, while it is still short of its eCash confirmations and so can't have been paid. Until it has one it isn't matched at all: an older payout of the same value (another Deposit's, or one no longer tracked) could pass for its credit. Deposits are matched oldest first, as Flush pays them in eCash order. The matched output is kept with the Deposit, which stays listed as credited while another Deposit of the same value to the same address waits. Each check asks Flush's server for that coinbase again (`/tx/:txid/status`): a soft block can be replaced (ADR 0012), and once the coinbase is no longer confirmed the Deposit's credit is cleared and matched again, so its stale output doesn't stand in for another Deposit's payout (#71).
 
+On **Sidepot**, the destination is the game account, `spot:<x-only key>` in ASCII (minimum 1,000 sats, the wallet's own floor), its activation pinned at block 984,540 on mainnet. The game credits the account as it reads the M5's eCash block: a Deposit is "credited" once Sidepot's server says it has read that far (`/state`'s `l1_height`), and until then it waits as Flush's does (ADR 0021).
+
 A stuck Deposit (its server doesn't know it, or its status can't be read) offers "Stop tracking": the wallet forgets it, and the transaction is unaffected. Healthy ones offer nothing.
 
 **A Deposit that fails after approval** (a refused broadcast, say) is kept for the session (`deposit.refused`), as with Send. The Activity tabs show "Your Deposit of N ECX failed: <reason>" with "Try again" until it's closed (×) or the next Deposit is sent.
@@ -218,10 +232,10 @@ What a Sidechain App calls (`wallet/src/provider.ts`). It finds the Provider wit
 | `connect({ slots, methods })` | no | Asks the user for a Grant: these methods on these Slots. |
 | `disconnect()` | no | Removes the caller's own Grant. |
 | `getGrant()` | no | The caller's own Grant (`connect`'s answer) plus `unlocked`, or `null` without one. Never opens a window. |
-| `getAddresses({ slot })` | yes | `[{ chain, address, publicKey }]`: the Slot's receive address, its CAIP-2 chain id, and the 33-byte compressed key the address pays, in hex. Older wallets don't send `publicKey`. While locked, it opens a window to unlock first. |
+| `getAddresses({ slot })` | yes | `[{ chain, address, publicKey }]`: the Slot's receive address, its CAIP-2 chain id, and the 33-byte compressed key the address pays, in hex. On Sidepot (Slot 88), the game account: `address` is `spot:<key>` and `publicKey` that 32-byte x-only key. Older wallets don't send `publicKey`. While locked, it opens a window to unlock first. |
 | `signTransaction(request)` | yes | Signs a Signing Request (a PSET) after approval and returns it signed. It doesn't broadcast. |
 | `sendTransfer({ slot, outputs })` | yes | The wallet makes a Send for the app and returns `{ txid }`. |
-| `sendAction({ slot, action })` | yes (`sendTransfer`'s) | The wallet builds the chain's action (on Flush, the trade a `flush:` link asks for) and returns `{ txid }`. See below. |
+| `sendAction({ slot, action })` | yes (`sendTransfer`'s) | The wallet builds the chain's action (on Flush, the trade a `flush:` link asks for; on Sidepot, the entry a `sidepot:` link asks for) and returns `{ txid }`. See below. |
 | `suggestAsset({ slot, asset, contract \| label })` | yes | Suggests a name for an asset; once the user approves, returns what the wallet stored. See below. |
 
 **Grants** are per origin, stored in `storage.local`, and listed on the Grants screen (`#/grants`), where they can be revoked. The connect prompt also has the **Blind Signing opt-in**, a checkbox that is off by default.
@@ -287,6 +301,38 @@ A chain's action, built by the wallet (#60, ADR 0016). On Flush, `action` is a `
 3. After unlocking, the module builds it (`buildTrade`) from the account's coins: one `swap_pools` marker through the pool (or a route's pools in turn), its result, token change and `chn_to` at the given-out address. It recomputes each pool's id from what the explorer reported, walks a route from its `from` to its `to` through them, takes the token's decimals from its checked registration, and refuses a floor the quote doesn't meet or one more than 10% below it (-32602).
 4. The Decoder explains it with the pool as evidence; anything but a Clear View of exactly the trade built, every output back to the wallet, is a wallet bug, refused before the user sees it. The approval shows the trade: what goes in, at least what comes out with the node's quote, where it goes, and when the link expires.
 5. It's broadcast with `?maxburnamount=` the ECX its marker carries, its coins are held as a Send's, and the link is kept as run.
+
+### sendAction on Sidepot
+
+On Slot 88, `action` is a `sidepot:` link (ADR 0021), and the answer is the `{ txid }` of a **main-chain** transaction:
+
+```text
+sidepot:buy?round=<u32>&keys=<1..1000>&max_price=<sats>&nonce=<u64>&expires=<u32>
+sidepot:cashout?amount=<sats, 0 = all>&dest=<40 hex>&nonce=<u64>&expires=<u32>
+```
+
+The site reads the round, the price, the account's nonce and the game clock from Sidepot's server and puts them in the link: `nonce` above the account's last, `expires` the last tick of the game clock at which the entry may count. A typical site:
+
+```js
+await wallet.provider.request({ method: "connect", params: { slots: [88], methods: ["getAddresses", "sendTransfer"] } });
+const [{ address, publicKey }] = await wallet.provider.request({ method: "getAddresses", params: { slot: 88 } });
+// address is "spot:<publicKey>": the Deposit destination. publicKey (x-only) names the account at /account/<publicKey>.
+const { txid } = await wallet.provider.request({
+  method: "sendAction",
+  params: { slot: 88, action: `sidepot:buy?round=${round}&keys=3&max_price=${maxPrice}&nonce=${nonce + 1}&expires=${tipClock + 3}` },
+});
+```
+
+**The entry** (`wallet/src/send.ts`, `entryNow`), in the main chain's queue with its Sends and Deposits:
+
+1. `sidepot.wasm` reads the link (`parseEntry`, no key): a bad one is -32602 and a verb it doesn't make 4200, before any window.
+2. After unlocking, it signs the entry with the game account for this network's Sidepot (`signEntry`), and answers what the signed bytes say.
+3. `l1.wasm` builds the transaction that carries it (`buildData`): one zero-value `OP_RETURN` with the entry, change back to the wallet, the fee, the replay marker, from the main chain's spendable coins, as a Send picks them.
+4. The L1 Decoder explains it; anything but a Clear View of exactly that entry in its one data output, every input and other output the wallet's, is a wallet bug, refused before the user sees it.
+5. The approval names the app and shows the entry: what is bought, at most how much per key and in all, the round, the game clock tick after which it lapses, the game account and its entry number; for a cashout the amount and the Sidepot address, which the wallet can't check as the user's. Then the transaction, its fee and the entry's bytes. Never Blind.
+6. It's broadcast over the main chain's server and its coins are held as a Send's.
+
+The game may still not take it (the price moved past the limit, the round ended, the nonce passed): the fee is paid either way, and the approval says so. The balance to buy with comes from a [Deposit](#deposit) to Slot 88.
 
 ### suggestAsset
 

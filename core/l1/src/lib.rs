@@ -4,6 +4,7 @@
 //! - [`derive_account`] turns the L1 Account Key into BIP84 (P2WPKH) addresses and watch data;
 //! - [`build_deposit`] builds an M5 (a Deposit to a Slot) from the account's own coins;
 //! - [`build_transfer`] builds the wallet's own Send from the account's coins;
+//! - [`build_data`] builds a transaction carrying data for a Slot that reads eCash's blocks (Sidepot's entries);
 //! - [`check`] refuses, without the key, what the wallet must never sign;
 //! - [`decode`] is the L1 Decoder: a Clear View, or Blind with the facts it can prove;
 //! - [`sign`] signs only the inputs that re-derive to the key, and only a replay-marked spend
@@ -22,6 +23,7 @@ use bitcoin::{CompressedPublicKey, ScriptBuf};
 use serde::Serialize;
 
 pub mod chain_entry;
+mod data;
 mod decode;
 mod deposit;
 mod psbt;
@@ -29,6 +31,7 @@ mod sign;
 mod transfer;
 
 pub use chain_entry::{chain_entry, ChainEntry, NetworkEntry, OpDrivechain, ServerApi, SidechainServerEntry};
+pub use data::{build_data, DataOrder, MAX_DATA_BYTES};
 pub use decode::{decode, ClearInput, ClearOutput, ClearView, DangerousMode, Decoded, Destination, VerifiableFacts};
 pub use deposit::{build_deposit, treasury_script, txid, Built, Coin, DepositOrder, PrevOut, Spent};
 pub use psbt::{check, AssetAmount, OwnedInput, Refusal, RefusalCode};
@@ -63,7 +66,7 @@ pub struct Declaration {
 pub fn declare() -> Declaration {
     Declaration {
         binding: Binding { chain: network().chain.clone(), format: "psbt".into(), payload_versions: vec!["0".into()] },
-        capabilities: vec!["buildDeposit".into(), "buildTransfer".into()],
+        capabilities: vec!["buildDeposit".into(), "buildTransfer".into(), "buildData".into()],
     }
 }
 

@@ -10,11 +10,11 @@ import { DIST, DIST_E2E, ROOT, importWallet } from "../harness.mjs";
 const ABANDON = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
 test("every shipped .wasm imports nothing but memory", async () => {
-  // The shipped build is mainnet's: eCash and Flush, no Elements+ (docs/adr/0019). The e2e build,
+  // The shipped build is mainnet's: eCash, Flush and Sidepot, no Elements+ (docs/adr/0019, 0021). The e2e build,
   // betanet's, adds elements.wasm, so its modules are checked too.
   const wasmIn = async (dir) => (await readdir(dir)).filter((f) => f.endsWith(".wasm")).sort();
   const shipped = await wasmIn(DIST.chromium);
-  assert.deepEqual(shipped, ["flush.wasm", "l1.wasm", "vault.wasm"], "the mainnet build's modules");
+  assert.deepEqual(shipped, ["flush.wasm", "l1.wasm", "sidepot.wasm", "vault.wasm"], "the mainnet build's modules");
   const e2e = await wasmIn(DIST_E2E.chromium);
   assert.deepEqual(e2e, ["elements.wasm", "flush.wasm", "l1.wasm", "vault.wasm"], "the betanet build's modules");
   const files = [...shipped.map((f) => path.join(DIST.chromium, f)), ...e2e.map((f) => path.join(DIST_E2E.chromium, f))];

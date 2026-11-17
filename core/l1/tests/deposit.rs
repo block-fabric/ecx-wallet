@@ -236,10 +236,32 @@ fn what_the_decoder_cant_fully_explain_is_blind() {
     drained.outputs.drain(..2);
     assert!(blind(&drained).contains("spends Slot 24's Treasury without recreating it"), "{}", blind(&drained));
 
-    // Another OP_RETURN than a Deposit's address.
-    let mut stray = built.clone();
+    // An OP_RETURN that isn't a Deposit's address, alone in its transaction, is a data output: Clear,
+    // shown as data (docs/adr/0021).
+    let mut stray = Psbt::from_str(&crate::built(&order(50_000, vec![coin(1, 250_000)], None))).unwrap();
     stray.unsigned_tx.output[0].script_pubkey = receive_0();
-    assert!(blind(&stray).contains("output 1 is an OP_RETURN that isn't a deposit address"), "{}", blind(&stray));
+    let view = clear(&stray.to_string());
+    assert_eq!(view.outputs[1].destination, Destination::Data { data: destination() });
+    assert!(view.dangerous_modes.is_empty(), "no Deposit left");
+
+    // But not one that holds coins, a second one, one beside a Deposit, or one that isn't a single push.
+    let mut burning = stray.clone();
+    burning.unsigned_tx.output[1].value = bitcoin::Amount::from_sat(1);
+    assert!(blind(&burning).contains("output 1 is an OP_RETURN holding 1 sats"), "{}", blind(&burning));
+    let mut twice = stray.clone();
+    twice.unsigned_tx.output[2] = twice.unsigned_tx.output[1].clone();
+    twice.outputs[2] = Default::default();
+    assert!(blind(&twice).contains("output 2 is a second OP_RETURN"), "{}", blind(&twice));
+    let mut beside = built.clone();
+    beside.unsigned_tx.output[2] = beside.unsigned_tx.output[1].clone();
+    beside.outputs[2] = Default::default();
+    assert!(blind(&beside).contains("carries a data output besides the Deposit's address"), "{}", blind(&beside));
+    let mut bare = stray.clone();
+    bare.unsigned_tx.output[1].script_pubkey = ScriptBuf::from_hex("6a").unwrap();
+    assert!(blind(&bare).contains("output 1 is an OP_RETURN that isn't a single push"), "{}", blind(&bare));
+    let mut two_pushes = stray.clone();
+    two_pushes.unsigned_tx.output[1].script_pubkey = ScriptBuf::from_hex("6a01aa01bb").unwrap();
+    assert!(blind(&two_pushes).contains("output 1 is an OP_RETURN that isn't a single push"), "{}", blind(&two_pushes));
 
     // A Treasury output that shrinks: an M6's shape, never a Deposit.
     let mut shrinking = built.clone();
