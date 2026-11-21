@@ -32,6 +32,10 @@
         {#each origins as origin (origin)}<li class="card"><strong data-provider-origin>{origin}</strong></li>{/each}
       </ul>
     {/if}
+    {#if exists}
+      <a class="button block" href="#/" data-provider-wallet>Open your wallet</a>
+      <p class="muted small">See your balance, receive ECX and make deposits there. The app stays connected, and its requests still open in this window.</p>
+    {/if}
     <p class="muted small">Keep this window open while you use the app. Closing it disconnects the app and locks this window's session.</p>
   {/if}
 </main>
