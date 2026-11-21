@@ -219,14 +219,17 @@
         </section>
       {/each}
       {#if list.length > 0}
-        <p class="note">Balances are as each chain's server reports them. This wallet doesn't verify them.</p>
+        <!-- Wide, Activity shows beside the balances: one notice covers both. -->
+        <p class="note" data-reported-note>
+          {layout.wide ? "Balances and activity are" : "Balances are"} as each chain's server reports them. This wallet doesn't verify them.
+        </p>
       {/if}
     </div>
 
     <div class="panel side" role="tabpanel" hidden={!layout.wide && nav.tab !== "activity"} data-side-activity>
       <h2 class="wide-only">Activity</h2>
       {#if chains}
-        <ActivityFeed {chains} views={list} spenders={chains.all ?? []} active={layout.wide || nav.tab === "activity"} chips />
+        <ActivityFeed {chains} views={list} spenders={chains.all ?? []} active={layout.wide || nav.tab === "activity"} chips note={!layout.wide} />
       {/if}
     </div>
   {/if}

@@ -23,7 +23,16 @@
     spenders,
     active,
     chips = false,
-  }: { chains: Chains; views: ChainView[]; spenders: ChainView[]; active: boolean; chips?: boolean } = $props();
+    note = true,
+  }: {
+    chains: Chains;
+    views: ChainView[];
+    spenders: ChainView[];
+    active: boolean;
+    chips?: boolean;
+    /** False where the screen's own notice already says the servers' reports aren't verified (Home, wide). */
+    note?: boolean;
+  } = $props();
 
   const read = new Set<ChainId>();
   $effect(() => {
@@ -338,7 +347,7 @@
       </p>
     {/if}
   {/each}
-  {#if days.length > 0}
+  {#if days.length > 0 && note}
     <p class="note">Reported by each chain's server. This wallet doesn't verify it.</p>
   {/if}
 </div>
