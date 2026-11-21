@@ -433,10 +433,19 @@
           <h2>Cash out of {e.chainName}</h2>
           <div data-entry-cashout>
             Pay <strong data-entry-amount>{e.amount === "0" ? "your whole game balance" : coin(e.amount)}</strong>{e.amount === "0" ? "" : " of your game balance"} to the
-            {e.chainName} sidechain address <code data-entry-dest>{e.dest}</code>
+            {e.chainName} sidechain address <code data-entry-dest={e.dest}>{e.destAddress}</code>
           </div>
-          <span class="badge" data-not-yours>Not checked as yours: this wallet holds no {e.chainName} sidechain addresses</span>
-          <p class="muted small">It arrives as an ordinary coin on the {e.chainName} sidechain, which this wallet doesn't show.</p>
+          <!-- The wallet's own address there is its Slot's module's to derive (docs/adr/0022). -->
+          {#if e.destYours}
+            <span class="badge ok" data-yours><Icon name="check" size={14} /> Yours (verified by this wallet)</span>
+            <p class="muted small">It arrives as an ordinary coin at your own {e.chainName} address, and shows under Coins on {e.chainName}'s screen.</p>
+          {:else}
+            <span class="badge" data-not-yours>Not yours</span>
+            <p class="muted small">
+              It arrives as an ordinary coin on the {e.chainName} sidechain, at an address that isn't this wallet's. Check it is the one you mean:
+              nothing in a {e.chainName} address catches a typo.
+            </p>
+          {/if}
         {/if}
         <div class="small" data-entry-expires>
           Lapses after game clock tick <strong>{e.expires}</strong>: if it isn't in a block by then, it does nothing. The fee below is paid either way.
@@ -547,6 +556,17 @@
                 {prompt.entry ? `The ${prompt.entry.chainName} entry above, as signed.` : "Carried by the transaction."} It holds no coins and pays no one.
               </div>
               <code class="tiny full-id" data-data>{output.destination.data}</code>
+            {:else if output.destination.kind === "gameAccount"}
+              <!-- A move into a game account (Sidepot, docs/adr/0023): no address, no coin; the game credits the account. -->
+              <div class="small" data-game-account>
+                Into the game account <code data-destination>{output.destination.address}</code>. It stops being a coin: the game credits
+                the account once this transaction is in a block.
+              </div>
+              {#if output.destination.yours}
+                <span class="badge ok" data-yours><Icon name="check" size={14} /> Your own game account (verified by this wallet)</span>
+              {:else}
+                <span class="badge bad" data-not-yours>Not your game account</span>
+              {/if}
             {:else}
               <div class="small">
                 {#if output.destination.l1Address !== undefined}

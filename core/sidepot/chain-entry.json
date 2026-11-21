@@ -12,10 +12,11 @@
       "sidechainServer": { "api": "sidepot", "url": "https://explorer.blockfab.org/sidepot/api/v1/l2/feature/game" },
       "officialApps": ["https://sidepot.cash"],
       "assets": [
-        { "id": "", "ticker": "ECX", "name": "eCash in Sidepot", "decimals": 8, "ecx": true }
+        { "id": "", "ticker": "ECX", "name": "eCash in game account", "decimals": 8, "ecx": true }
       ],
       "params": {
-        "anchor": { "height": 982723, "hash": "0000000000000000019340956c9c00140207ee2ad5c683894a51bbe072bbbf33" }
+        "anchor": { "height": 982723, "hash": "0000000000000000019340956c9c00140207ee2ad5c683894a51bbe072bbbf33" },
+        "parentAddressParams": { "p2pkhPrefix": 0, "p2shPrefix": 5, "bechHrp": "bc" }
       }
     }
   }

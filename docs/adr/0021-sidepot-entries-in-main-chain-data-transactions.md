@@ -45,5 +45,5 @@ On 2026-11-16, on a private test chain (an eCash regtest with Slot 88 active), w
 - The main chain's history shows an entry's transaction as "Sent", for its fee (its data output isn't the wallet's, so it isn't "Fee, to yourself"). Nothing marks it as a Sidepot entry yet.
 - A link is not kept as run, as Flush's are: the game takes an account's nonce once, and each request is approved on its own.
 - The wallet can't know whether the game will take an entry (the price may have moved, the round ended, the nonce passed). The fee is paid either way, and the approval says so.
-- A cashout's coin arrives on the Sidepot sidechain, which the wallet doesn't show: it has no addresses there.
+- A cashout's coin arrives on the Sidepot sidechain, which the wallet doesn't show: it has no addresses there. (Since ADR 0022 it has one, shows its coins, and the approval says whether a cashout pays it.)
 - The wallet's own screens don't make entries yet: only an app does, through `sendAction`.

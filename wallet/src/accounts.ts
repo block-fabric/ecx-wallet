@@ -93,6 +93,11 @@ export interface ChainDescription {
   checksNames?: "contract" | "registration";
   /** The network's Official App origins. */
   officialApps: string[];
+  /**
+   * The wallet has an address of its own on the chain besides the account above, holding ordinary
+   * coins it can send and withdraw (Sidepot, `coins`; docs/adr/0022).
+   */
+  coins?: true;
 }
 
 export function describeChain(module: ChainModule<never>): ChainDescription {
@@ -103,7 +108,18 @@ export function describeChain(module: ChainModule<never>): ChainDescription {
   const { api } = network.sidechainServer;
   const checksNames =
     api === "esplora" && capabilities.includes("assetContract") ? "contract" : api === "flush" && capabilities.includes("tokens") ? "registration" : undefined;
-  return { name: entry.name, description: entry.description, chain, network: key, assets: network.assets, sends, officialApps: network.officialApps, ...(checksNames ? { checksNames } : {}) };
+  const coins = api === "sidepot" && capabilities.includes("coins");
+  return {
+    name: entry.name,
+    description: entry.description,
+    chain,
+    network: key,
+    assets: network.assets,
+    sends,
+    officialApps: network.officialApps,
+    ...(checksNames ? { checksNames } : {}),
+    ...(coins ? { coins: true as const } : {}),
+  };
 }
 
 /** True if a chain can Send through this wallet: its server builds, or its module does over Esplora (Flush's and eCash's included). */

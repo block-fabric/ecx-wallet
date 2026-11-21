@@ -130,6 +130,18 @@ _Avoid_: Intent, flush link, order (a Flush order is one kind of Action)
 A signed instruction of a Sidepot game account (a buy, a cashout), carried as the one data output of a Main chain transaction that pays nothing but its fee (docs/adr/0021).
 _Avoid_: Move, bet, ticket; History Entry and Chain Entry are other things
 
+**Sidepot coins**:
+The ordinary coins the Wallet Base holds on the Sidepot sidechain at its own address there, apart from its game account: where a cashout arrives, and what a transfer, a withdrawal request or a move to game spends (docs/adr/0022, 0023).
+_Avoid_: Game balance (the account's), UTXOs, light client
+
+**Move to game**:
+Sidepot coins turned into game balance of the Wallet Base's own game account on the same chain, by one Sidepot transaction (the node's game deposit output). The way back is a cashout (docs/adr/0023).
+_Avoid_: Deposit (from the Main chain to a Slot), game deposit (the node's name for the output), top up
+
+**Withdrawal request**:
+A Sidepot coin turned into a request to be paid on the Main chain, with a fee for its miners. It waits for the chain to bundle it, then for the Main chain's miners to approve the bundle (docs/adr/0022).
+_Avoid_: Withdrawal burn (Elements' way to start a Withdrawal), cash out (leaving the game for a Sidepot coin)
+
 ### Signing
 
 **Signing Request**:

@@ -1,0 +1,24 @@
+# Not part of the wallet's build: a small program built against the Sidepot node's own `thunder_types`,
+# which writes the fixtures `core/sidepot/tests/coins.rs` holds the wallet to, and checks the wallet's
+# signed transactions as the node would (docs/adr/0022). See README.md here.
+[package]
+name = "thunder-vectors"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT"
+
+# Its own workspace: the wallet's `cargo test --workspace` never builds it.
+[workspace]
+
+[dependencies]
+# The node's source, checked out beside this repository.
+thunder_types = { path = "../../../../sidepot-thunder/types" }
+anyhow = "1"
+bitcoin = "0.32.5"
+blake3 = "1"
+borsh = "1"
+const-hex = "1"
+curve25519-dalek = { version = "5", default-features = false }
+rand = { version = "0.10", default-features = false, features = ["chacha"] }
+serde_json = "1"

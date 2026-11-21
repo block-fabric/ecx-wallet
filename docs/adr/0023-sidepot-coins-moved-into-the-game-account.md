@@ -1,0 +1,33 @@
+# Sidepot: coins moved into the wallet's own game account
+
+A game cashout turns part of a game account into a Sidepot coin (ADR 0022), but nothing turned a coin back into game balance: the only way into the game was a Deposit from the main chain (ADR 0021). The Sidepot node now has a way, a third kind of output, `OutputContent::GameDeposit { value, account }` (its `types/transaction/output/content.rs`, release `sidepot-v0.2.0`, commit `824e49c`, read 2026-11-21). The wallet builds one as a third coin spend, "Move to game", into its own game account only.
+
+- **The output.** Canonical (Borsh) bytes: the address, which must be 20 zero bytes, then content tag 2, the value as a little-endian u64, and the account's 32 bytes. In JSON: `{ "address": "11111111111111111111", "content": { "GameDeposit": { "value": <sats>, "account": "<64 hex>" } } }`. The value must be above zero, and the account a game account key, a BIP340 x-only key (the test a Deposit from the main chain passes to reach a game account). It is never a coin: the node lists it at no address, nothing can spend it, and the transaction's other outputs keep their vout numbers. When its block is processed, the account is credited with the value. It counts as an output for the fee: inputs less every output.
+- **Not before the fork.** The node refuses a transaction with one ("game deposit outputs are not active") until its chain's eCash tip reaches the rule's height: on mainnet eCash block 985,824. Sidepot's server reports the height as `/state`'s `fork_height` (null where the chain has none) beside `tip_height`.
+- **Built from the Starter's own account.** The spend order is `{ "kind": "game", "amount" }` and names no account: `build_coin_spend` puts in the Slot's Starter's own game account (`m/300'/88'/0'`, ADR 0021), then change to the wallet's coin address and the flat fee, as for a transfer. `decode_coin_spend` and `sign_coin_spend` check a game deposit output from its own bytes, as the node does (above zero, the all-zero address, a valid x-only key), and the Clear View gives it a destination of its own, `{ kind: "gameAccount", account, address: "spot:<key>", yours }`, with `yours` worked out from the same Starter. A move is neither a transfer to an address nor a withdrawal burn, and has no dangerous mode. The wallet refuses, as its own bug, a view whose game account isn't `yours` (`isSpendAskedFor`), so it never signs a move into anyone else's account, though the module decodes one and says it isn't yours.
+- **Checked against the node.** `thunder-vectors`, built against `824e49c`, wrote the earlier fixtures again byte for byte and added `gameDeposits`: game deposit outputs, transactions that make them with the hash each input commits to, and those transactions signed and verified by the node's own code. Its `verify` took the two moves the wallet signs (with change, and of every coin).
+
+## What the user sees
+
+On Sidepot's screen, beside Send and Withdraw on **Coins on Sidepot**: **Move to game** (`#/coins/<slot>/game`). The form has an amount, "All of it" (the coins less Sidepot's fee), and a short note: it moves coins from the Sidepot address into the game account, where they can buy keys; it arrives when the transaction is in a Sidepot block; to get it back out, cash out from the game, which arrives as coins again. It is approved in place like Send, and the approval shows the game account as `spot:<key>` with "Your own game account (verified by this wallet)".
+
+While `fork_height` is null, or `tip_height` is below it, the action is off and one line says from which eCash block it works, or that this network doesn't have it. If the node still refuses with "not active", the wallet says the chain doesn't take moves into the game yet, not the node's words.
+
+The server reports such a transaction in the coin history as a plain transfer out. The wallet keeps the txids of the moves it made (`sidepot-coins-moves:<chain>` in `host.persistent`, the latest 200) and shows those as "Moved into the game". A wallet restored elsewhere shows them as "Sent".
+
+## Checked
+
+Checked on 2026-11-21 on a private test chain (an eCash regtest with Slot 88 active, and a Sidepot node at `824e49c` and server for it, the rule active there), by hand-run scripts that aren't part of the test suite, with a build of this wallet for that chain that isn't part of this repository. In headless Chromium, with that build: a wallet made on the Create screens; a game cashout of 2,000,000 sats to its coin address; Move to game refused 0 ("Enter an amount above zero."), filled 0.01999 ECX for "All of it", and was approved in place for 0.005 ECX, the approval naming the same `spot:<key>` as Sidepot's Receive with "Your own game account (verified by this wallet)". The node took it (`19eb76dc…8df3e1cf`); a block later the game account had exactly 500,000 sats more, the coins 501,000 fewer, the change was output 1, and the node's whole UTXO set held no output 0 of it. Coin activity showed it as "Moved into the game". Then 200,000 sats of it went back out through an app's `sendAction` cashout to the wallet's own coin address (approved as "Yours"), and arrived as a coin as the game balance fell to 300,000. With `/state` answered by the test, not the server: a `fork_height` above `tip_height`, and a null one, each turned the action off with its line; a node refusal "game deposit outputs are not active" showed as "Sidepot doesn't take moves into the game yet". A payload naming another account, a zero amount, an address on the output and a key that isn't one are covered by `tests/coins.rs`.
+
+## Considered options
+
+- **Any game account, typed by the user:** rejected for now. The game is played from the wallet's own account, and an account with no checksum and no undo is a worse place for a typo than an address. The module still decodes and marks someone else's.
+- **A dangerous mode for it:** rejected. The coins stay the user's, in their own account; they come back out by a cashout.
+- **The move as a Signing Request a site can send:** rejected, as for the other coin spends (ADR 0022).
+- **Waiting for the server to report moves in its history:** not needed for the label; the wallet's own record is enough for its own moves, and the server's API is unchanged.
+
+## Consequences
+
+- The game balance rises only once the transaction is in a Sidepot block; until then the coins are held (ADR 0022) and the game balance is unchanged.
+- The Withdraw form's line that set-aside coins can't be "put back in the game" stays true: a withdrawal request isn't a coin.
+- A server too old to report `fork_height` shows the action as off.

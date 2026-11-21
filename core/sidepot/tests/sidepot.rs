@@ -7,7 +7,7 @@ use bitcoin::secp256k1::schnorr::Signature;
 use bitcoin::secp256k1::{Keypair, Message, Secp256k1, SecretKey, XOnlyPublicKey};
 use ecx_sidepot::entry::tagged_hash;
 use ecx_sidepot::{
-    anchor_bytes, chain_entry, check_chain_entry, declare, deposit_destination, derive_account, domain, network, parse_action, parse_entry, sign_entry, Action,
+    anchor_bytes, chain_entry, check_chain_entry, coin_address, declare, deposit_destination, derive_account, domain, network, parse_action, parse_entry, sign_entry, Action,
     DecodeError, Domain, Entry, EntryAction, RefusalCode, ServerApi, BUY_LEN, CASHOUT_LEN,
 };
 
@@ -43,7 +43,7 @@ fn declare_reports_the_mainnet_slot_88_binding_and_its_capabilities() {
     let d = declare();
     assert_eq!(d.binding.chain, "ecash:mainnet-s88");
     assert_eq!(d.binding.format, "sidepot-entry");
-    assert_eq!(d.capabilities, ["entries", "depositDestination"]);
+    assert_eq!(d.capabilities, ["entries", "depositDestination", "coins"]);
 }
 
 #[test]
@@ -249,7 +249,15 @@ fn the_view_says_every_field_read_back_from_the_signed_bytes() {
     assert_eq!((buy.nonce.as_str(), buy.expires, buy.slot, buy.anchor.as_str()), ("42", 5000, 88, MAINNET_ANCHOR));
 
     let cashout = sign_entry(CASHOUT, STARTER).unwrap().view;
-    assert_eq!(cashout.action, EntryAction::Cashout { amount: "250000".into(), dest: "00112233445566778899aabbccddeeff00112233".into() });
+    let dest_address = bitcoin::base58::encode(&unhex("00112233445566778899aabbccddeeff00112233"));
+    assert_eq!(cashout.action, EntryAction::Cashout { amount: "250000".into(), dest: "00112233445566778899aabbccddeeff00112233".into(), dest_address });
+    // The destination isn't the Starter's own Sidepot address (docs/adr/0022); one to that address says so.
+    assert_eq!((buy.dest_yours, cashout.dest_yours), (None, Some(false)));
+    let mine = coin_address(STARTER).unwrap();
+    let to_me = sign_entry(&format!("sidepot:cashout?amount=0&dest={}&nonce=44&expires=5002", mine.hex), STARTER).unwrap().view;
+    assert_eq!(to_me.dest_yours, Some(true));
+    assert_eq!(to_me.action, EntryAction::Cashout { amount: "0".into(), dest: mine.hex.clone(), dest_address: mine.address });
+    assert_eq!(parse_entry(CASHOUT).unwrap().dest_yours, None, "without the Starter, nothing says whose it is");
 
     // Without the Starter: the same, less the player.
     let unsigned = parse_entry(BUY).unwrap();
