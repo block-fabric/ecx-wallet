@@ -19,11 +19,13 @@ import type {
   RefusedDeposit,
   RefusedSend,
   SendResult,
+  SidepotCoinsReport,
   SlotAddress,
   SlotReport,
   StoredAsset,
   Unit,
   VaultStatus,
+  WaitingWithdrawal,
 } from "@ecx/wallet";
 
 // The shapes the background sends are the wallet package's own types.
@@ -41,10 +43,12 @@ export type {
   RefusedDeposit,
   RefusedSend,
   SendResult,
+  SidepotCoinsReport,
   SlotReport,
   StoredAsset,
   Unit,
   VaultStatus,
+  WaitingWithdrawal,
 };
 
 type Response<T> = { ok: true; result: T } | { ok: false; error: { code: number; message: string } };
@@ -278,6 +282,31 @@ export const refusedSend = (chain: ChainId) => send<RefusedSend | null>({ kind: 
 
 /** Closes the chain's refused Send. */
 export const dismissRefusedSend = (chain: ChainId) => send<null>({ kind: "send.dismissRefused", slot: sendSlot(chain) });
+
+/** The wallet's own address on the Sidepot sidechain, where its ordinary coins are (docs/adr/0022; needs the wallet unlocked). */
+export const coinsAddress = (slot: number) => send<string>({ kind: "coins.address", slot });
+
+/** What Sidepot's server reports of that address: its spendable coins and its withdrawal requests still waiting. */
+export const coinsReported = (slot: number, unattended?: boolean) => send<SidepotCoinsReport>({ kind: "coins.reported", slot, unattended });
+
+/** Stops showing a withdrawal request Sidepot's server no longer lists: only the wallet's own record of it goes. */
+export const forgetWithdrawal = (slot: number, id: string) => send<null>({ kind: "coins.forgetWithdrawal", slot, id });
+
+/**
+ * Sends `amount` sats of the wallet's Sidepot coins to the Sidepot address `to`: the chain's module
+ * builds the transfer, the user reviews it in place, the wallet signs it and Sidepot's server takes
+ * it. Throws on refusal or rejection.
+ */
+export const sendCoins = (slot: number, pay: { to: string; amount: string }, host?: string) =>
+  send<SendResult>({ kind: "coins.spend", slot, pay: { kind: "transfer", ...pay }, host });
+
+/**
+ * Asks to withdraw `amount` sats of the wallet's Sidepot coins to the main-chain address
+ * `mainAddress`, with `mainFee` sats more for the main chain's miners. Reviewed, signed and sent the
+ * same way. Throws on refusal or rejection.
+ */
+export const withdrawCoins = (slot: number, pay: { mainAddress: string; amount: string; mainFee: string }, host?: string) =>
+  send<SendResult>({ kind: "coins.spend", slot, pay: { kind: "withdrawal", ...pay }, host });
 
 /**
  * Deposits `amount` sats of confirmed eCash to the Slot: the wallet builds the M5, the user reviews

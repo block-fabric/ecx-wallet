@@ -105,6 +105,18 @@ export type BackgroundMessage =
   /** Sats of confirmed main-chain coins the server lists but a Send or Deposit holds. */
   | { kind: "deposit.held"; unattended?: boolean }
   | { kind: "deposit.dismissRefused"; slot: number }
+  // The wallet's ordinary coins on the Sidepot sidechain (docs/adr/0022): its address there, what its
+  // server reports of it, and a transfer or a withdrawal request from it. Wallet pages only.
+  | { kind: "coins.address"; slot: number }
+  | { kind: "coins.reported"; slot: number; unattended?: boolean }
+  // Stops showing a withdrawal request the server no longer lists (the wallet's own record of it).
+  | { kind: "coins.forgetWithdrawal"; slot: number; id: string }
+  | {
+      kind: "coins.spend";
+      slot: number;
+      pay: { kind: "transfer"; to: string; amount: string } | { kind: "withdrawal"; mainAddress: string; amount: string; mainFee: string };
+      host?: string;
+    }
   // Vault: accepted only from the wallet's own pages.
   | { kind: "vault.status" }
   | { kind: "vault.generate" }

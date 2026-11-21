@@ -12,6 +12,7 @@ One section per feature: what the user sees, then how the wallet does it, with t
 - [Assets](#assets)
 - [Send](#send)
 - [Deposit](#deposit)
+- [Sidepot coins](#sidepot-coins)
 - [The Provider](#the-provider)
 - [Session cache](#session-cache)
 
@@ -74,7 +75,7 @@ Every chain has a Chain Entry, and its keys follow its place in the chain tree (
 
 - **eCash**, the root (`core/l1/chain-entry.json`, no Slot or parent), gets the L1 Account Key. `l1.wasm` derives BIP84 P2WPKH addresses (`bc1q…`).
 - **A Slot** under eCash gets its Starter, and only that Slot's Chain Module ever sees it.
-- **Sidepot** (Slot 88, on mainnet; ADR 0021) has one key and no addresses of a chain: `sidepot.wasm` derives its game account at `m/300'/88'/0'` of the Slot's Starter and shows it as `spot:<x-only key>`.
+- **Sidepot** (Slot 88, on mainnet; ADR 0021) has a game account, not an address of a chain: `sidepot.wasm` derives it at `m/300'/88'/0'` of the Slot's Starter and shows it as `spot:<x-only key>`. For the Sidepot sidechain's ordinary coins it derives one address more, from `m/300'/88'/1'` (ADR 0022, [Sidepot coins](#sidepot-coins)): `coins.address`.
 - **Deeper chains** are refused. `createKeyRouting` in `wallet/src/accounts.ts` checks the Chain Entry before handing any key out.
 
 `accounts.receiveAddresses(slot)` and `accounts.l1ReceiveAddresses()` do the deriving. Each module runs in its own WASM instance, created on first use.
@@ -117,6 +118,7 @@ Sidepot's state is read from eCash's blocks, so its server only reports the game
 - **Balance:** the account's `balance_sats`, as the chain's ECX; `null` shows as 0, not as an error.
 - **History** is empty: the account's Deposits and entries are main-chain transactions, in the main chain's Activity.
 - **No identity check:** the API has no block to ask for. The entries the wallet signs are bound to one Sidepot by their signature, and the main chain's server passes its own check.
+- `GET /coins/<address>`, `POST /tx` and `GET /withdrawal-bundle` read and spend the wallet's ordinary coins on the Sidepot sidechain ([Sidepot coins](#sidepot-coins), ADR 0022). They aren't part of the chain's balance above.
 
 ### The Standard Sidechain API, `ecx-v0` (`wallet/src/standard-sidechain-api.ts`)
 
@@ -224,6 +226,28 @@ A stuck Deposit (its server doesn't know it, or its status can't be read) offers
 
 **A Deposit that fails after approval** (a refused broadcast, say) is kept for the session (`deposit.refused`), as with Send. The Activity tabs show "Your Deposit of N ECX failed: <reason>" with "Try again" until it's closed (×) or the next Deposit is sent.
 
+## Sidepot coins
+
+**What the user sees:** on Sidepot's screen (`#/chain/88`), under the game balance, a card **Coins on Sidepot** (`SidepotCoins.svelte`): the wallet's ordinary coins on the Sidepot sidechain, apart from the game account. A game cashout arrives there. It has the balance, covered by the screen's one "Reported by <server URL>. This wallet doesn't verify it." below the card (with the game balance's server, if it differs), and:
+
+- **Receive:** the wallet's Sidepot address (plain base58, about 27 characters) with Copy and a QR code. It is what the game takes as a cashout's destination.
+- **Send** (`#/coins/88/send`): an amount to another Sidepot address. A Sidepot address has no checksum, and the form says so.
+- **Withdraw** (`#/coins/88/withdraw`): an amount to a main-chain address, with a fee for the main chain's miners (1,000 sats to start with). The form says a withdrawal is slow, depends on the miners, and can't be cancelled.
+- **Withdrawals waiting:** each request not known to be paid, with where it stands: sent, waiting for a bundle, in the next bundle, or handed to the main chain, where the wallet can't follow it ("Stop showing it" forgets the wallet's record).
+
+Send and Withdraw approve in place, like the wallet's own Send and Deposit. The approval is a Clear View: the payment, the change back to the wallet's own address ("Yours"), the fee, and for a withdrawal the Dangerous box of a withdrawal burn. After approval the screen shows the txid.
+
+**How** (`wallet/src/sidepot-coins.ts`, `core/sidepot/src/coins.rs` and `thunder.rs`, ADR 0022):
+
+1. `sidepot.wasm` derives the address from the Slot's Starter (`coin_address`): a ristretto255 key from the BIP32 key at `m/300'/88'/1'`, hashed onto its scalar field.
+2. Sidepot's server lists the address's coins (`GET /coins/<address>`) and the chain's pending withdrawal bundle (`GET /withdrawal-bundle`). The balance is the plain coins, less those a spend of the wallet's holds (`coins.reported`).
+3. For a spend (`coins.spend`), the module builds it from the listed coins (`build_coin_spend`): the largest first, change to the same address, a flat fee of 1,000 sats (`SIDEPOT_COIN_FEE`). A withdrawal's main-chain address must be one of this network's, its payout above the main chain's dust, and its main-chain fee above zero.
+4. The module explains the unsigned spend from its own bytes (`decode_coin_spend`). Anything but exactly the payment asked for, change to the wallet and that fee is a wallet bug, refused before the user sees it (`isSpendAskedFor`).
+5. After approval the module signs it (`sign_coin_spend`): one authorization per input, without randomness. The server hands it to its node (`POST /tx`), which attaches the Utreexo proof. The wallet checks the txid the server answers against its own.
+6. The coins it spent are held (`sidepot-coins-held:<chain>`) until the server lists none of them (it is in a block), or for 6 blocks. A withdrawal request is also kept (`sidepot-coins-withdrawals:<chain>`): the server stops listing one when its bundle goes to the main chain, months before it is paid.
+
+One spend at a time. The formats are the Sidepot node's, checked against its own code by fixtures (`core/sidepot/thunder-vectors`). The Provider has nothing for these coins: a site can't ask for a Sidepot transaction.
+
 ## The Provider
 
 What a Sidechain App calls (`wallet/src/provider.ts`). It finds the Provider with `client`'s `discoverProviders()`, then calls `request({ method, params })`. Opened inside a web wallet (ours, in its Apps view, or any other on any origin that speaks the [web wallet protocol](web-wallet-protocol.md)), `discoverProviders()` answers that wallet first, named by its origin (`Wallet at <origin>`), and its requests need no click. Without the extension, it answers the web wallet the app names with `{ webWallet: "<wallet URL>" }` in a popup instead (`rdns` `cash.ecx.wallet.web`, see [Web build](#web-build)), and no wallet if it names none; the same methods and events apply.
@@ -330,7 +354,7 @@ const { txid } = await wallet.provider.request({
 2. After unlocking, it signs the entry with the game account for this network's Sidepot (`signEntry`), and answers what the signed bytes say.
 3. `l1.wasm` builds the transaction that carries it (`buildData`): one zero-value `OP_RETURN` with the entry, change back to the wallet, the fee, the replay marker, from the main chain's spendable coins, as a Send picks them.
 4. The L1 Decoder explains it; anything but a Clear View of exactly that entry in its one data output, every input and other output the wallet's, is a wallet bug, refused before the user sees it.
-5. The approval names the app and shows the entry: what is bought, at most how much per key and in all, the round, the game clock tick after which it lapses, the game account and its entry number; for a cashout the amount and the Sidepot address, which the wallet can't check as the user's. Then the transaction, its fee and the entry's bytes. Never Blind.
+5. The approval names the app and shows the entry: what is bought, at most how much per key and in all, the round, the game clock tick after which it lapses, the game account and its entry number; for a cashout the amount and the Sidepot address, in base58, marked "Yours" if it is the wallet's own ([Sidepot coins](#sidepot-coins)) and "Not yours" otherwise. Then the transaction, its fee and the entry's bytes. Never Blind.
 6. It's broadcast over the main chain's server and its coins are held as a Send's.
 
 The game may still not take it (the price moved past the limit, the round ended, the nonce passed): the fee is paid either way, and the approval says so. The balance to buy with comes from a [Deposit](#deposit) to Slot 88.

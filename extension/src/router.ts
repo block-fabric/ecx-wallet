@@ -12,6 +12,7 @@ import {
   providerPending,
   createPullPath,
   createSends,
+  createSidepotCoins,
   createSpendQueue,
   createSettings,
   describeChain,
@@ -552,6 +553,21 @@ export function createRouter<Sender>(host: RouterHost<Sender>) {
 
   const sends = createSends({ ...keys, chainModule, l1Module, pullPath, esplora, openSigningApproval, isUnlocked: signing.isUnlocked, held: heldStore, queue: spendQueue, usedLinks, cache: sessionCache, tradeStore, now: () => Date.now() });
 
+  // The wallet's ordinary coins on the Sidepot sidechain (docs/adr/0022): the Slot's module builds and
+  // signs their spends, and Sidepot's own server lists them and takes the transactions. They are no
+  // other spend's coins, but share the Slot's place in the queue.
+  const sidepotCoins = createSidepotCoins({
+    ...keys,
+    chainModule,
+    l1Module,
+    sidepot: (_entry, network) => sidepotClient(network.sidechainServer.url),
+    openSigningApproval,
+    isUnlocked: signing.isUnlocked,
+    store: host.persistent,
+    queue: spendQueue,
+    now: () => Date.now(),
+  });
+
   /** The page a wallet page's request names to show its approval (`APPROVAL_HOST_PORT`), if any. */
   const hostOf = (message: { host?: unknown }) => (typeof message.host === "string" && message.host !== "" ? message.host : undefined);
 
@@ -764,6 +780,28 @@ export function createRouter<Sender>(host: RouterHost<Sender>) {
         if (!host.requester(sender).walletPage) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
         await deposits.dismissRefused(supportedSlot(message.slot));
         return null;
+      case "coins.address":
+        // The wallet's address on the Sidepot sidechain: public, but derived from the Starter, so it needs the wallet unlocked.
+        if (!host.requester(sender).walletPage) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+        return sidepotCoins.address(await onSlot(message.slot));
+      case "coins.reported":
+        // What Sidepot's server reports of that address: its coins, and its withdrawal requests still waiting.
+        if (!host.requester(sender).walletPage) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+        {
+          const slot = await onSlot(message.slot);
+          return byItself(message, () => sidepotCoins.reported(slot));
+        }
+      case "coins.forgetWithdrawal":
+        if (!host.requester(sender).walletPage) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+        await sidepotCoins.forgetWithdrawal(supportedSlot(message.slot), String(message.id ?? ""));
+        return null;
+      case "coins.spend":
+        // A transfer or a withdrawal request from those coins: resolves once Sidepot's node took it.
+        if (!host.requester(sender).walletPage) throw new ProviderRpcError(ErrorCode.Unauthorized, "Unknown requester.");
+        {
+          const slot = await onSlot(message.slot);
+          return announcing([slot], sidepotCoins.spend(slot, message.pay, hostOf(message)));
+        }
       case "vault.status":
       case "vault.generate":
       case "vault.create":

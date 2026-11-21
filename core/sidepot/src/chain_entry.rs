@@ -9,6 +9,9 @@
 //! - **`params.anchor`:** the eCash block that mined the Slot's proposal (its M1). Every entry's
 //!   signature commits to its hash and to the Slot, so an entry made for one Sidepot can't be
 //!   replayed in another (a genesis hash wouldn't do: eCash's genesis is Bitcoin's).
+//! - **`params.parentAddressParams`:** the main chain's address encoding on the network, a copy of
+//!   the root's `addressParams` (`core/l1/chain-entry.json`), as Elements' entry has: what a
+//!   withdrawal's main-chain address is read with (docs/adr/0022).
 //! - **`identityBlock`:** the anchor again. Sidepot has no blocks a server could be asked for: its
 //!   chain is eCash's, whose own server passes the identity check (`core/l1/chain-entry.json`).
 //!
@@ -37,6 +40,17 @@ pub type NetworkEntry = ecx_chain_entry::NetworkEntry<SidepotParams>;
 pub struct SidepotParams {
     /// The eCash block that mined the Slot's proposal; `hash` as a node prints it.
     pub anchor: IdentityBlock,
+    /// The parent (main) chain's address encoding, for a withdrawal's main-chain destination.
+    pub parent_address_params: AddressParams,
+}
+
+/// A chain's Bitcoin-style address encoding: Bitcoin Core's `base58Prefixes` and `bech32_hrp`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AddressParams {
+    pub p2pkh_prefix: u8,
+    pub p2sh_prefix: u8,
+    pub bech_hrp: String,
 }
 
 /// The parsed Chain Entry. The JSON is compiled in, so a parse failure is a build bug.
@@ -50,7 +64,8 @@ pub fn chain_entry() -> &'static ChainEntry {
 }
 
 /// The envelope's rules, and Sidepot's: a Slot that fits an entry's one byte, an anchor that is a
-/// block hash and the network's identity block, and ECX as the native coin.
+/// block hash and the network's identity block, ECX as the native coin, and a parent address
+/// encoding the wallet can write.
 pub fn check_chain_entry(entry: &ChainEntry) -> Result<(), String> {
     entry.check()?;
     for (name, network) in &entry.networks {
@@ -64,6 +79,10 @@ pub fn check_chain_entry(entry: &ChainEntry) -> Result<(), String> {
         }
         if network.params.anchor != network.identity_block {
             return Err(format!("{chain}'s {name}: the identity block must be the anchor"));
+        }
+        let parent = &network.params.parent_address_params;
+        if bech32::Hrp::parse(&parent.bech_hrp).is_err() || parent.p2pkh_prefix == parent.p2sh_prefix {
+            return Err(format!("{chain}'s {name}: its parent's address encoding isn't one"));
         }
         if network.ecx_asset().is_some_and(|ecx| !ecx.id.is_empty()) {
             return Err(format!("{chain}'s {name}: its ECX must be the native coin, with the empty id"));

@@ -1,0 +1,900 @@
+[
+  {
+    "address": "4Pmyp1gZYtnBZLpH6S1QpUCrKC7j",
+    "borsh": "0100000002030303030303030303030303030303030303030303030303030303030303030301000000518ed87a434b9544a95b34dc788fd952990db3ef372e7a4400bbfbc4c28ee7ac02000000ec64b2d7709226d76bfd2a300e0d13164d01332e0020a1070000000000f385d2c869d264a21ba449d76427314b778f50120038a6440000000000",
+    "fee": "1000",
+    "name": "a transfer with change",
+    "tx": {
+      "authorizations": [
+        {
+          "signature": "84b80c98be10d5ec27c0c408284a9831cfac5cfdec644b0ec0b88688b91a9c4416382b8398dad541a8781fb4ec7a8827a6fd1ee2e3e41cb61763b505663d3f03",
+          "verifying_key": "9ab9e1ca9691ab9dcf98b851408599ff55a727cda2ecb5416c46be3f7b9be411"
+        }
+      ],
+      "transaction": {
+        "inputs": [
+          [
+            {
+              "Deposit": "0303030303030303030303030303030303030303030303030303030303030303:1"
+            },
+            [
+              81,
+              142,
+              216,
+              122,
+              67,
+              75,
+              149,
+              68,
+              169,
+              91,
+              52,
+              220,
+              120,
+              143,
+              217,
+              82,
+              153,
+              13,
+              179,
+              239,
+              55,
+              46,
+              122,
+              68,
+              0,
+              187,
+              251,
+              196,
+              194,
+              142,
+              231,
+              172
+            ]
+          ]
+        ],
+        "outputs": [
+          {
+            "address": "4J1rRRiAKd1AaiRsHN49aK1BtDbs",
+            "content": {
+              "Value": 500000
+            }
+          },
+          {
+            "address": "4Pmyp1gZYtnBZLpH6S1QpUCrKC7j",
+            "content": {
+              "Value": 4499000
+            }
+          }
+        ],
+        "proof": {
+          "hashes": [],
+          "targets": []
+        }
+      }
+    },
+    "txid": "55b612fb32fc0090472f209457ec7e1c85c8f5c01fbe3dcf5568e7ef4575c025"
+  },
+  {
+    "address": "4Pmyp1gZYtnBZLpH6S1QpUCrKC7j",
+    "borsh": "0300000002030303030303030303030303030303030303030303030303030303030303030301000000518ed87a434b9544a95b34dc788fd952990db3ef372e7a4400bbfbc4c28ee7ac0001010101010101010101010101010101010101010101010101010101010101010000000079baede6a13b9309c4864e9f364049a77d0106c46ee6ccb5889b547b9bf41827010202020202020202020202020202020202020202020202020202020202020202030000004a648883bf05c4627c519a40d855df61e0b23eef7f5c447cd8188e22a8d9f62401000000ec64b2d7709226d76bfd2a300e0d13164d01332e00b85f6f0000000000",
+    "fee": "1000",
+    "name": "a transfer of everything, from a coin of each kind of outpoint",
+    "tx": {
+      "authorizations": [
+        {
+          "signature": "c46004a58892845051a7fe53d913f6636304404de2ced3b3832d16fd727af2445bde1d919662da925e91cce938490b10f84b697fc3f4cedaf592d78adebd5d0e",
+          "verifying_key": "9ab9e1ca9691ab9dcf98b851408599ff55a727cda2ecb5416c46be3f7b9be411"
+        },
+        {
+          "signature": "c46004a58892845051a7fe53d913f6636304404de2ced3b3832d16fd727af2445bde1d919662da925e91cce938490b10f84b697fc3f4cedaf592d78adebd5d0e",
+          "verifying_key": "9ab9e1ca9691ab9dcf98b851408599ff55a727cda2ecb5416c46be3f7b9be411"
+        },
+        {
+          "signature": "c46004a58892845051a7fe53d913f6636304404de2ced3b3832d16fd727af2445bde1d919662da925e91cce938490b10f84b697fc3f4cedaf592d78adebd5d0e",
+          "verifying_key": "9ab9e1ca9691ab9dcf98b851408599ff55a727cda2ecb5416c46be3f7b9be411"
+        }
+      ],
+      "transaction": {
+        "inputs": [
+          [
+            {
+              "Deposit": "0303030303030303030303030303030303030303030303030303030303030303:1"
+            },
+            [
+              81,
+              142,
+              216,
+              122,
+              67,
+              75,
+              149,
+              68,
+              169,
+              91,
+              52,
+              220,
+              120,
+              143,
+              217,
+              82,
+              153,
+              13,
+              179,
+              239,
+              55,
+              46,
+              122,
+              68,
+              0,
+              187,
+              251,
+              196,
+              194,
+              142,
+              231,
+              172
+            ]
+          ],
+          [
+            {
+              "Regular": {
+                "txid": "0101010101010101010101010101010101010101010101010101010101010101",
+                "vout": 0
+              }
+            },
+            [
+              121,
+              186,
+              237,
+              230,
+              161,
+              59,
+              147,
+              9,
+              196,
+              134,
+              78,
+              159,
+              54,
+              64,
+              73,
+              167,
+              125,
+              1,
+              6,
+              196,
+              110,
+              230,
+              204,
+              181,
+              136,
+              155,
+              84,
+              123,
+              155,
+              244,
+              24,
+              39
+            ]
+          ],
+          [
+            {
+              "Coinbase": {
+                "txid": "0202020202020202020202020202020202020202020202020202020202020202",
+                "vout": 3
+              }
+            },
+            [
+              74,
+              100,
+              136,
+              131,
+              191,
+              5,
+              196,
+              98,
+              124,
+              81,
+              154,
+              64,
+              216,
+              85,
+              223,
+              97,
+              224,
+              178,
+              62,
+              239,
+              127,
+              92,
+              68,
+              124,
+              216,
+              24,
+              142,
+              34,
+              168,
+              217,
+              246,
+              36
+            ]
+          ]
+        ],
+        "outputs": [
+          {
+            "address": "4J1rRRiAKd1AaiRsHN49aK1BtDbs",
+            "content": {
+              "Value": 7299000
+            }
+          }
+        ],
+        "proof": {
+          "hashes": [],
+          "targets": []
+        }
+      }
+    },
+    "txid": "dabdb0f0c83cdfb815124113c5c99f5d661e583dba680471817b3171b797d40c"
+  },
+  {
+    "address": "4Pmyp1gZYtnBZLpH6S1QpUCrKC7j",
+    "borsh": "020000000001010101010101010101010101010101010101010101010101010101010101010000000079baede6a13b9309c4864e9f364049a77d0106c46ee6ccb5889b547b9bf41827010202020202020202020202020202020202020202020202020202020202020202030000004a648883bf05c4627c519a40d855df61e0b23eef7f5c447cd8188e22a8d9f62402000000f385d2c869d264a21ba449d76427314b778f501200200b200000000000f385d2c869d264a21ba449d76427314b778f501200460c030000000000",
+    "fee": "250",
+    "name": "a transfer to the wallet's own address",
+    "tx": {
+      "authorizations": [
+        {
+          "signature": "aab55873fb5d7fc190284a11a840b05a211ce715529742f27b97881b8b736e147b8b164be64fc3a168650ff54d9240ecc5edf955decb5a113ef36d7f624a5704",
+          "verifying_key": "9ab9e1ca9691ab9dcf98b851408599ff55a727cda2ecb5416c46be3f7b9be411"
+        },
+        {
+          "signature": "aab55873fb5d7fc190284a11a840b05a211ce715529742f27b97881b8b736e147b8b164be64fc3a168650ff54d9240ecc5edf955decb5a113ef36d7f624a5704",
+          "verifying_key": "9ab9e1ca9691ab9dcf98b851408599ff55a727cda2ecb5416c46be3f7b9be411"
+        }
+      ],
+      "transaction": {
+        "inputs": [
+          [
+            {
+              "Regular": {
+                "txid": "0101010101010101010101010101010101010101010101010101010101010101",
+                "vout": 0
+              }
+            },
+            [
+              121,
+              186,
+              237,
+              230,
+              161,
+              59,
+              147,
+              9,
+              196,
+              134,
+              78,
+              159,
+              54,
+              64,
+              73,
+              167,
+              125,
+              1,
+              6,
+              196,
+              110,
+              230,
+              204,
+              181,
+              136,
+              155,
+              84,
+              123,
+              155,
+              244,
+              24,
+              39
+            ]
+          ],
+          [
+            {
+              "Coinbase": {
+                "txid": "0202020202020202020202020202020202020202020202020202020202020202",
+                "vout": 3
+              }
+            },
+            [
+              74,
+              100,
+              136,
+              131,
+              191,
+              5,
+              196,
+              98,
+              124,
+              81,
+              154,
+              64,
+              216,
+              85,
+              223,
+              97,
+              224,
+              178,
+              62,
+              239,
+              127,
+              92,
+              68,
+              124,
+              216,
+              24,
+              142,
+              34,
+              168,
+              217,
+              246,
+              36
+            ]
+          ]
+        ],
+        "outputs": [
+          {
+            "address": "4Pmyp1gZYtnBZLpH6S1QpUCrKC7j",
+            "content": {
+              "Value": 2100000
+            }
+          },
+          {
+            "address": "4Pmyp1gZYtnBZLpH6S1QpUCrKC7j",
+            "content": {
+              "Value": 199750
+            }
+          }
+        ],
+        "proof": {
+          "hashes": [],
+          "targets": []
+        }
+      }
+    },
+    "txid": "2777e715e5581a0cf57627f29671f27ae85dbb35917e68ff758c0d87c48a0581"
+  },
+  {
+    "address": "4Pmyp1gZYtnBZLpH6S1QpUCrKC7j",
+    "borsh": "0100000002030303030303030303030303030303030303030303030303030303030303030301000000518ed87a434b9544a95b34dc788fd952990db3ef372e7a4400bbfbc4c28ee7ac02000000f385d2c869d264a21ba449d76427314b778f50120140420f0000000000d007000000000000160000000014751e76e8199196d454941c45d1b3a323f1433bd6f385d2c869d264a21ba449d76427314b778f50120048fd3c0000000000",
+    "fee": "1000",
+    "name": "a withdrawal request to a P2WPKH address",
+    "tx": {
+      "authorizations": [
+        {
+          "signature": "bea8702df14e1434bdf263da8d9be8dcde391fa8c8ba3a9c37154fd8a0c47f630b7254fec34b58df442fb9f88356ad7e50d756e4a8e4b8152d92a0f812212c0b",
+          "verifying_key": "9ab9e1ca9691ab9dcf98b851408599ff55a727cda2ecb5416c46be3f7b9be411"
+        }
+      ],
+      "transaction": {
+        "inputs": [
+          [
+            {
+              "Deposit": "0303030303030303030303030303030303030303030303030303030303030303:1"
+            },
+            [
+              81,
+              142,
+              216,
+              122,
+              67,
+              75,
+              149,
+              68,
+              169,
+              91,
+              52,
+              220,
+              120,
+              143,
+              217,
+              82,
+              153,
+              13,
+              179,
+              239,
+              55,
+              46,
+              122,
+              68,
+              0,
+              187,
+              251,
+              196,
+              194,
+              142,
+              231,
+              172
+            ]
+          ]
+        ],
+        "outputs": [
+          {
+            "address": "4Pmyp1gZYtnBZLpH6S1QpUCrKC7j",
+            "content": {
+              "Withdrawal": {
+                "main_address": "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+                "main_fee": 2000,
+                "value": 1000000
+              }
+            }
+          },
+          {
+            "address": "4Pmyp1gZYtnBZLpH6S1QpUCrKC7j",
+            "content": {
+              "Value": 3997000
+            }
+          }
+        ],
+        "proof": {
+          "hashes": [],
+          "targets": []
+        }
+      }
+    },
+    "txid": "1be1243ac59e123e9974852077a0abb3fa9cbe7511932f7116f0517f07ef5473"
+  },
+  {
+    "address": "4Pmyp1gZYtnBZLpH6S1QpUCrKC7j",
+    "borsh": "0200000002030303030303030303030303030303030303030303030303030303030303030301000000518ed87a434b9544a95b34dc788fd952990db3ef372e7a4400bbfbc4c28ee7ac0001010101010101010101010101010101010101010101010101010101010101010000000079baede6a13b9309c4864e9f364049a77d0106c46ee6ccb5889b547b9bf4182702000000f385d2c869d264a21ba449d76427314b778f50120160ec53000000000010270000000000002200000000201863143c14c5166804bd19203356da136c985678cd4d27a1b8c6329604903262f385d2c869d264a21ba449d76427314b778f50120068b8160000000000",
+    "fee": "1000",
+    "name": "a withdrawal request to a P2WSH address",
+    "tx": {
+      "authorizations": [
+        {
+          "signature": "b2b37d677c82ddc5bf347956352238043ded390210ea5af3ae4401372b35c97b81a271b653b58e5c8d75b2e6d26a0baca38638fec92f5daf5f51e29c70f22d08",
+          "verifying_key": "9ab9e1ca9691ab9dcf98b851408599ff55a727cda2ecb5416c46be3f7b9be411"
+        },
+        {
+          "signature": "b2b37d677c82ddc5bf347956352238043ded390210ea5af3ae4401372b35c97b81a271b653b58e5c8d75b2e6d26a0baca38638fec92f5daf5f51e29c70f22d08",
+          "verifying_key": "9ab9e1ca9691ab9dcf98b851408599ff55a727cda2ecb5416c46be3f7b9be411"
+        }
+      ],
+      "transaction": {
+        "inputs": [
+          [
+            {
+              "Deposit": "0303030303030303030303030303030303030303030303030303030303030303:1"
+            },
+            [
+              81,
+              142,
+              216,
+              122,
+              67,
+              75,
+              149,
+              68,
+              169,
+              91,
+              52,
+              220,
+              120,
+              143,
+              217,
+              82,
+              153,
+              13,
+              179,
+              239,
+              55,
+              46,
+              122,
+              68,
+              0,
+              187,
+              251,
+              196,
+              194,
+              142,
+              231,
+              172
+            ]
+          ],
+          [
+            {
+              "Regular": {
+                "txid": "0101010101010101010101010101010101010101010101010101010101010101",
+                "vout": 0
+              }
+            },
+            [
+              121,
+              186,
+              237,
+              230,
+              161,
+              59,
+              147,
+              9,
+              196,
+              134,
+              78,
+              159,
+              54,
+              64,
+              73,
+              167,
+              125,
+              1,
+              6,
+              196,
+              110,
+              230,
+              204,
+              181,
+              136,
+              155,
+              84,
+              123,
+              155,
+              244,
+              24,
+              39
+            ]
+          ]
+        ],
+        "outputs": [
+          {
+            "address": "4Pmyp1gZYtnBZLpH6S1QpUCrKC7j",
+            "content": {
+              "Withdrawal": {
+                "main_address": "bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3",
+                "main_fee": 10000,
+                "value": 5500000
+              }
+            }
+          },
+          {
+            "address": "4Pmyp1gZYtnBZLpH6S1QpUCrKC7j",
+            "content": {
+              "Value": 1489000
+            }
+          }
+        ],
+        "proof": {
+          "hashes": [],
+          "targets": []
+        }
+      }
+    },
+    "txid": "1da41d2099739e2c63664059693e52f68924496a8a3ecd81783c1415fc9011e7"
+  },
+  {
+    "address": "4Pmyp1gZYtnBZLpH6S1QpUCrKC7j",
+    "borsh": "0100000002030303030303030303030303030303030303030303030303030303030303030301000000518ed87a434b9544a95b34dc788fd952990db3ef372e7a4400bbfbc4c28ee7ac02000000f385d2c869d264a21ba449d76427314b778f5012014a01000000000000010000000000000022000000512079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798f385d2c869d264a21ba449d76427314b778f501200f5494c0000000000",
+    "fee": "0",
+    "name": "a withdrawal request to a P2TR address",
+    "tx": {
+      "authorizations": [
+        {
+          "signature": "f289b3244216692889e9cf0a7fbf4d263a841c913b9c2b082a67678182795948fd8a4c3db33dc17f714c8d6a3f44c817dc2fbdcdbda10a23a9b27a7c8e12ae05",
+          "verifying_key": "9ab9e1ca9691ab9dcf98b851408599ff55a727cda2ecb5416c46be3f7b9be411"
+        }
+      ],
+      "transaction": {
+        "inputs": [
+          [
+            {
+              "Deposit": "0303030303030303030303030303030303030303030303030303030303030303:1"
+            },
+            [
+              81,
+              142,
+              216,
+              122,
+              67,
+              75,
+              149,
+              68,
+              169,
+              91,
+              52,
+              220,
+              120,
+              143,
+              217,
+              82,
+              153,
+              13,
+              179,
+              239,
+              55,
+              46,
+              122,
+              68,
+              0,
+              187,
+              251,
+              196,
+              194,
+              142,
+              231,
+              172
+            ]
+          ]
+        ],
+        "outputs": [
+          {
+            "address": "4Pmyp1gZYtnBZLpH6S1QpUCrKC7j",
+            "content": {
+              "Withdrawal": {
+                "main_address": "bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0",
+                "main_fee": 1,
+                "value": 330
+              }
+            }
+          },
+          {
+            "address": "4Pmyp1gZYtnBZLpH6S1QpUCrKC7j",
+            "content": {
+              "Value": 4999669
+            }
+          }
+        ],
+        "proof": {
+          "hashes": [],
+          "targets": []
+        }
+      }
+    },
+    "txid": "2fc6419e7f85b31fe006181b889a9b50124d13d759629771ed9afb521605e58d"
+  },
+  {
+    "address": "4Pmyp1gZYtnBZLpH6S1QpUCrKC7j",
+    "borsh": "010000000001010101010101010101010101010101010101010101010101010101010101010000000079baede6a13b9309c4864e9f364049a77d0106c46ee6ccb5889b547b9bf4182701000000f385d2c869d264a21ba449d76427314b778f501201b07c1e0000000000e8030000000000001900000076a91477bff20c60e522dfaa3350c39b030a5d004e839a88ac",
+    "fee": "1000",
+    "name": "a withdrawal request to a P2PKH address",
+    "tx": {
+      "authorizations": [
+        {
+          "signature": "f493aae2283c91acae039dfc107f9bd0ce1ed866cc94d39b4bd19eccae3c56687fb6410cd079f63527747243eff14b503bbabf7625a6f0185d71c25d8c37c806",
+          "verifying_key": "9ab9e1ca9691ab9dcf98b851408599ff55a727cda2ecb5416c46be3f7b9be411"
+        }
+      ],
+      "transaction": {
+        "inputs": [
+          [
+            {
+              "Regular": {
+                "txid": "0101010101010101010101010101010101010101010101010101010101010101",
+                "vout": 0
+              }
+            },
+            [
+              121,
+              186,
+              237,
+              230,
+              161,
+              59,
+              147,
+              9,
+              196,
+              134,
+              78,
+              159,
+              54,
+              64,
+              73,
+              167,
+              125,
+              1,
+              6,
+              196,
+              110,
+              230,
+              204,
+              181,
+              136,
+              155,
+              84,
+              123,
+              155,
+              244,
+              24,
+              39
+            ]
+          ]
+        ],
+        "outputs": [
+          {
+            "address": "4Pmyp1gZYtnBZLpH6S1QpUCrKC7j",
+            "content": {
+              "Withdrawal": {
+                "main_address": "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2",
+                "main_fee": 1000,
+                "value": 1998000
+              }
+            }
+          }
+        ],
+        "proof": {
+          "hashes": [],
+          "targets": []
+        }
+      }
+    },
+    "txid": "de1537051b916d80766b3055f3034ca3fe2162d80912cba3069592bc621b4498"
+  },
+  {
+    "address": "4Pmyp1gZYtnBZLpH6S1QpUCrKC7j",
+    "borsh": "0300000002030303030303030303030303030303030303030303030303030303030303030301000000518ed87a434b9544a95b34dc788fd952990db3ef372e7a4400bbfbc4c28ee7ac0001010101010101010101010101010101010101010101010101010101010101010000000079baede6a13b9309c4864e9f364049a77d0106c46ee6ccb5889b547b9bf41827010202020202020202020202020202020202020202020202020202020202020202030000004a648883bf05c4627c519a40d855df61e0b23eef7f5c447cd8188e22a8d9f62402000000f385d2c869d264a21ba449d76427314b778f501201c0cf6a0000000000108c04000000000017000000a914b472a266d0bd89c13706a4132ccfb16f7c3b9fcb87f385d2c869d264a21ba449d76427314b778f501200e803000000000000",
+    "fee": "1000",
+    "name": "a withdrawal request to a P2SH address",
+    "tx": {
+      "authorizations": [
+        {
+          "signature": "c055b50741498796e5c686e3dc5e416e5315610e90ba9ee46bd22ba8e0e85466c411d855cef93b5d4fa4aa9d76a7cbf5cc0ba8c75246c526be9f4e2100d2b20e",
+          "verifying_key": "9ab9e1ca9691ab9dcf98b851408599ff55a727cda2ecb5416c46be3f7b9be411"
+        },
+        {
+          "signature": "c055b50741498796e5c686e3dc5e416e5315610e90ba9ee46bd22ba8e0e85466c411d855cef93b5d4fa4aa9d76a7cbf5cc0ba8c75246c526be9f4e2100d2b20e",
+          "verifying_key": "9ab9e1ca9691ab9dcf98b851408599ff55a727cda2ecb5416c46be3f7b9be411"
+        },
+        {
+          "signature": "c055b50741498796e5c686e3dc5e416e5315610e90ba9ee46bd22ba8e0e85466c411d855cef93b5d4fa4aa9d76a7cbf5cc0ba8c75246c526be9f4e2100d2b20e",
+          "verifying_key": "9ab9e1ca9691ab9dcf98b851408599ff55a727cda2ecb5416c46be3f7b9be411"
+        }
+      ],
+      "transaction": {
+        "inputs": [
+          [
+            {
+              "Deposit": "0303030303030303030303030303030303030303030303030303030303030303:1"
+            },
+            [
+              81,
+              142,
+              216,
+              122,
+              67,
+              75,
+              149,
+              68,
+              169,
+              91,
+              52,
+              220,
+              120,
+              143,
+              217,
+              82,
+              153,
+              13,
+              179,
+              239,
+              55,
+              46,
+              122,
+              68,
+              0,
+              187,
+              251,
+              196,
+              194,
+              142,
+              231,
+              172
+            ]
+          ],
+          [
+            {
+              "Regular": {
+                "txid": "0101010101010101010101010101010101010101010101010101010101010101",
+                "vout": 0
+              }
+            },
+            [
+              121,
+              186,
+              237,
+              230,
+              161,
+              59,
+              147,
+              9,
+              196,
+              134,
+              78,
+              159,
+              54,
+              64,
+              73,
+              167,
+              125,
+              1,
+              6,
+              196,
+              110,
+              230,
+              204,
+              181,
+              136,
+              155,
+              84,
+              123,
+              155,
+              244,
+              24,
+              39
+            ]
+          ],
+          [
+            {
+              "Coinbase": {
+                "txid": "0202020202020202020202020202020202020202020202020202020202020202",
+                "vout": 3
+              }
+            },
+            [
+              74,
+              100,
+              136,
+              131,
+              191,
+              5,
+              196,
+              98,
+              124,
+              81,
+              154,
+              64,
+              216,
+              85,
+              223,
+              97,
+              224,
+              178,
+              62,
+              239,
+              127,
+              92,
+              68,
+              124,
+              216,
+              24,
+              142,
+              34,
+              168,
+              217,
+              246,
+              36
+            ]
+          ]
+        ],
+        "outputs": [
+          {
+            "address": "4Pmyp1gZYtnBZLpH6S1QpUCrKC7j",
+            "content": {
+              "Withdrawal": {
+                "main_address": "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy",
+                "main_fee": 298000,
+                "value": 7000000
+              }
+            }
+          },
+          {
+            "address": "4Pmyp1gZYtnBZLpH6S1QpUCrKC7j",
+            "content": {
+              "Value": 1000
+            }
+          }
+        ],
+        "proof": {
+          "hashes": [],
+          "targets": []
+        }
+      }
+    },
+    "txid": "1ed35e3208167fac70e454825d8d3e74f0e32e05cb21474985efb0744f7124e7"
+  }
+]

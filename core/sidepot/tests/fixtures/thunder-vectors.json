@@ -1,0 +1,1553 @@
+{
+  "authorized": [
+    {
+      "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+      "json": {
+        "authorizations": [
+          {
+            "signature": "eaf79d68c50e0993b895db7fc1464a9c823528e6b27a4c3a98f322055279894318453631474b1640b6bf23e6ea6f11f07d51483948e91e3068e186a766258704",
+            "verifying_key": "80a95b72a58fc6fa60c2e06cafd9a0ce083489731841b55dfc20f2687ae08b21"
+          }
+        ],
+        "transaction": {
+          "inputs": [
+            [
+              {
+                "Regular": {
+                  "txid": "aad8e5685e5048d6b49a167176a4c73e608b41aa83abac41cbb2054af7384e2c",
+                  "vout": 0
+                }
+              },
+              [
+                208,
+                119,
+                13,
+                79,
+                121,
+                243,
+                33,
+                29,
+                83,
+                179,
+                40,
+                63,
+                139,
+                247,
+                2,
+                83,
+                89,
+                44,
+                117,
+                175,
+                179,
+                229,
+                233,
+                13,
+                176,
+                156,
+                117,
+                71,
+                2,
+                218,
+                51,
+                151
+              ]
+            ]
+          ],
+          "outputs": [
+            {
+              "address": "4J1rRRiAKd1AaiRsHN49aK1BtDbs",
+              "content": {
+                "Value": 500000
+              }
+            },
+            {
+              "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+              "content": {
+                "Value": 1499000
+              }
+            }
+          ],
+          "proof": {
+            "hashes": [],
+            "targets": []
+          }
+        }
+      },
+      "txid": "8c1793158df0ef5672d85764c81a86216d09c82d5e3757809e361b01c56e022b"
+    },
+    {
+      "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+      "json": {
+        "authorizations": [
+          {
+            "signature": "44da3c4146a1d1939bac7b674e2e707934888a759c60b861833501c2e8f8305fff631957f081a53a42f224aefe2bbca3cf34475e0e5a81340647b53eff5c420c",
+            "verifying_key": "80a95b72a58fc6fa60c2e06cafd9a0ce083489731841b55dfc20f2687ae08b21"
+          },
+          {
+            "signature": "4661d4ddfd1ce7d64bf579ad7e3ba775c625d06b5e118c79915db121c67c232eed6bbebe8cc4cd303db5d9b2d2492f5856a3e865ff4d698f50bafc917aa22409",
+            "verifying_key": "80a95b72a58fc6fa60c2e06cafd9a0ce083489731841b55dfc20f2687ae08b21"
+          },
+          {
+            "signature": "08090ea3f22fbcaa0f51adaa37e4400e8a23e71b180e88ee38e6c6f622067d7b9fdb47d965b5fba67ccb1b4ae5d66c27655c0c0ffe7c8624f236b03482e8c902",
+            "verifying_key": "80a95b72a58fc6fa60c2e06cafd9a0ce083489731841b55dfc20f2687ae08b21"
+          }
+        ],
+        "transaction": {
+          "inputs": [
+            [
+              {
+                "Regular": {
+                  "txid": "aad8e5685e5048d6b49a167176a4c73e608b41aa83abac41cbb2054af7384e2c",
+                  "vout": 0
+                }
+              },
+              [
+                208,
+                119,
+                13,
+                79,
+                121,
+                243,
+                33,
+                29,
+                83,
+                179,
+                40,
+                63,
+                139,
+                247,
+                2,
+                83,
+                89,
+                44,
+                117,
+                175,
+                179,
+                229,
+                233,
+                13,
+                176,
+                156,
+                117,
+                71,
+                2,
+                218,
+                51,
+                151
+              ]
+            ],
+            [
+              {
+                "Coinbase": {
+                  "txid": "365a2efcf6e4186939a2d06f2ba7941b5b959a531e9e8eab3593bffa40b46ef1",
+                  "vout": 0
+                }
+              },
+              [
+                45,
+                193,
+                140,
+                52,
+                44,
+                116,
+                130,
+                161,
+                217,
+                78,
+                232,
+                255,
+                11,
+                102,
+                106,
+                42,
+                136,
+                132,
+                92,
+                150,
+                13,
+                133,
+                169,
+                187,
+                191,
+                198,
+                102,
+                160,
+                172,
+                19,
+                14,
+                242
+              ]
+            ],
+            [
+              {
+                "Deposit": "c4b12cc43583ad5add2864f8e9e01f9062e05b6ddb116078d3ea7a55751fb0dd:0"
+              },
+              [
+                57,
+                11,
+                42,
+                93,
+                121,
+                76,
+                100,
+                109,
+                69,
+                95,
+                154,
+                105,
+                28,
+                15,
+                251,
+                20,
+                159,
+                181,
+                80,
+                33,
+                156,
+                7,
+                212,
+                179,
+                163,
+                224,
+                126,
+                203,
+                6,
+                88,
+                193,
+                37
+              ]
+            ]
+          ],
+          "outputs": [
+            {
+              "address": "4J1rRRiAKd1AaiRsHN49aK1BtDbs",
+              "content": {
+                "Value": 54999000
+              }
+            }
+          ],
+          "proof": {
+            "hashes": [],
+            "targets": []
+          }
+        }
+      },
+      "txid": "d550ae74edf7cf3510eea72a31256b4409c6696c31645ff02231207ce664e299"
+    },
+    {
+      "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+      "json": {
+        "authorizations": [
+          {
+            "signature": "361ca04c38231497b04931e48b2d1df8db95092238803994d2ac77bf234e295d81c158996d3b986fb7a5aa82ff9b7f5fc91c5a623773ab223114a59726da480c",
+            "verifying_key": "80a95b72a58fc6fa60c2e06cafd9a0ce083489731841b55dfc20f2687ae08b21"
+          }
+        ],
+        "transaction": {
+          "inputs": [
+            [
+              {
+                "Coinbase": {
+                  "txid": "365a2efcf6e4186939a2d06f2ba7941b5b959a531e9e8eab3593bffa40b46ef1",
+                  "vout": 0
+                }
+              },
+              [
+                45,
+                193,
+                140,
+                52,
+                44,
+                116,
+                130,
+                161,
+                217,
+                78,
+                232,
+                255,
+                11,
+                102,
+                106,
+                42,
+                136,
+                132,
+                92,
+                150,
+                13,
+                133,
+                169,
+                187,
+                191,
+                198,
+                102,
+                160,
+                172,
+                19,
+                14,
+                242
+              ]
+            ]
+          ],
+          "outputs": [
+            {
+              "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+              "content": {
+                "Withdrawal": {
+                  "main_address": "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080",
+                  "main_fee": 2000,
+                  "value": 1000000
+                }
+              }
+            },
+            {
+              "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+              "content": {
+                "Value": 46997000
+              }
+            }
+          ],
+          "proof": {
+            "hashes": [],
+            "targets": []
+          }
+        }
+      },
+      "txid": "1b52576e0bc0ef64039dff6b6887aa9b340779563ac2496082b00a9dfcdde5c8"
+    },
+    {
+      "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+      "json": {
+        "authorizations": [
+          {
+            "signature": "8028374605dc63d5e59dc15e11f4485818c606709dd0c03d86057ae8ab02ec46e8b448f8c7bbfac7cf94a0c944c24bf255a6079d5c44180ef584da8ec4d24e00",
+            "verifying_key": "80a95b72a58fc6fa60c2e06cafd9a0ce083489731841b55dfc20f2687ae08b21"
+          },
+          {
+            "signature": "7cfe1f951bdae5cf25ad9753db5ab3075fdef85ef10ce34a80fc8ba24821f652e4368430a45e548328d3e686ddccdc393cf115fb2e6e6c49fddc5fb0f78b0f02",
+            "verifying_key": "80a95b72a58fc6fa60c2e06cafd9a0ce083489731841b55dfc20f2687ae08b21"
+          }
+        ],
+        "transaction": {
+          "inputs": [
+            [
+              {
+                "Coinbase": {
+                  "txid": "365a2efcf6e4186939a2d06f2ba7941b5b959a531e9e8eab3593bffa40b46ef1",
+                  "vout": 0
+                }
+              },
+              [
+                45,
+                193,
+                140,
+                52,
+                44,
+                116,
+                130,
+                161,
+                217,
+                78,
+                232,
+                255,
+                11,
+                102,
+                106,
+                42,
+                136,
+                132,
+                92,
+                150,
+                13,
+                133,
+                169,
+                187,
+                191,
+                198,
+                102,
+                160,
+                172,
+                19,
+                14,
+                242
+              ]
+            ],
+            [
+              {
+                "Deposit": "c4b12cc43583ad5add2864f8e9e01f9062e05b6ddb116078d3ea7a55751fb0dd:0"
+              },
+              [
+                57,
+                11,
+                42,
+                93,
+                121,
+                76,
+                100,
+                109,
+                69,
+                95,
+                154,
+                105,
+                28,
+                15,
+                251,
+                20,
+                159,
+                181,
+                80,
+                33,
+                156,
+                7,
+                212,
+                179,
+                163,
+                224,
+                126,
+                203,
+                6,
+                88,
+                193,
+                37
+              ]
+            ]
+          ],
+          "outputs": [
+            {
+              "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+              "content": {
+                "Withdrawal": {
+                  "main_address": "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080",
+                  "main_fee": 500,
+                  "value": 10000
+                }
+              }
+            },
+            {
+              "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+              "content": {
+                "Withdrawal": {
+                  "main_address": "bcrt1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qzf4jry",
+                  "main_fee": 501,
+                  "value": 20000
+                }
+              }
+            },
+            {
+              "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+              "content": {
+                "Withdrawal": {
+                  "main_address": "bcrt1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqc8gma6",
+                  "main_fee": 502,
+                  "value": 30000
+                }
+              }
+            },
+            {
+              "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+              "content": {
+                "Withdrawal": {
+                  "main_address": "mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn",
+                  "main_fee": 503,
+                  "value": 40000
+                }
+              }
+            },
+            {
+              "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+              "content": {
+                "Withdrawal": {
+                  "main_address": "2MzQwSSnBHWHqSAqtTVQ6v47XtaisrJa1Vc",
+                  "main_fee": 504,
+                  "value": 50000
+                }
+              }
+            },
+            {
+              "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+              "content": {
+                "Withdrawal": {
+                  "main_address": "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+                  "main_fee": 505,
+                  "value": 60000
+                }
+              }
+            },
+            {
+              "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+              "content": {
+                "Withdrawal": {
+                  "main_address": "bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3",
+                  "main_fee": 506,
+                  "value": 70000
+                }
+              }
+            },
+            {
+              "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+              "content": {
+                "Withdrawal": {
+                  "main_address": "bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0",
+                  "main_fee": 507,
+                  "value": 80000
+                }
+              }
+            },
+            {
+              "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+              "content": {
+                "Withdrawal": {
+                  "main_address": "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2",
+                  "main_fee": 508,
+                  "value": 90000
+                }
+              }
+            },
+            {
+              "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+              "content": {
+                "Withdrawal": {
+                  "main_address": "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy",
+                  "main_fee": 509,
+                  "value": 100000
+                }
+              }
+            }
+          ],
+          "proof": {
+            "hashes": [],
+            "targets": []
+          }
+        }
+      },
+      "txid": "02c000c51dbf14817cab9fbf63c642a620a49c674a24bc44a8a566fc6607f969"
+    }
+  ],
+  "keys": [
+    {
+      "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+      "addressBytes": "a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae",
+      "depositAddress": "s88_3GFfPDAbKCDsdH6WJoYHE4qZk4wF_43ed8e",
+      "scalar": "c05b9528d40df5f7636d7804325d5da12554fe3a391a9519167eb7e53396590c",
+      "verifyingKey": "80a95b72a58fc6fa60c2e06cafd9a0ce083489731841b55dfc20f2687ae08b21"
+    },
+    {
+      "address": "4J1rRRiAKd1AaiRsHN49aK1BtDbs",
+      "addressBytes": "ec64b2d7709226d76bfd2a300e0d13164d01332e",
+      "depositAddress": "s88_4J1rRRiAKd1AaiRsHN49aK1BtDbs_9af3bd",
+      "scalar": "8ae7264f53423fd5023782858df6474209ca51af62444b5685991a16344c2603",
+      "verifyingKey": "d420ae67f968498436194b7fd65f701584edf5f21c9773b089d454fb47aa5b4e"
+    },
+    {
+      "address": "2ugxGtv2cTreB3T5w6yT6nyUKih1",
+      "addressBytes": "88fc1b2afb41c7c34bc7520d61835280c0387214",
+      "depositAddress": "s88_2ugxGtv2cTreB3T5w6yT6nyUKih1_d36a08",
+      "scalar": "f896cda9aa9a80ed12921308a5bbbc38ca2034674a1a763e5a16786f0f307800",
+      "verifyingKey": "f660aa73847a3ed91b1973510591f08dfc2c91986e9b80a974a7ff1a6074545e"
+    },
+    {
+      "address": "3GWrjgxSDqoJy4DmVb8yqKJRXQQo",
+      "addressBytes": "a2c21e1d1f7a012c2e73f41a22f544fb103cabf0",
+      "depositAddress": "s88_3GWrjgxSDqoJy4DmVb8yqKJRXQQo_4e490c",
+      "scalar": "b9f370892999fc3594fb7a127ba4e5c7084091eba07b1a179381e9b284a2a805",
+      "verifyingKey": "84e858ea479bfc2506f22496c83869c0175b0065f4ee30c9b14dacfa6f2db551"
+    }
+  ],
+  "pointedOutputs": [
+    {
+      "borsh": "00aad8e5685e5048d6b49a167176a4c73e608b41aa83abac41cbb2054af7384e2c00000000a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae0080841e0000000000",
+      "hash": "d0770d4f79f3211d53b3283f8bf70253592c75afb3e5e90db09c754702da3397",
+      "json": {
+        "outpoint": {
+          "Regular": {
+            "txid": "aad8e5685e5048d6b49a167176a4c73e608b41aa83abac41cbb2054af7384e2c",
+            "vout": 0
+          }
+        },
+        "output": {
+          "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+          "content": {
+            "Value": 2000000
+          }
+        }
+      }
+    },
+    {
+      "borsh": "005e2fc6aade0ac1148dc8fc4cb42562e329e6db7c5b7773df85f737cca7a2868401000000a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae000100000000000000",
+      "hash": "bab9a862e1022dde64a15e5c5e90514f0ef8c94070c7a0ec2ec56e9610402d28",
+      "json": {
+        "outpoint": {
+          "Regular": {
+            "txid": "5e2fc6aade0ac1148dc8fc4cb42562e329e6db7c5b7773df85f737cca7a28684",
+            "vout": 1
+          }
+        },
+        "output": {
+          "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+          "content": {
+            "Value": 1
+          }
+        }
+      }
+    },
+    {
+      "borsh": "01365a2efcf6e4186939a2d06f2ba7941b5b959a531e9e8eab3593bffa40b46ef100000000a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae00006cdc0200000000",
+      "hash": "2dc18c342c7482a1d94ee8ff0b666a2a88845c960d85a9bbbfc666a0ac130ef2",
+      "json": {
+        "outpoint": {
+          "Coinbase": {
+            "txid": "365a2efcf6e4186939a2d06f2ba7941b5b959a531e9e8eab3593bffa40b46ef1",
+            "vout": 0
+          }
+        },
+        "output": {
+          "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+          "content": {
+            "Value": 48000000
+          }
+        }
+      }
+    },
+    {
+      "borsh": "01302460e19407565fa8044d219eb21f136f737a46245da0a8e553ddfe0aeeded507000000ec64b2d7709226d76bfd2a300e0d13164d01332e000000000000000000",
+      "hash": "bb2acefb07d2357fbe3daab2cdb4c2d04d40656e973fed1aacd1603abd00db1e",
+      "json": {
+        "outpoint": {
+          "Coinbase": {
+            "txid": "302460e19407565fa8044d219eb21f136f737a46245da0a8e553ddfe0aeeded5",
+            "vout": 7
+          }
+        },
+        "output": {
+          "address": "4J1rRRiAKd1AaiRsHN49aK1BtDbs",
+          "content": {
+            "Value": 0
+          }
+        }
+      }
+    },
+    {
+      "borsh": "02ddb01f75557aead3786011db6d5be062901fe0e9f86428dd5aad8335c42cb1c400000000a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae00404b4c0000000000",
+      "hash": "390b2a5d794c646d455f9a691c0ffb149fb550219c07d4b3a3e07ecb0658c125",
+      "json": {
+        "outpoint": {
+          "Deposit": "c4b12cc43583ad5add2864f8e9e01f9062e05b6ddb116078d3ea7a55751fb0dd:0"
+        },
+        "output": {
+          "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+          "content": {
+            "Value": 5000000
+          }
+        }
+      }
+    },
+    {
+      "borsh": "02be9ab2d5150d7af7c9c84324b53b2a65ce16b7463c72e1e97840a7571401f317ffffffffec64b2d7709226d76bfd2a300e0d13164d01332e009000e459f0750700",
+      "hash": "5217d64a6c853e6af9ae262ba3c9e9a7952a8a3675d29eb8c33171a7d3e5e475",
+      "json": {
+        "outpoint": {
+          "Deposit": "17f3011457a74078e9e1723c46b716ce652a3bb52443c8c9f77a0d15d5b29abe:4294967295"
+        },
+        "output": {
+          "address": "4J1rRRiAKd1AaiRsHN49aK1BtDbs",
+          "content": {
+            "Value": 2099999997690000
+          }
+        }
+      }
+    },
+    {
+      "borsh": "00e1c8d59433f97fbbdb12b33d5866017fe0a6ca5b9334572bcb5ae7db7214114800000100000000000000000000000000000000000000000000ffffffffffffffff",
+      "hash": "6f5fa5e9b617e07aafe77ff2af526320ac3b5d29799c557814b5c6a369e99602",
+      "json": {
+        "outpoint": {
+          "Regular": {
+            "txid": "e1c8d59433f97fbbdb12b33d5866017fe0a6ca5b9334572bcb5ae7db72141148",
+            "vout": 65536
+          }
+        },
+        "output": {
+          "address": "11111111111111111111",
+          "content": {
+            "Value": 18446744073709551615
+          }
+        }
+      }
+    },
+    {
+      "borsh": "003e6145f22633a9005584c24758cb8b38d8ea1df11e4a2b51206a84deebb16f2500000000a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae01a086010000000000e803000000000000160000000014751e76e8199196d454941c45d1b3a323f1433bd6",
+      "hash": "0f3e660351a82c2fe875e94adb3e4ed5f1ded697a63980e02abb0a7581996f93",
+      "json": {
+        "outpoint": {
+          "Regular": {
+            "txid": "3e6145f22633a9005584c24758cb8b38d8ea1df11e4a2b51206a84deebb16f25",
+            "vout": 0
+          }
+        },
+        "output": {
+          "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+          "content": {
+            "Withdrawal": {
+              "main_address": "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080",
+              "main_fee": 1000,
+              "value": 100000
+            }
+          }
+        }
+      }
+    },
+    {
+      "borsh": "003e6145f22633a9005584c24758cb8b38d8ea1df11e4a2b51206a84deebb16f2501000000ec64b2d7709226d76bfd2a300e0d13164d01332e01a186010000000000d0070000000000002200000000201863143c14c5166804bd19203356da136c985678cd4d27a1b8c6329604903262",
+      "hash": "1a3707c89e020f13cb798463ff87e75542a435597f8335a2ea70b51f01e2a172",
+      "json": {
+        "outpoint": {
+          "Regular": {
+            "txid": "3e6145f22633a9005584c24758cb8b38d8ea1df11e4a2b51206a84deebb16f25",
+            "vout": 1
+          }
+        },
+        "output": {
+          "address": "4J1rRRiAKd1AaiRsHN49aK1BtDbs",
+          "content": {
+            "Withdrawal": {
+              "main_address": "bcrt1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qzf4jry",
+              "main_fee": 2000,
+              "value": 100001
+            }
+          }
+        }
+      }
+    },
+    {
+      "borsh": "003e6145f22633a9005584c24758cb8b38d8ea1df11e4a2b51206a84deebb16f2502000000a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae01a286010000000000b80b00000000000022000000512079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "hash": "3bc4cf511aad4543eb967674d3e3735fc8c375a75c2f85d71484c41b7b30acbc",
+      "json": {
+        "outpoint": {
+          "Regular": {
+            "txid": "3e6145f22633a9005584c24758cb8b38d8ea1df11e4a2b51206a84deebb16f25",
+            "vout": 2
+          }
+        },
+        "output": {
+          "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+          "content": {
+            "Withdrawal": {
+              "main_address": "bcrt1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqc8gma6",
+              "main_fee": 3000,
+              "value": 100002
+            }
+          }
+        }
+      }
+    },
+    {
+      "borsh": "003e6145f22633a9005584c24758cb8b38d8ea1df11e4a2b51206a84deebb16f2503000000ec64b2d7709226d76bfd2a300e0d13164d01332e01a386010000000000a00f0000000000001900000076a914243f1394f44554f4ce3fd68649c19adc483ce92488ac",
+      "hash": "d0b42b50bed7f147b6c9e6bd29d9d7c8789e81d1c73b9261096a2f7fd5b51bf1",
+      "json": {
+        "outpoint": {
+          "Regular": {
+            "txid": "3e6145f22633a9005584c24758cb8b38d8ea1df11e4a2b51206a84deebb16f25",
+            "vout": 3
+          }
+        },
+        "output": {
+          "address": "4J1rRRiAKd1AaiRsHN49aK1BtDbs",
+          "content": {
+            "Withdrawal": {
+              "main_address": "mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn",
+              "main_fee": 4000,
+              "value": 100003
+            }
+          }
+        }
+      }
+    },
+    {
+      "borsh": "003e6145f22633a9005584c24758cb8b38d8ea1df11e4a2b51206a84deebb16f2504000000a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae01a486010000000000881300000000000017000000a9144e9f39ca4688ff102128ea4ccda34105324305b087",
+      "hash": "e588694629cdb8770099cf9877233632ca45bcd0b0f359df0c1d96b3ec37fbac",
+      "json": {
+        "outpoint": {
+          "Regular": {
+            "txid": "3e6145f22633a9005584c24758cb8b38d8ea1df11e4a2b51206a84deebb16f25",
+            "vout": 4
+          }
+        },
+        "output": {
+          "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+          "content": {
+            "Withdrawal": {
+              "main_address": "2MzQwSSnBHWHqSAqtTVQ6v47XtaisrJa1Vc",
+              "main_fee": 5000,
+              "value": 100004
+            }
+          }
+        }
+      }
+    },
+    {
+      "borsh": "003e6145f22633a9005584c24758cb8b38d8ea1df11e4a2b51206a84deebb16f2505000000ec64b2d7709226d76bfd2a300e0d13164d01332e01a5860100000000007017000000000000160000000014751e76e8199196d454941c45d1b3a323f1433bd6",
+      "hash": "6fa860bcccfaa8eaeffb2c7c719873efe406402f2944c9ca8c3458e0bfd3fb7f",
+      "json": {
+        "outpoint": {
+          "Regular": {
+            "txid": "3e6145f22633a9005584c24758cb8b38d8ea1df11e4a2b51206a84deebb16f25",
+            "vout": 5
+          }
+        },
+        "output": {
+          "address": "4J1rRRiAKd1AaiRsHN49aK1BtDbs",
+          "content": {
+            "Withdrawal": {
+              "main_address": "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+              "main_fee": 6000,
+              "value": 100005
+            }
+          }
+        }
+      }
+    },
+    {
+      "borsh": "003e6145f22633a9005584c24758cb8b38d8ea1df11e4a2b51206a84deebb16f2506000000a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae01a686010000000000581b0000000000002200000000201863143c14c5166804bd19203356da136c985678cd4d27a1b8c6329604903262",
+      "hash": "d14a5cfbedbba04aefdb407aa9347e79531954ce8ac4885597710a650eeefdd9",
+      "json": {
+        "outpoint": {
+          "Regular": {
+            "txid": "3e6145f22633a9005584c24758cb8b38d8ea1df11e4a2b51206a84deebb16f25",
+            "vout": 6
+          }
+        },
+        "output": {
+          "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+          "content": {
+            "Withdrawal": {
+              "main_address": "bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3",
+              "main_fee": 7000,
+              "value": 100006
+            }
+          }
+        }
+      }
+    },
+    {
+      "borsh": "003e6145f22633a9005584c24758cb8b38d8ea1df11e4a2b51206a84deebb16f2507000000ec64b2d7709226d76bfd2a300e0d13164d01332e01a786010000000000401f00000000000022000000512079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "hash": "2c5a6e439af89afe4bc89568f9c343901ff43029eddcefcd7330d338a70d9b1f",
+      "json": {
+        "outpoint": {
+          "Regular": {
+            "txid": "3e6145f22633a9005584c24758cb8b38d8ea1df11e4a2b51206a84deebb16f25",
+            "vout": 7
+          }
+        },
+        "output": {
+          "address": "4J1rRRiAKd1AaiRsHN49aK1BtDbs",
+          "content": {
+            "Withdrawal": {
+              "main_address": "bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0",
+              "main_fee": 8000,
+              "value": 100007
+            }
+          }
+        }
+      }
+    },
+    {
+      "borsh": "003e6145f22633a9005584c24758cb8b38d8ea1df11e4a2b51206a84deebb16f2508000000a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae01a88601000000000028230000000000001900000076a91477bff20c60e522dfaa3350c39b030a5d004e839a88ac",
+      "hash": "34a73f59ac6db8a304992a7ed15f33202b54798c3140e8939a2910316d42e9e4",
+      "json": {
+        "outpoint": {
+          "Regular": {
+            "txid": "3e6145f22633a9005584c24758cb8b38d8ea1df11e4a2b51206a84deebb16f25",
+            "vout": 8
+          }
+        },
+        "output": {
+          "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+          "content": {
+            "Withdrawal": {
+              "main_address": "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2",
+              "main_fee": 9000,
+              "value": 100008
+            }
+          }
+        }
+      }
+    },
+    {
+      "borsh": "003e6145f22633a9005584c24758cb8b38d8ea1df11e4a2b51206a84deebb16f2509000000ec64b2d7709226d76bfd2a300e0d13164d01332e01a986010000000000102700000000000017000000a914b472a266d0bd89c13706a4132ccfb16f7c3b9fcb87",
+      "hash": "f1cb53509ac48e361aa90267fd1f24c0ad94eadbe038252b9ed5f9758dbbc6e6",
+      "json": {
+        "outpoint": {
+          "Regular": {
+            "txid": "3e6145f22633a9005584c24758cb8b38d8ea1df11e4a2b51206a84deebb16f25",
+            "vout": 9
+          }
+        },
+        "output": {
+          "address": "4J1rRRiAKd1AaiRsHN49aK1BtDbs",
+          "content": {
+            "Withdrawal": {
+              "main_address": "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy",
+              "main_fee": 10000,
+              "value": 100009
+            }
+          }
+        }
+      }
+    }
+  ],
+  "signatures": [
+    {
+      "authorization": {
+        "signature": "904c42a9bb44385dfde7e6a6c4e34d3255e87cfb87431c722c7fb6d9788d73292c8e951b57f5ac2ab6403ae2e473a74db68f36e32da84efed81f6ac9ca079a04",
+        "verifying_key": "80a95b72a58fc6fa60c2e06cafd9a0ce083489731841b55dfc20f2687ae08b21"
+      },
+      "message": "",
+      "scalar": "c05b9528d40df5f7636d7804325d5da12554fe3a391a9519167eb7e53396590c",
+      "signature": "904c42a9bb44385dfde7e6a6c4e34d3255e87cfb87431c722c7fb6d9788d73292c8e951b57f5ac2ab6403ae2e473a74db68f36e32da84efed81f6ac9ca079a04",
+      "verifyingKey": "80a95b72a58fc6fa60c2e06cafd9a0ce083489731841b55dfc20f2687ae08b21"
+    },
+    {
+      "authorization": {
+        "signature": "6400f86d9c8c058da767287ed7a948048418e6bcf942407adcb8c275f64fe32d05665389b153ed6d73bb0d28c828cf7ad1668bff6dbc894df9817ad9a7f5d001",
+        "verifying_key": "80a95b72a58fc6fa60c2e06cafd9a0ce083489731841b55dfc20f2687ae08b21"
+      },
+      "message": "73696465706f74",
+      "scalar": "c05b9528d40df5f7636d7804325d5da12554fe3a391a9519167eb7e53396590c",
+      "signature": "6400f86d9c8c058da767287ed7a948048418e6bcf942407adcb8c275f64fe32d05665389b153ed6d73bb0d28c828cf7ad1668bff6dbc894df9817ad9a7f5d001",
+      "verifyingKey": "80a95b72a58fc6fa60c2e06cafd9a0ce083489731841b55dfc20f2687ae08b21"
+    },
+    {
+      "authorization": {
+        "signature": "88c7c6182c5a3d46c123ead7ad5955b41710a98110083b34ffe2b44246a73d38fc36b454ff39f57736c7420d464f0adaf64229d3c41ad3986bc8a93d9c9fb70e",
+        "verifying_key": "80a95b72a58fc6fa60c2e06cafd9a0ce083489731841b55dfc20f2687ae08b21"
+      },
+      "message": "0100000000aad8e5685e5048d6b49a167176a4c73e608b41aa83abac41cbb2054af7384e2c00000000d0770d4f79f3211d53b3283f8bf70253592c75afb3e5e90db09c754702da339702000000ec64b2d7709226d76bfd2a300e0d13164d01332e0020a1070000000000a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae0078df160000000000",
+      "scalar": "c05b9528d40df5f7636d7804325d5da12554fe3a391a9519167eb7e53396590c",
+      "signature": "88c7c6182c5a3d46c123ead7ad5955b41710a98110083b34ffe2b44246a73d38fc36b454ff39f57736c7420d464f0adaf64229d3c41ad3986bc8a93d9c9fb70e",
+      "verifyingKey": "80a95b72a58fc6fa60c2e06cafd9a0ce083489731841b55dfc20f2687ae08b21"
+    },
+    {
+      "authorization": {
+        "signature": "6423481f7ee80aa5b97e39a7248ad0b6f4c5ed7fdee071e532e347fdae1bf835e6cea20849d91c7726510d558a3bc5a9461a6e9e25268d0f66a3f3d94097a50e",
+        "verifying_key": "80a95b72a58fc6fa60c2e06cafd9a0ce083489731841b55dfc20f2687ae08b21"
+      },
+      "message": "ed26828f578cb616059cbc6e5b371425297c1bafc7a2be1e34515c16cb1ddcee8974064c95998cdb58042224be96ee9995f1aa7c1d7c94a97cc712a56f278ac41d19aaad4bc08601d2d68ad84a5564c468d4d6fb08d1eaeb0df46b798db6b3726ff4b738c582cab88075702368dc53d7910290872f2bbfe845ee779cc69628302df89bbf367be2d849d6b9cf40b038d019b21f14937f24aef1e8581478e40a0b36822a1e5fd389f6cfc3d6f4e5b9e16b3d24a57775a55b4d0219f68cc3a74f4f6eb3d1f31a5a2801a7a0e257d33939652b60bb23d7b70c60c0967cd0230a1ce05c190abd081719df81799c0b79806b147e16507d4b893b486b79f310a4d1dbac722550585b259c45346cd8f90a8251cb053d01098bea76167575342d85cf10eb7043366f5aa38d27ab0ed2c1",
+      "scalar": "c05b9528d40df5f7636d7804325d5da12554fe3a391a9519167eb7e53396590c",
+      "signature": "6423481f7ee80aa5b97e39a7248ad0b6f4c5ed7fdee071e532e347fdae1bf835e6cea20849d91c7726510d558a3bc5a9461a6e9e25268d0f66a3f3d94097a50e",
+      "verifyingKey": "80a95b72a58fc6fa60c2e06cafd9a0ce083489731841b55dfc20f2687ae08b21"
+    },
+    {
+      "authorization": {
+        "signature": "ac806a80a94903f1b110c5d36db3ca115e8394546532a4172cab957d22a08a6aea1c9de5b4984ccb4d65c48467b4b9b6aae73077dbd2610a7e57c3cd0911aa0f",
+        "verifying_key": "d420ae67f968498436194b7fd65f701584edf5f21c9773b089d454fb47aa5b4e"
+      },
+      "message": "",
+      "scalar": "8ae7264f53423fd5023782858df6474209ca51af62444b5685991a16344c2603",
+      "signature": "ac806a80a94903f1b110c5d36db3ca115e8394546532a4172cab957d22a08a6aea1c9de5b4984ccb4d65c48467b4b9b6aae73077dbd2610a7e57c3cd0911aa0f",
+      "verifyingKey": "d420ae67f968498436194b7fd65f701584edf5f21c9773b089d454fb47aa5b4e"
+    },
+    {
+      "authorization": {
+        "signature": "98aa9d40aebaf0dbf76d844f855a24d768c74c1a9f254e87397f0aaf5e5ae95176775d4e9c69654685228a9b36ef2a27418196ad302dfa173590f35ce5ac080b",
+        "verifying_key": "d420ae67f968498436194b7fd65f701584edf5f21c9773b089d454fb47aa5b4e"
+      },
+      "message": "73696465706f74",
+      "scalar": "8ae7264f53423fd5023782858df6474209ca51af62444b5685991a16344c2603",
+      "signature": "98aa9d40aebaf0dbf76d844f855a24d768c74c1a9f254e87397f0aaf5e5ae95176775d4e9c69654685228a9b36ef2a27418196ad302dfa173590f35ce5ac080b",
+      "verifyingKey": "d420ae67f968498436194b7fd65f701584edf5f21c9773b089d454fb47aa5b4e"
+    },
+    {
+      "authorization": {
+        "signature": "74912a34ef076184c6171a319d5487c502bf54421f5a52da0111900b340980728dde1be82f4dec6fc459d1feda2e4f474c9915e592f5ca2f9186420674b4ba09",
+        "verifying_key": "d420ae67f968498436194b7fd65f701584edf5f21c9773b089d454fb47aa5b4e"
+      },
+      "message": "0100000000aad8e5685e5048d6b49a167176a4c73e608b41aa83abac41cbb2054af7384e2c00000000d0770d4f79f3211d53b3283f8bf70253592c75afb3e5e90db09c754702da339702000000ec64b2d7709226d76bfd2a300e0d13164d01332e0020a1070000000000a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae0078df160000000000",
+      "scalar": "8ae7264f53423fd5023782858df6474209ca51af62444b5685991a16344c2603",
+      "signature": "74912a34ef076184c6171a319d5487c502bf54421f5a52da0111900b340980728dde1be82f4dec6fc459d1feda2e4f474c9915e592f5ca2f9186420674b4ba09",
+      "verifyingKey": "d420ae67f968498436194b7fd65f701584edf5f21c9773b089d454fb47aa5b4e"
+    },
+    {
+      "authorization": {
+        "signature": "344c86f6c8400704ce506871d4d515d116bcf35c020ebccb0f8a22ba1564cb0823b6811f0202127ebc624bcf7c5c92248141c2960311cf757ccc01677345dd0f",
+        "verifying_key": "d420ae67f968498436194b7fd65f701584edf5f21c9773b089d454fb47aa5b4e"
+      },
+      "message": "ed26828f578cb616059cbc6e5b371425297c1bafc7a2be1e34515c16cb1ddcee8974064c95998cdb58042224be96ee9995f1aa7c1d7c94a97cc712a56f278ac41d19aaad4bc08601d2d68ad84a5564c468d4d6fb08d1eaeb0df46b798db6b3726ff4b738c582cab88075702368dc53d7910290872f2bbfe845ee779cc69628302df89bbf367be2d849d6b9cf40b038d019b21f14937f24aef1e8581478e40a0b36822a1e5fd389f6cfc3d6f4e5b9e16b3d24a57775a55b4d0219f68cc3a74f4f6eb3d1f31a5a2801a7a0e257d33939652b60bb23d7b70c60c0967cd0230a1ce05c190abd081719df81799c0b79806b147e16507d4b893b486b79f310a4d1dbac722550585b259c45346cd8f90a8251cb053d01098bea76167575342d85cf10eb7043366f5aa38d27ab0ed2c1",
+      "scalar": "8ae7264f53423fd5023782858df6474209ca51af62444b5685991a16344c2603",
+      "signature": "344c86f6c8400704ce506871d4d515d116bcf35c020ebccb0f8a22ba1564cb0823b6811f0202127ebc624bcf7c5c92248141c2960311cf757ccc01677345dd0f",
+      "verifyingKey": "d420ae67f968498436194b7fd65f701584edf5f21c9773b089d454fb47aa5b4e"
+    },
+    {
+      "authorization": {
+        "signature": "bca373d2e4579f6ce39e2fdc184424800c6c542c9c8ad5bbc7ffac4976e578314810a8405433b5351197296e1d2f1c408e39e8a8518de628fe7b2fc31ce99508",
+        "verifying_key": "f660aa73847a3ed91b1973510591f08dfc2c91986e9b80a974a7ff1a6074545e"
+      },
+      "message": "",
+      "scalar": "f896cda9aa9a80ed12921308a5bbbc38ca2034674a1a763e5a16786f0f307800",
+      "signature": "bca373d2e4579f6ce39e2fdc184424800c6c542c9c8ad5bbc7ffac4976e578314810a8405433b5351197296e1d2f1c408e39e8a8518de628fe7b2fc31ce99508",
+      "verifyingKey": "f660aa73847a3ed91b1973510591f08dfc2c91986e9b80a974a7ff1a6074545e"
+    },
+    {
+      "authorization": {
+        "signature": "9e7c704a0a90c766029eb266285bced66599c260df812b4c7fee3850667696481ba2f0cdcd9aff24390d4ec44b87fe9e414c91132c3dd6a0ff3e327a036ab70d",
+        "verifying_key": "f660aa73847a3ed91b1973510591f08dfc2c91986e9b80a974a7ff1a6074545e"
+      },
+      "message": "73696465706f74",
+      "scalar": "f896cda9aa9a80ed12921308a5bbbc38ca2034674a1a763e5a16786f0f307800",
+      "signature": "9e7c704a0a90c766029eb266285bced66599c260df812b4c7fee3850667696481ba2f0cdcd9aff24390d4ec44b87fe9e414c91132c3dd6a0ff3e327a036ab70d",
+      "verifyingKey": "f660aa73847a3ed91b1973510591f08dfc2c91986e9b80a974a7ff1a6074545e"
+    },
+    {
+      "authorization": {
+        "signature": "f01d5566adb96a3402d90abd03f41d09715a31db08472207e5b2a3a01d91e13b8e0d174cc5a8d5dc03c85b1c7520f5e70faaa33995fc839931de3e858463560c",
+        "verifying_key": "f660aa73847a3ed91b1973510591f08dfc2c91986e9b80a974a7ff1a6074545e"
+      },
+      "message": "0100000000aad8e5685e5048d6b49a167176a4c73e608b41aa83abac41cbb2054af7384e2c00000000d0770d4f79f3211d53b3283f8bf70253592c75afb3e5e90db09c754702da339702000000ec64b2d7709226d76bfd2a300e0d13164d01332e0020a1070000000000a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae0078df160000000000",
+      "scalar": "f896cda9aa9a80ed12921308a5bbbc38ca2034674a1a763e5a16786f0f307800",
+      "signature": "f01d5566adb96a3402d90abd03f41d09715a31db08472207e5b2a3a01d91e13b8e0d174cc5a8d5dc03c85b1c7520f5e70faaa33995fc839931de3e858463560c",
+      "verifyingKey": "f660aa73847a3ed91b1973510591f08dfc2c91986e9b80a974a7ff1a6074545e"
+    },
+    {
+      "authorization": {
+        "signature": "5c773398b06de34c027567e7afdf02a4f9a1bc0b14ccc235882d9b0872f2a10966cf297fe86cc1110a4ff2f02cd0b1824e5a1da25f4085f74f9a379073862201",
+        "verifying_key": "f660aa73847a3ed91b1973510591f08dfc2c91986e9b80a974a7ff1a6074545e"
+      },
+      "message": "ed26828f578cb616059cbc6e5b371425297c1bafc7a2be1e34515c16cb1ddcee8974064c95998cdb58042224be96ee9995f1aa7c1d7c94a97cc712a56f278ac41d19aaad4bc08601d2d68ad84a5564c468d4d6fb08d1eaeb0df46b798db6b3726ff4b738c582cab88075702368dc53d7910290872f2bbfe845ee779cc69628302df89bbf367be2d849d6b9cf40b038d019b21f14937f24aef1e8581478e40a0b36822a1e5fd389f6cfc3d6f4e5b9e16b3d24a57775a55b4d0219f68cc3a74f4f6eb3d1f31a5a2801a7a0e257d33939652b60bb23d7b70c60c0967cd0230a1ce05c190abd081719df81799c0b79806b147e16507d4b893b486b79f310a4d1dbac722550585b259c45346cd8f90a8251cb053d01098bea76167575342d85cf10eb7043366f5aa38d27ab0ed2c1",
+      "scalar": "f896cda9aa9a80ed12921308a5bbbc38ca2034674a1a763e5a16786f0f307800",
+      "signature": "5c773398b06de34c027567e7afdf02a4f9a1bc0b14ccc235882d9b0872f2a10966cf297fe86cc1110a4ff2f02cd0b1824e5a1da25f4085f74f9a379073862201",
+      "verifyingKey": "f660aa73847a3ed91b1973510591f08dfc2c91986e9b80a974a7ff1a6074545e"
+    },
+    {
+      "authorization": {
+        "signature": "b4dcdabd040e4a4ed235cd8d467eb62bbdaf4a9ec0a51e9de604cab1a54dae62ee07b356b524eed327bb7cd191bc6ac4fe7d0317446e599451ce766b9c58f707",
+        "verifying_key": "84e858ea479bfc2506f22496c83869c0175b0065f4ee30c9b14dacfa6f2db551"
+      },
+      "message": "",
+      "scalar": "b9f370892999fc3594fb7a127ba4e5c7084091eba07b1a179381e9b284a2a805",
+      "signature": "b4dcdabd040e4a4ed235cd8d467eb62bbdaf4a9ec0a51e9de604cab1a54dae62ee07b356b524eed327bb7cd191bc6ac4fe7d0317446e599451ce766b9c58f707",
+      "verifyingKey": "84e858ea479bfc2506f22496c83869c0175b0065f4ee30c9b14dacfa6f2db551"
+    },
+    {
+      "authorization": {
+        "signature": "e2bf0a584308044c8f8f8ac5471b643a4a7bf80229f057ece28768dc28598a4a87dbdba592c8db83e9711541977a6be8c08e9b382d65d8f0136bac67c40b1302",
+        "verifying_key": "84e858ea479bfc2506f22496c83869c0175b0065f4ee30c9b14dacfa6f2db551"
+      },
+      "message": "73696465706f74",
+      "scalar": "b9f370892999fc3594fb7a127ba4e5c7084091eba07b1a179381e9b284a2a805",
+      "signature": "e2bf0a584308044c8f8f8ac5471b643a4a7bf80229f057ece28768dc28598a4a87dbdba592c8db83e9711541977a6be8c08e9b382d65d8f0136bac67c40b1302",
+      "verifyingKey": "84e858ea479bfc2506f22496c83869c0175b0065f4ee30c9b14dacfa6f2db551"
+    },
+    {
+      "authorization": {
+        "signature": "a2afb17bad36212380d78078c1b3ab83a99a069170a68007d67c4eab2efbdf7dc6b38e45f7372f7449b3820277c6cc436bd64899e8df3f4e4d3a10b805e27303",
+        "verifying_key": "84e858ea479bfc2506f22496c83869c0175b0065f4ee30c9b14dacfa6f2db551"
+      },
+      "message": "0100000000aad8e5685e5048d6b49a167176a4c73e608b41aa83abac41cbb2054af7384e2c00000000d0770d4f79f3211d53b3283f8bf70253592c75afb3e5e90db09c754702da339702000000ec64b2d7709226d76bfd2a300e0d13164d01332e0020a1070000000000a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae0078df160000000000",
+      "scalar": "b9f370892999fc3594fb7a127ba4e5c7084091eba07b1a179381e9b284a2a805",
+      "signature": "a2afb17bad36212380d78078c1b3ab83a99a069170a68007d67c4eab2efbdf7dc6b38e45f7372f7449b3820277c6cc436bd64899e8df3f4e4d3a10b805e27303",
+      "verifyingKey": "84e858ea479bfc2506f22496c83869c0175b0065f4ee30c9b14dacfa6f2db551"
+    },
+    {
+      "authorization": {
+        "signature": "0e34266f8305d7f74f1c96e2453c0b1ecccfe7a955c2adc0d1a2b830a8c5e31bb5eaf987f8768272e24d801a823b6ed0d300d9100058eef014adb18281ea6a0e",
+        "verifying_key": "84e858ea479bfc2506f22496c83869c0175b0065f4ee30c9b14dacfa6f2db551"
+      },
+      "message": "ed26828f578cb616059cbc6e5b371425297c1bafc7a2be1e34515c16cb1ddcee8974064c95998cdb58042224be96ee9995f1aa7c1d7c94a97cc712a56f278ac41d19aaad4bc08601d2d68ad84a5564c468d4d6fb08d1eaeb0df46b798db6b3726ff4b738c582cab88075702368dc53d7910290872f2bbfe845ee779cc69628302df89bbf367be2d849d6b9cf40b038d019b21f14937f24aef1e8581478e40a0b36822a1e5fd389f6cfc3d6f4e5b9e16b3d24a57775a55b4d0219f68cc3a74f4f6eb3d1f31a5a2801a7a0e257d33939652b60bb23d7b70c60c0967cd0230a1ce05c190abd081719df81799c0b79806b147e16507d4b893b486b79f310a4d1dbac722550585b259c45346cd8f90a8251cb053d01098bea76167575342d85cf10eb7043366f5aa38d27ab0ed2c1",
+      "scalar": "b9f370892999fc3594fb7a127ba4e5c7084091eba07b1a179381e9b284a2a805",
+      "signature": "0e34266f8305d7f74f1c96e2453c0b1ecccfe7a955c2adc0d1a2b830a8c5e31bb5eaf987f8768272e24d801a823b6ed0d300d9100058eef014adb18281ea6a0e",
+      "verifyingKey": "84e858ea479bfc2506f22496c83869c0175b0065f4ee30c9b14dacfa6f2db551"
+    }
+  ],
+  "source": "thunder_types (the Sidepot node, branch sidepot), by core/sidepot/thunder-vectors",
+  "transactions": [
+    {
+      "borsh": "0000000000000000",
+      "json": {
+        "inputs": [],
+        "outputs": [],
+        "proof": {
+          "hashes": [],
+          "targets": []
+        }
+      },
+      "txid": "71e0a99173564931c0b8acc52d2685a8e39c64dc52e3d02390fdac2a12b155cb"
+    },
+    {
+      "borsh": "0100000000aad8e5685e5048d6b49a167176a4c73e608b41aa83abac41cbb2054af7384e2c00000000d0770d4f79f3211d53b3283f8bf70253592c75afb3e5e90db09c754702da339702000000ec64b2d7709226d76bfd2a300e0d13164d01332e0020a1070000000000a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae0078df160000000000",
+      "json": {
+        "inputs": [
+          [
+            {
+              "Regular": {
+                "txid": "aad8e5685e5048d6b49a167176a4c73e608b41aa83abac41cbb2054af7384e2c",
+                "vout": 0
+              }
+            },
+            [
+              208,
+              119,
+              13,
+              79,
+              121,
+              243,
+              33,
+              29,
+              83,
+              179,
+              40,
+              63,
+              139,
+              247,
+              2,
+              83,
+              89,
+              44,
+              117,
+              175,
+              179,
+              229,
+              233,
+              13,
+              176,
+              156,
+              117,
+              71,
+              2,
+              218,
+              51,
+              151
+            ]
+          ]
+        ],
+        "outputs": [
+          {
+            "address": "4J1rRRiAKd1AaiRsHN49aK1BtDbs",
+            "content": {
+              "Value": 500000
+            }
+          },
+          {
+            "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+            "content": {
+              "Value": 1499000
+            }
+          }
+        ],
+        "proof": {
+          "hashes": [],
+          "targets": []
+        }
+      },
+      "txid": "8c1793158df0ef5672d85764c81a86216d09c82d5e3757809e361b01c56e022b"
+    },
+    {
+      "borsh": "0300000000aad8e5685e5048d6b49a167176a4c73e608b41aa83abac41cbb2054af7384e2c00000000d0770d4f79f3211d53b3283f8bf70253592c75afb3e5e90db09c754702da339701365a2efcf6e4186939a2d06f2ba7941b5b959a531e9e8eab3593bffa40b46ef1000000002dc18c342c7482a1d94ee8ff0b666a2a88845c960d85a9bbbfc666a0ac130ef202ddb01f75557aead3786011db6d5be062901fe0e9f86428dd5aad8335c42cb1c400000000390b2a5d794c646d455f9a691c0ffb149fb550219c07d4b3a3e07ecb0658c12501000000ec64b2d7709226d76bfd2a300e0d13164d01332e00d837470300000000",
+      "json": {
+        "inputs": [
+          [
+            {
+              "Regular": {
+                "txid": "aad8e5685e5048d6b49a167176a4c73e608b41aa83abac41cbb2054af7384e2c",
+                "vout": 0
+              }
+            },
+            [
+              208,
+              119,
+              13,
+              79,
+              121,
+              243,
+              33,
+              29,
+              83,
+              179,
+              40,
+              63,
+              139,
+              247,
+              2,
+              83,
+              89,
+              44,
+              117,
+              175,
+              179,
+              229,
+              233,
+              13,
+              176,
+              156,
+              117,
+              71,
+              2,
+              218,
+              51,
+              151
+            ]
+          ],
+          [
+            {
+              "Coinbase": {
+                "txid": "365a2efcf6e4186939a2d06f2ba7941b5b959a531e9e8eab3593bffa40b46ef1",
+                "vout": 0
+              }
+            },
+            [
+              45,
+              193,
+              140,
+              52,
+              44,
+              116,
+              130,
+              161,
+              217,
+              78,
+              232,
+              255,
+              11,
+              102,
+              106,
+              42,
+              136,
+              132,
+              92,
+              150,
+              13,
+              133,
+              169,
+              187,
+              191,
+              198,
+              102,
+              160,
+              172,
+              19,
+              14,
+              242
+            ]
+          ],
+          [
+            {
+              "Deposit": "c4b12cc43583ad5add2864f8e9e01f9062e05b6ddb116078d3ea7a55751fb0dd:0"
+            },
+            [
+              57,
+              11,
+              42,
+              93,
+              121,
+              76,
+              100,
+              109,
+              69,
+              95,
+              154,
+              105,
+              28,
+              15,
+              251,
+              20,
+              159,
+              181,
+              80,
+              33,
+              156,
+              7,
+              212,
+              179,
+              163,
+              224,
+              126,
+              203,
+              6,
+              88,
+              193,
+              37
+            ]
+          ]
+        ],
+        "outputs": [
+          {
+            "address": "4J1rRRiAKd1AaiRsHN49aK1BtDbs",
+            "content": {
+              "Value": 54999000
+            }
+          }
+        ],
+        "proof": {
+          "hashes": [],
+          "targets": []
+        }
+      },
+      "txid": "d550ae74edf7cf3510eea72a31256b4409c6696c31645ff02231207ce664e299"
+    },
+    {
+      "borsh": "0100000001365a2efcf6e4186939a2d06f2ba7941b5b959a531e9e8eab3593bffa40b46ef1000000002dc18c342c7482a1d94ee8ff0b666a2a88845c960d85a9bbbfc666a0ac130ef202000000a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae0140420f0000000000d007000000000000160000000014751e76e8199196d454941c45d1b3a323f1433bd6a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae00081ecd0200000000",
+      "json": {
+        "inputs": [
+          [
+            {
+              "Coinbase": {
+                "txid": "365a2efcf6e4186939a2d06f2ba7941b5b959a531e9e8eab3593bffa40b46ef1",
+                "vout": 0
+              }
+            },
+            [
+              45,
+              193,
+              140,
+              52,
+              44,
+              116,
+              130,
+              161,
+              217,
+              78,
+              232,
+              255,
+              11,
+              102,
+              106,
+              42,
+              136,
+              132,
+              92,
+              150,
+              13,
+              133,
+              169,
+              187,
+              191,
+              198,
+              102,
+              160,
+              172,
+              19,
+              14,
+              242
+            ]
+          ]
+        ],
+        "outputs": [
+          {
+            "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+            "content": {
+              "Withdrawal": {
+                "main_address": "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080",
+                "main_fee": 2000,
+                "value": 1000000
+              }
+            }
+          },
+          {
+            "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+            "content": {
+              "Value": 46997000
+            }
+          }
+        ],
+        "proof": {
+          "hashes": [],
+          "targets": []
+        }
+      },
+      "txid": "1b52576e0bc0ef64039dff6b6887aa9b340779563ac2496082b00a9dfcdde5c8"
+    },
+    {
+      "borsh": "0200000001365a2efcf6e4186939a2d06f2ba7941b5b959a531e9e8eab3593bffa40b46ef1000000002dc18c342c7482a1d94ee8ff0b666a2a88845c960d85a9bbbfc666a0ac130ef202ddb01f75557aead3786011db6d5be062901fe0e9f86428dd5aad8335c42cb1c400000000390b2a5d794c646d455f9a691c0ffb149fb550219c07d4b3a3e07ecb0658c1250a000000a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae011027000000000000f401000000000000160000000014751e76e8199196d454941c45d1b3a323f1433bd6a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae01204e000000000000f5010000000000002200000000201863143c14c5166804bd19203356da136c985678cd4d27a1b8c6329604903262a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae013075000000000000f60100000000000022000000512079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae01409c000000000000f7010000000000001900000076a914243f1394f44554f4ce3fd68649c19adc483ce92488aca26f1ceca7b3ba1b3a300092edaa8b4be611e9ae0150c3000000000000f80100000000000017000000a9144e9f39ca4688ff102128ea4ccda34105324305b087a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae0160ea000000000000f901000000000000160000000014751e76e8199196d454941c45d1b3a323f1433bd6a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae017011010000000000fa010000000000002200000000201863143c14c5166804bd19203356da136c985678cd4d27a1b8c6329604903262a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae018038010000000000fb0100000000000022000000512079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798a26f1ceca7b3ba1b3a300092edaa8b4be611e9ae01905f010000000000fc010000000000001900000076a91477bff20c60e522dfaa3350c39b030a5d004e839a88aca26f1ceca7b3ba1b3a300092edaa8b4be611e9ae01a086010000000000fd0100000000000017000000a914b472a266d0bd89c13706a4132ccfb16f7c3b9fcb87",
+      "json": {
+        "inputs": [
+          [
+            {
+              "Coinbase": {
+                "txid": "365a2efcf6e4186939a2d06f2ba7941b5b959a531e9e8eab3593bffa40b46ef1",
+                "vout": 0
+              }
+            },
+            [
+              45,
+              193,
+              140,
+              52,
+              44,
+              116,
+              130,
+              161,
+              217,
+              78,
+              232,
+              255,
+              11,
+              102,
+              106,
+              42,
+              136,
+              132,
+              92,
+              150,
+              13,
+              133,
+              169,
+              187,
+              191,
+              198,
+              102,
+              160,
+              172,
+              19,
+              14,
+              242
+            ]
+          ],
+          [
+            {
+              "Deposit": "c4b12cc43583ad5add2864f8e9e01f9062e05b6ddb116078d3ea7a55751fb0dd:0"
+            },
+            [
+              57,
+              11,
+              42,
+              93,
+              121,
+              76,
+              100,
+              109,
+              69,
+              95,
+              154,
+              105,
+              28,
+              15,
+              251,
+              20,
+              159,
+              181,
+              80,
+              33,
+              156,
+              7,
+              212,
+              179,
+              163,
+              224,
+              126,
+              203,
+              6,
+              88,
+              193,
+              37
+            ]
+          ]
+        ],
+        "outputs": [
+          {
+            "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+            "content": {
+              "Withdrawal": {
+                "main_address": "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080",
+                "main_fee": 500,
+                "value": 10000
+              }
+            }
+          },
+          {
+            "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+            "content": {
+              "Withdrawal": {
+                "main_address": "bcrt1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qzf4jry",
+                "main_fee": 501,
+                "value": 20000
+              }
+            }
+          },
+          {
+            "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+            "content": {
+              "Withdrawal": {
+                "main_address": "bcrt1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqc8gma6",
+                "main_fee": 502,
+                "value": 30000
+              }
+            }
+          },
+          {
+            "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+            "content": {
+              "Withdrawal": {
+                "main_address": "mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn",
+                "main_fee": 503,
+                "value": 40000
+              }
+            }
+          },
+          {
+            "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+            "content": {
+              "Withdrawal": {
+                "main_address": "2MzQwSSnBHWHqSAqtTVQ6v47XtaisrJa1Vc",
+                "main_fee": 504,
+                "value": 50000
+              }
+            }
+          },
+          {
+            "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+            "content": {
+              "Withdrawal": {
+                "main_address": "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+                "main_fee": 505,
+                "value": 60000
+              }
+            }
+          },
+          {
+            "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+            "content": {
+              "Withdrawal": {
+                "main_address": "bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3",
+                "main_fee": 506,
+                "value": 70000
+              }
+            }
+          },
+          {
+            "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+            "content": {
+              "Withdrawal": {
+                "main_address": "bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0",
+                "main_fee": 507,
+                "value": 80000
+              }
+            }
+          },
+          {
+            "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+            "content": {
+              "Withdrawal": {
+                "main_address": "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2",
+                "main_fee": 508,
+                "value": 90000
+              }
+            }
+          },
+          {
+            "address": "3GFfPDAbKCDsdH6WJoYHE4qZk4wF",
+            "content": {
+              "Withdrawal": {
+                "main_address": "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy",
+                "main_fee": 509,
+                "value": 100000
+              }
+            }
+          }
+        ],
+        "proof": {
+          "hashes": [],
+          "targets": []
+        }
+      },
+      "txid": "02c000c51dbf14817cab9fbf63c642a620a49c674a24bc44a8a566fc6607f969"
+    }
+  ]
+}

@@ -4,14 +4,20 @@ version = "0.0.0"
 edition.workspace = true
 publish.workspace = true
 license.workspace = true
-description = "The Sidepot Chain Module (Slot 88): a game account key from the Slot's Starter, and signed entries. Pure Rust, no I/O, no ambient randomness."
+description = "The Sidepot Chain Module (Slot 88): a game account key from the Slot's Starter and signed entries; a Sidepot address and its coins' spends. Pure Rust, no I/O, no ambient randomness."
 
 [dependencies]
 ecx-chain-entry = { path = "../chain-entry" }
 # Exact pins (spec #18, Build), as in ecx-vault, ecx-l1 and ecx-flush.
+bech32 = { version = "=0.11.0" }
 bip39 = { version = "=2.2.2", default-features = false, features = ["std"] }
 bitcoin = { version = "=0.32.102", default-features = false, features = ["std"] }
 # Only here to switch libsecp256k1 to its `lowmemory` build (small precomputed tables).
 secp256k1 = { version = "=0.29.1", default-features = false, features = ["std", "lowmemory"] }
+# The Sidepot sidechain's own primitives (docs/adr/0022), as its node has them: BLAKE3 for addresses,
+# hashes and txids, and ristretto255 for signatures (the node's curve25519-dalek, without its tables).
+# `pure`: BLAKE3's portable Rust, no C or assembly.
+blake3 = { version = "=1.8.5", default-features = false, features = ["pure"] }
+curve25519-dalek = { version = "=5.0.0", default-features = false }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = { version = "=1.0.154" }

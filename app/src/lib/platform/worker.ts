@@ -79,8 +79,15 @@ self.addEventListener("message", (event: MessageEvent<ToWorker>) => {
       // Separate pages have separate routers, but spend the same IndexedDB-backed wallet.
       // Hold an origin-wide lock for the coins' chain through approval and committed spend
       // records. Deposits share L1 coins, regardless of their destination Slot, and the main chain's
-      // Send (no `slot`) spends them too.
-      const spending = m.message?.kind === "send.start" || m.message?.kind === "deposit.start" ? m.message : undefined;
+      // Send (no `slot`) spends them too. A spend of the wallet's Sidepot coins (docs/adr/0022) takes
+      // a lock of its own: no other spend takes those coins.
+      const spending = m.message?.kind === "send.start" || m.message?.kind === "deposit.start" || m.message?.kind === "coins.spend" ? m.message : undefined;
+      const lock =
+        spending === undefined
+          ? ""
+          : spending.kind === "coins.spend"
+            ? `ecx-wallet:spend:coins:${Number(spending.slot)}`
+            : `ecx-wallet:spend:${spending.kind === "send.start" && spending.slot !== undefined ? Number(spending.slot) : "l1"}`;
       const controller = new AbortController();
       const port = spending?.host
         ? [...ports.values()].find((port) => port.name === `${APPROVAL_HOST_PORT}${spending.host}`)
@@ -88,7 +95,7 @@ self.addEventListener("message", (event: MessageEvent<ToWorker>) => {
       const onClosed = () => controller.abort();
       port?.closed.push(onClosed);
       const result = spending
-        ? navigator.locks.request(`ecx-wallet:spend:${spending.kind === "send.start" && spending.slot !== undefined ? Number(spending.slot) : "l1"}`, { signal: controller.signal }, () => router.route(spending, undefined))
+        ? navigator.locks.request(lock, { signal: controller.signal }, () => router.route(spending, undefined))
           .catch((error) => {
             // Leaving a hosted form while it waits for another tab must cancel its request.
             if (controller.signal.aborted) throw new ProviderRpcError(ErrorCode.UserRejected, "User rejected.");

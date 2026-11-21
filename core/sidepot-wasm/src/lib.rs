@@ -59,7 +59,43 @@ pub unsafe extern "C" fn sign_entry(link: *const u8, link_len: usize, starter: *
     }))
 }
 
-// The rest of a Chain Module's interface: Sidepot has no Signing Requests, so each refuses.
+/// Starter → the wallet's Sidepot sidechain address (`{ address, hex, publicKey }`), as JSON (docs/adr/0022).
+#[no_mangle]
+pub unsafe extern "C" fn coin_address(starter: *const u8, starter_len: usize) -> i32 {
+    ret_text(text(starter, starter_len).and_then(ecx_sidepot::coin_address).and_then(|a| json(&a)))
+}
+
+/// A spend order (JSON: the address's coins, what to pay, the fee) + Starter → `{ payload, spent }`
+/// (the unsigned spend and the outpoints it spends) as JSON, or a refusal.
+#[no_mangle]
+pub unsafe extern "C" fn build_coin_spend(order: *const u8, order_len: usize, starter: *const u8, starter_len: usize) -> i32 {
+    ret_text(text(order, order_len).and_then(|o| {
+        let s = text(starter, starter_len)?;
+        ecx_sidepot::build_spend(o, s).map_err(refusal).and_then(|b| json(&b))
+    }))
+}
+
+/// An unsigned spend + Starter → what it does (`{ kind: "clear", view }`) as JSON, or a refusal.
+#[no_mangle]
+pub unsafe extern "C" fn decode_coin_spend(payload: *const u8, payload_len: usize, starter: *const u8, starter_len: usize) -> i32 {
+    ret_text(text(payload, payload_len).and_then(|p| {
+        let s = text(starter, starter_len)?;
+        ecx_sidepot::decode_spend(p, s).map_err(refusal).and_then(|d| json(&d))
+    }))
+}
+
+/// An unsigned spend + Starter → `{ tx, txid }` (the signed transaction as the node takes it, and
+/// its txid) as JSON, or a refusal.
+#[no_mangle]
+pub unsafe extern "C" fn sign_coin_spend(payload: *const u8, payload_len: usize, starter: *const u8, starter_len: usize) -> i32 {
+    ret_text(text(payload, payload_len).and_then(|p| {
+        let s = text(starter, starter_len)?;
+        ecx_sidepot::sign_spend(p, s).map_err(refusal).and_then(|d| json(&d))
+    }))
+}
+
+// The rest of a Chain Module's interface: Sidepot has no Signing Requests, so each refuses. Its coins'
+// spends are the wallet's own, built above, never a payload someone else sends.
 
 #[no_mangle]
 pub unsafe extern "C" fn check(_payload: *const u8, _payload_len: usize) -> i32 {

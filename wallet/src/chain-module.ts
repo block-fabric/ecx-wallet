@@ -175,6 +175,7 @@ export type Destination =
   /**
    * A withdrawal burn (how a Withdrawal starts): `payout` (the burn minus `parentFee`) may be paid
    * on L1 to `l1ScriptPubkey` (hex), which `l1Address` gives as an L1 address if it is standard.
+   * On Sidepot, a withdrawal request (docs/adr/0022): the same, held until the chain bundles it.
    */
   | { kind: "withdrawal"; l1Address?: string; l1ScriptPubkey: string; payout: string; parentFee: string }
   /**
@@ -400,6 +401,71 @@ export interface ChainModule<K extends ChainKey = Starter> {
    * network's Sidepot, and what its bytes say. Throws ChainModuleRefusal (`invalidAction`, …).
    */
   signEntry(link: string, key: K): SignedEntry;
+  /**
+   * Only if `declare()` lists `coins` (Sidepot, docs/adr/0022): the key's address on the Sidepot
+   * sidechain, where its ordinary coins are.
+   */
+  coinAddress(key: K): CoinAddress;
+  /**
+   * Only if `declare()` lists `coins`: an unsigned transfer or withdrawal request from the address's
+   * coins, with change back to it. Throws ChainModuleRefusal (`insufficientFunds`, `dust`, `malformed`).
+   */
+  buildCoinSpend(order: CoinSpendOrder, key: K): BuiltCoinSpend;
+  /** Only if `declare()` lists `coins`: what an unsigned spend does, checked from its own bytes. Throws ChainModuleRefusal. */
+  decodeCoinSpend(payload: string, key: K): Decoded;
+  /** Only if `declare()` lists `coins`: the spend signed, as Sidepot's node takes it, and its txid. Throws ChainModuleRefusal. */
+  signCoinSpend(payload: string, key: K): SignedCoinSpend;
+}
+
+/** The wallet's address on the Sidepot sidechain (docs/adr/0022). */
+export interface CoinAddress {
+  /** As the chain writes it: base58 of its 20 bytes. */
+  address: string;
+  /** Those 20 bytes, hex: what a `sidepot:cashout` link's `dest` takes. */
+  hex: string;
+  /** The verifying key it is of: a compressed ristretto255 point, hex. */
+  publicKey: string;
+}
+
+/** Which output a Sidepot coin is, as its node writes it. A Deposit's is `<main-chain txid>:<vout>`. */
+export type SidepotOutPoint = { Regular: { txid: string; vout: number } } | { Coinbase: { txid: string; vout: number } } | { Deposit: string };
+
+/** What a Sidepot output holds, as its node writes it: sats, or a withdrawal request waiting to be bundled. */
+export type SidepotContent = { Value: number } | { Withdrawal: { value: number; main_fee: number; main_address: string } };
+
+/** A Sidepot coin as its server lists it: the node's `PointedOutput`. */
+export interface SidepotCoin {
+  outpoint: SidepotOutPoint;
+  output: { address: string; content: SidepotContent };
+}
+
+/** What a coin spend pays. Sats are decimal strings. */
+export type CoinPayment =
+  | { kind: "transfer"; /** A Sidepot address. */ to: string; amount: string }
+  | { kind: "withdrawal"; /** A main-chain address. */ mainAddress: string; amount: string; /** For the main chain's miners. */ mainFee: string };
+
+/** What to pay, and what to build it from (the Sidepot module's `SpendOrder`). */
+export interface CoinSpendOrder {
+  /** The address's coins as its server lists them. */
+  coins: SidepotCoin[];
+  pay: CoinPayment;
+  /** Sidepot's own fee, sats. */
+  fee: string;
+}
+
+/** A spend `buildCoinSpend` built. */
+export interface BuiltCoinSpend {
+  /** The unsigned spend, JSON: what `decodeCoinSpend` and `signCoinSpend` take. */
+  payload: string;
+  /** The coins it spends. */
+  spent: SidepotOutPoint[];
+}
+
+/** A spend `signCoinSpend` signed. */
+export interface SignedCoinSpend {
+  /** The node's `Authorized<Transaction>`, JSON: the body of the server's `POST /tx`. */
+  tx: string;
+  txid: string;
 }
 
 /**
@@ -416,7 +482,17 @@ export type SidepotEntry = {
   anchor: string;
 } & (
   | { kind: "buy"; round: number; keys: number; /** Sats per key, at most. */ maxPrice: string; /** `maxPrice` times `keys`. */ maxTotal: string }
-  | { kind: "cashout"; /** Sats; "0" is the whole balance. */ amount: string; /** A Sidepot sidechain address: 40 hex digits. */ dest: string }
+  | {
+      kind: "cashout";
+      /** Sats; "0" is the whole balance. */
+      amount: string;
+      /** A Sidepot sidechain address: 40 hex digits. */
+      dest: string;
+      /** `dest` as that chain writes addresses: base58. */
+      destAddress: string;
+      /** `dest` is the wallet's own Sidepot address (docs/adr/0022); absent before the entry is signed. */
+      destYours?: boolean;
+    }
 );
 
 /** An entry `signEntry` made: its bytes (hex; the data of one `OP_RETURN` output) and what they say. */
@@ -681,6 +757,10 @@ function chainModuleOf<K extends ChainKey>(m: CoreModule): ChainModule<K> {
     buildTrade: (order, key) => refusals(() => json<BuiltTrade>("build_trade", JSON.stringify(order), key)),
     parseEntry: (link) => refusals(() => json<SidepotEntry>("parse_entry", link)),
     signEntry: (link, key) => refusals(() => json<SignedEntry>("sign_entry", link, key)),
+    coinAddress: (key) => json<CoinAddress>("coin_address", key),
+    buildCoinSpend: (order, key) => refusals(() => json<BuiltCoinSpend>("build_coin_spend", JSON.stringify(order), key)),
+    decodeCoinSpend: (payload, key) => refusals(() => json<Decoded>("decode_coin_spend", payload, key)),
+    signCoinSpend: (payload, key) => refusals(() => json<SignedCoinSpend>("sign_coin_spend", payload, key)),
   };
 }
 

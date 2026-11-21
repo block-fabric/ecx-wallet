@@ -1,7 +1,7 @@
 //! The Sidepot Chain Module (Slot 88, docs/adr/0021). Sidepot is a game whose state is a function of
 //! eCash's own blocks: a BIP300 Deposit to the Slot fills a game account, and the account's moves
-//! are signed entries carried in `OP_RETURN` outputs of ordinary eCash transactions. So this module
-//! has no transactions of its own to decode or sign:
+//! are signed entries carried in `OP_RETURN` outputs of ordinary eCash transactions. So the game
+//! gives this module no transactions to decode or sign:
 //!
 //! - [`declare`] reports the binding the module serves;
 //! - [`derive_account`] turns the Slot's Starter into the game account, `spot:<x-only key>`;
@@ -12,8 +12,19 @@
 //!   with what it says, read back from its own bytes, for the approval to show.
 //!
 //! The eCash transaction that carries an entry is the L1 module's (`build_data`), paid from the
-//! wallet's eCash coins. This module holds nothing between calls and receives only its own Slot's
-//! Starter. Every per-network value comes from Sidepot's Chain Entry (`chain-entry.json`).
+//! wallet's eCash coins.
+//!
+//! The Sidepot sidechain also has ordinary coins, held by addresses of its own: a cashout arrives
+//! as one, and a coin can ask to be withdrawn to the main chain (docs/adr/0022). Those do have
+//! transactions, in the sidechain node's own format. They are the wallet's own, built here from
+//! what the user asks, never a Signing Request someone else sends:
+//!
+//! - [`coin_address`] turns the Slot's Starter into the wallet's Sidepot address, on a path of its own;
+//! - [`build_spend`], [`decode_spend`] and [`sign_spend`] build a transfer or a withdrawal request
+//!   from that address's coins, say what it does, and sign it (`coins.rs`, `thunder.rs`).
+//!
+//! This module holds nothing between calls and receives only its own Slot's Starter. Every
+//! per-network value comes from Sidepot's Chain Entry (`chain-entry.json`).
 use std::str::FromStr;
 
 use bitcoin::bip32::{DerivationPath, Xpriv};
@@ -22,10 +33,13 @@ use bitcoin::NetworkKind;
 use serde::Serialize;
 
 pub mod chain_entry;
+pub mod coins;
 pub mod entry;
 mod link;
+pub mod thunder;
 
-pub use chain_entry::{chain_entry, check_chain_entry, ChainEntry, NetworkEntry, ServerApi, SidechainServerEntry, SidepotParams};
+pub use chain_entry::{chain_entry, check_chain_entry, AddressParams, ChainEntry, NetworkEntry, ServerApi, SidechainServerEntry, SidepotParams};
+pub use coins::{build_spend, coin_address, decode_spend, sign_spend, BuiltSpend, CoinAddress, SignedSpend, COIN_PATH};
 pub use entry::{anchor_bytes, Action, DecodeError, Domain, Entry, BUY_LEN, CASHOUT_LEN, MAX_KEYS};
 pub use link::{parse_action, Request, MAX_LINK_BYTES};
 
@@ -65,6 +79,12 @@ pub enum RefusalCode {
     InvalidAction,
     /// A Sidepot action the wallet doesn't make.
     UnsupportedAction,
+    /// A coin spend with an input that isn't the Starter's: there is nothing of it to sign.
+    NothingToSign,
+    /// `build_spend`: the address's coins don't cover the payment and the fee.
+    InsufficientFunds,
+    /// `build_spend`: a withdrawal paying less than the main chain relays.
+    Dust,
 }
 
 pub(crate) fn refuse(code: RefusalCode, message: impl Into<String>) -> Refusal {
@@ -93,12 +113,14 @@ pub struct Declaration {
 
 /// `entries`: the module makes signed entries from action links, for the L1 module to carry
 /// (docs/adr/0021). `depositDestination` only once the Chain Entry pins the Slot's activation
-/// (docs/adr/0004), as Flush: a Deposit to an inactive Slot is anyone's.
+/// (docs/adr/0004), as Flush: a Deposit to an inactive Slot is anyone's. `coins`: the module has an
+/// address on the Sidepot sidechain, and builds and signs its coins' spends (docs/adr/0022).
 pub fn declare() -> Declaration {
     let mut capabilities = vec!["entries".to_string()];
     if network().activation.is_some() {
         capabilities.push("depositDestination".into());
     }
+    capabilities.push("coins".into());
     Declaration { binding: Binding { chain: network().chain.clone(), format: "sidepot-entry".into(), payload_versions: vec!["0".into()] }, capabilities }
 }
 
@@ -203,8 +225,9 @@ pub fn deposit_destination(starter: &str) -> Result<DepositDestination, String> 
 pub enum EntryAction {
     /// Buy `keys` keys in round `round`, each at no more than `max_price` sats: at most `max_total` in all.
     Buy { round: u32, keys: u16, max_price: String, max_total: String },
-    /// Pay `amount` sats of the game balance ("0": all of it) to the Sidepot sidechain address `dest` (40 hex digits).
-    Cashout { amount: String, dest: String },
+    /// Pay `amount` sats of the game balance ("0": all of it) to the Sidepot sidechain address `dest`
+    /// (40 hex digits), which is `dest_address` as that chain writes addresses (base58).
+    Cashout { amount: String, dest: String, dest_address: String },
 }
 
 /// An entry as the user reads it.
@@ -216,6 +239,10 @@ pub struct EntryView {
     /// The game account that makes it, as an address: `spot:<x-only key>`. Absent before it is signed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub player: Option<String>,
+    /// A cashout's: whether its destination is the Starter's own Sidepot address (docs/adr/0022).
+    /// Absent for a buy, and before the entry is signed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dest_yours: Option<bool>,
     /// The account's entry counter, as a decimal string.
     pub nonce: String,
     /// The last tick of the game clock at which the entry counts: after it, it lapses.
@@ -236,17 +263,23 @@ pub struct SignedEntry {
     pub view: EntryView,
 }
 
-fn view(action: Action, player: Option<[u8; 32]>, nonce: u64, expires: u32) -> EntryView {
+/// `mine`: the Starter's own Sidepot address, once there is a Starter to derive it from.
+fn view(action: Action, player: Option<[u8; 32]>, mine: Option<thunder::Address>, nonce: u64, expires: u32) -> EntryView {
+    let dest_yours = match action {
+        Action::Cashout { dest, .. } => mine.map(|mine| mine.0 == dest),
+        Action::Buy { .. } => None,
+    };
     let action = match action {
         Action::Buy { round, keys, max_price } => {
             EntryAction::Buy { round, keys, max_price: max_price.to_string(), max_total: (u128::from(max_price) * u128::from(keys)).to_string() }
         }
-        Action::Cashout { amount, dest } => EntryAction::Cashout { amount: amount.to_string(), dest: hex(&dest) },
+        Action::Cashout { amount, dest } => EntryAction::Cashout { amount: amount.to_string(), dest: hex(&dest), dest_address: thunder::Address(dest).base58() },
     };
     let network = network();
     EntryView {
         action,
         player: player.map(|p| format!("{ACCOUNT_PREFIX}{}", hex(&p))),
+        dest_yours,
         nonce: nonce.to_string(),
         expires,
         slot: domain().slot,
@@ -257,7 +290,7 @@ fn view(action: Action, player: Option<[u8; 32]>, nonce: u64, expires: u32) -> E
 /// What `link` asks for, without the Starter: the wallet refuses a bad link before any unlock prompt.
 pub fn parse_entry(link: &str) -> Result<EntryView, Refusal> {
     let Request { action, nonce, expires } = parse_action(link)?;
-    Ok(view(action, None, nonce, expires))
+    Ok(view(action, None, None, nonce, expires))
 }
 
 /// The entry `link` asks for, signed by the Starter's game account for this network's Sidepot.
@@ -270,7 +303,9 @@ pub fn sign_entry(link: &str, starter: &str) -> Result<SignedEntry, Refusal> {
     let bytes = Entry::sign(&key.secp, &key.keypair, &domain, action, nonce, expires).encode();
     let read = Entry::decode(&bytes).ok().filter(|entry| entry.verify(&key.secp, &domain) && entry.player == key.player());
     let entry = read.ok_or_else(|| refuse(RefusalCode::Malformed, "The entry the wallet made doesn't read back as signed by its account."))?;
-    Ok(SignedEntry { entry: hex(&bytes), view: view(entry.action, Some(entry.player), entry.nonce, entry.expires) })
+    // A cashout pays a Sidepot address: the view says whether it is this Starter's own.
+    let mine = coins::own_address(starter).map_err(|e| refuse(RefusalCode::InvalidStarter, e))?;
+    Ok(SignedEntry { entry: hex(&bytes), view: view(entry.action, Some(entry.player), Some(mine), entry.nonce, entry.expires) })
 }
 
 /// Sidepot has no Signing Requests: nothing to check, decode, sign or finalize. Its entries are

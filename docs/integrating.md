@@ -104,7 +104,7 @@ const action = `sidepot:buy?round=${state.round}&keys=3&max_price=${state.price_
 const { txid } = await wallet.provider.request({ method: "sendAction", params: { slot: 88, action } });
 ```
 
-`sidepot:cashout?amount=<sats, 0 = all>&dest=<40 hex>&nonce=<u64>&expires=<u32>` cashes out the same way. The user funds the account in the wallet, with a Deposit to Slot 88; a site can show `address` as where it goes. The wallet shows every field of the link before it signs, and refuses a link with a missing, repeated or unknown parameter (-32602). The link's grammar and what the approval shows are in [sendAction on Sidepot](how-it-works.md#sendaction-on-sidepot).
+`sidepot:cashout?amount=<sats, 0 = all>&dest=<40 hex>&nonce=<u64>&expires=<u32>` cashes out the same way. `dest` is a Sidepot sidechain address's 20 bytes; the wallet has one of its own, which the user copies from Sidepot's screen in the wallet (in base58: decode it to those 20 bytes), and the approval says whether a cashout pays it ([ADR 0022](adr/0022-sidepot-coins-an-address-of-the-starters-and-spends-in-the-nodes-format.md)). `getAddresses` doesn't answer it. The user funds the account in the wallet, with a Deposit to Slot 88; a site can show `address` as where it goes. The wallet shows every field of the link before it signs, and refuses a link with a missing, repeated or unknown parameter (-32602). The link's grammar and what the approval shows are in [sendAction on Sidepot](how-it-works.md#sendaction-on-sidepot).
 
 ## Trying it
 

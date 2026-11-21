@@ -57,6 +57,14 @@ export {
   type FlushAction,
   type SidepotEntry,
   type SignedEntry,
+  type BuiltCoinSpend,
+  type CoinAddress,
+  type CoinPayment,
+  type CoinSpendOrder,
+  type SidepotCoin,
+  type SidepotContent,
+  type SidepotOutPoint,
+  type SignedCoinSpend,
   type DataOrder,
   type TradeOrder,
   type TradeSide,
@@ -114,7 +122,18 @@ export {
   type WatchData,
 } from "./sidechain-server";
 export { esploraConfig, sidechainServer } from "./server-api";
-export { sidepotClient, sidepotServer, type SidepotAccount, type SidepotClient, type SidepotState } from "./sidepot";
+export { isSidepotAddress, outpointKey, sidepotClient, sidepotServer, type SidepotAccount, type SidepotClient, type SidepotCoins, type SidepotState } from "./sidepot";
+export {
+  createSidepotCoins,
+  isSpendAskedFor,
+  SIDEPOT_COIN_FEE,
+  withdrawalRequester,
+  type SidepotCoinsApi,
+  type SidepotCoinsDeps,
+  type SidepotCoinsReport,
+  type WaitingWithdrawal,
+  type WithdrawalStatus,
+} from "./sidepot-coins";
 export { standardSidechainServer } from "./standard-sidechain-api";
 export { esploraServer, FLUSH_STALL_SECONDS, HISTORY_PAGES, type EsploraServerConfig, type HistoryStore, type KeptHistory } from "./esplora";
 export {
