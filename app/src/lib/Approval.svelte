@@ -146,18 +146,20 @@
       const output = view.outputs.find((o) => o.index === mode.output);
       const d = output?.destination.kind === "deposit" ? output.destination : undefined;
       const slot = d ? `Slot ${d.slot}${d.credit ? ` (${d.credit.chainName})` : ""}` : "a Slot";
-      if (mode.kind === "firstDeposit") {
-        return (
-          `${slot} has no Treasury on the main chain's server, so this is its first Deposit. The wallet can't confirm the Slot is active ` +
-          "and that it has no Treasury yet: if either is wrong, the funds can be lost. If someone else's first Deposit is pending, " +
-          "the main chain refuses this one, or drops it once the other confirms, and its coins come back."
-        );
-      }
       // Flush and Sidepot credit a Deposit themselves (`paidBy`); elsewhere someone running the Slot's node imports it.
       const credited =
         d?.credit !== undefined && d.credit.paidBy !== "operator"
           ? `${d.credit.chainName} credits it itself, once it has read the Deposit's block.`
           : "Crediting it on the sidechain isn't automatic: it waits for the chain's operator to import it.";
+      if (mode.kind === "firstDeposit") {
+        // No Treasury this wallet can follow: a Slot never funded, or eCash, where every Deposit pays the
+        // Treasury script directly and the block's miner merges it into the Treasury (wallet/src/treasury.ts).
+        return (
+          `This is a Deposit to ${slot}. It pays the Slot's Treasury script directly, for the block's miner to merge into the Slot's ` +
+          "Treasury, which is how Deposits are made on eCash. The wallet can't confirm from the main chain's server that the Slot is " +
+          `active: a Deposit to a Slot that isn't can be lost. The funds leave the main chain, and only come back through a Withdrawal. ${credited}`
+        );
+      }
       return (
         `This is a Deposit to ${slot}: the funds leave the main chain, and only come back through a Withdrawal, a BIP300 miner vote ` +
         `of about 3 to 6 months. ${credited}`

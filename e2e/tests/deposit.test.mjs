@@ -445,7 +445,7 @@ for (const browserName of BROWSERS) describe(browserName, () => {
       const approval = await approvalIn(page, { timeout: 20_000 });
       const shown = await readDepositView(approval);
       assert.equal(shown.dangerous.length, 2);
-      assert.match(shown.dangerous.join("\n"), /no Treasury on the main chain's server, so this is its first Deposit.*funds can be lost/);
+      assert.match(shown.dangerous.join("\n"), /pays the Slot's Treasury script directly.*a Deposit to a Slot that isn't can be lost/);
       assert.match(shown.treasury, /Treasury: 0 ECX → 0\.00005 ECX/);
       assert.ok(shown.inputs.every((i) => !/Treasury/.test(i)), "no Treasury is spent");
 

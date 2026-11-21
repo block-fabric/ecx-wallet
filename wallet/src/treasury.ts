@@ -60,7 +60,7 @@ export async function findTreasury(client: EsploraClient, script: string, slot: 
 
   /** Each Treasury chain's confirmed root → the unspent ends that trace back to it. */
   const chains = new Map<string, Set<string>>();
-  for (const utxo of utxos) {
+  utxos: for (const utxo of utxos) {
     let tx = await client.tx(utxo.txid);
     if (tx.vout[utxo.vout]?.scriptpubkey !== script) throw cant(`${client.url} listed an output that doesn't pay its Treasury script.`);
     let at = { txid: utxo.txid, vout: utxo.vout };
@@ -74,7 +74,12 @@ export async function findTreasury(client: EsploraClient, script: string, slot: 
         if (depth === MAX_PENDING) throw cant(`more than ${MAX_PENDING} Deposits to it are pending.`);
         if (!isM5(tx, at.vout)) throw cant(`a pending transaction spends it without being a Deposit.`);
         const spent = tx.vin.find((input) => input.prevout?.scriptpubkey === script);
-        if (spent === undefined) throw cant("a first Deposit to it is pending. Try again once it confirms.");
+        // A pending Deposit that spends no Treasury. On eCash this is every Deposit: it pays the Treasury
+        // script beside its address, and the miner's own transaction in the same block merges it into the
+        // Treasury (so the confirmed Treasury is that merge, neither M5 nor M6, and is passed over above).
+        // Such a Deposit can wait in the mempool for hours, and anyone can leave one there, so it must not
+        // hold up the next: it is set aside, with any pending Deposit built on it.
+        if (spent === undefined) continue utxos;
         at = { txid: spent.txid, vout: spent.vout };
         tx = await client.tx(spent.txid);
       }
